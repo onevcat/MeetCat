@@ -165,3 +165,269 @@ impl DaemonState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn create_test_meeting(call_id: &str, title: &str, starts_in_minutes: i64) -> Meeting {
+        let now = Utc::now();
+        Meeting {
+            call_id: call_id.to_string(),
+            url: format!("https://meet.google.com/{}", call_id),
+            title: title.to_string(),
+            display_time: "10:00 AM".to_string(),
+            begin_time: now + Duration::minutes(starts_in_minutes),
+            end_time: now + Duration::minutes(starts_in_minutes + 60),
+            event_id: Some("event123".to_string()),
+            starts_in_minutes,
+        }
+    }
+
+    #[test]
+    fn test_daemon_state() {
+        let mut state = DaemonState::default();
+        assert!(!state.is_running());
+
+        state.start();
+        assert!(state.is_running());
+
+        state.stop();
+        assert!(!state.is_running());
+    }
+
+    #[test]
+    fn test_joined_tracking() {
+        let mut state = DaemonState::default();
+
+        state.mark_joined("abc-defg-hij");
+        assert!(state.joined_meetings.contains("abc-defg-hij"));
+
+        state.clear_joined();
+        assert!(state.joined_meetings.is_empty());
+    }
+
+    #[test]
+    fn test_update_meetings() {
+        let mut state = DaemonState::default();
+        assert!(state.get_meetings().is_empty());
+
+        let meetings = vec![
+            create_test_meeting("abc-defg-hij", "Team Standup", 5),
+            create_test_meeting("xyz-uvwx-rst", "1:1 Meeting", 30),
+        ];
+        state.update_meetings(meetings);
+
+        assert_eq!(state.get_meetings().len(), 2);
+    }
+
+    #[test]
+    fn test_get_next_meeting_returns_earliest() {
+        let mut state = DaemonState::default();
+        let meetings = vec![
+            create_test_meeting("later", "Later Meeting", 30),
+            create_test_meeting("soon", "Soon Meeting", 5),
+            create_test_meeting("soonest", "Soonest Meeting", 2),
+        ];
+        state.update_meetings(meetings);
+
+        let next = state.get_next_meeting();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().call_id, "soonest");
+    }
+
+    #[test]
+    fn test_get_next_meeting_excludes_joined() {
+        let mut state = DaemonState::default();
+        let meetings = vec![
+            create_test_meeting("first", "First Meeting", 2),
+            create_test_meeting("second", "Second Meeting", 5),
+        ];
+        state.update_meetings(meetings);
+        state.mark_joined("first");
+
+        let next = state.get_next_meeting();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().call_id, "second");
+    }
+
+    #[test]
+    fn test_get_next_meeting_excludes_old_meetings() {
+        let mut state = DaemonState::default();
+        // Meeting that started 10 minutes ago (beyond the 5-minute grace period)
+        let meetings = vec![create_test_meeting("old", "Old Meeting", -10)];
+        state.update_meetings(meetings);
+
+        let next = state.get_next_meeting();
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn test_should_join_now_within_window() {
+        let mut state = DaemonState::default();
+        // Meeting starting in 1 minute, with joinBeforeMinutes = 1
+        let meetings = vec![create_test_meeting("abc", "Test Meeting", 1)];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            join_before_minutes: 1,
+            ..Settings::default()
+        };
+
+        let should_join = state.should_join_now(&settings);
+        assert!(should_join.is_some());
+        assert_eq!(should_join.unwrap().call_id, "abc");
+    }
+
+    #[test]
+    fn test_should_join_now_not_yet() {
+        let mut state = DaemonState::default();
+        // Meeting starting in 10 minutes, with joinBeforeMinutes = 1
+        let meetings = vec![create_test_meeting("abc", "Test Meeting", 10)];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            join_before_minutes: 1,
+            ..Settings::default()
+        };
+
+        let should_join = state.should_join_now(&settings);
+        assert!(should_join.is_none());
+    }
+
+    #[test]
+    fn test_should_join_now_respects_exclude_filters() {
+        let mut state = DaemonState::default();
+        let meetings = vec![
+            create_test_meeting("skip", "1:1 with Manager", 1),
+            create_test_meeting("join", "Team Standup", 2),
+        ];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            join_before_minutes: 5,
+            title_exclude_filters: vec!["1:1".to_string()],
+            ..Settings::default()
+        };
+
+        let should_join = state.should_join_now(&settings);
+        assert!(should_join.is_some());
+        assert_eq!(should_join.unwrap().call_id, "join");
+    }
+
+    #[test]
+    fn test_should_join_now_after_start_within_grace() {
+        let mut state = DaemonState::default();
+        // Meeting that started 5 minutes ago (within 30-minute grace period)
+        let meetings = vec![create_test_meeting("abc", "Test Meeting", -5)];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            join_before_minutes: 1,
+            ..Settings::default()
+        };
+
+        let should_join = state.should_join_now(&settings);
+        assert!(should_join.is_some());
+    }
+
+    #[test]
+    fn test_should_join_now_too_late() {
+        let mut state = DaemonState::default();
+        // Meeting that started 35 minutes ago (beyond 30-minute grace period)
+        let meetings = vec![create_test_meeting("abc", "Test Meeting", -35)];
+        state.update_meetings(meetings);
+
+        let settings = Settings::default();
+
+        let should_join = state.should_join_now(&settings);
+        assert!(should_join.is_none());
+    }
+
+    #[test]
+    fn test_calculate_next_trigger_future_meeting() {
+        let mut state = DaemonState::default();
+        // Meeting starting in 10 minutes
+        let meetings = vec![create_test_meeting("abc", "Test Meeting", 10)];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            join_before_minutes: 1,
+            ..Settings::default()
+        };
+
+        let trigger = state.calculate_next_trigger(&settings);
+        assert!(trigger.is_some());
+        let trigger = trigger.unwrap();
+        assert_eq!(trigger.meeting.call_id, "abc");
+        // Should trigger in about 9 minutes (10 - 1 = 9 minutes before)
+        assert!(trigger.delay_ms > 8 * 60 * 1000); // > 8 minutes
+        assert!(trigger.delay_ms < 10 * 60 * 1000); // < 10 minutes
+    }
+
+    #[test]
+    fn test_calculate_next_trigger_immediate() {
+        let mut state = DaemonState::default();
+        // Meeting that started 5 minutes ago
+        let meetings = vec![create_test_meeting("abc", "Test Meeting", -5)];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            join_before_minutes: 1,
+            ..Settings::default()
+        };
+
+        let trigger = state.calculate_next_trigger(&settings);
+        assert!(trigger.is_some());
+        // Should trigger immediately
+        assert_eq!(trigger.unwrap().delay_ms, 0);
+    }
+
+    #[test]
+    fn test_calculate_next_trigger_excludes_joined() {
+        let mut state = DaemonState::default();
+        let meetings = vec![
+            create_test_meeting("joined", "Already Joined", 5),
+            create_test_meeting("pending", "Pending Meeting", 10),
+        ];
+        state.update_meetings(meetings);
+        state.mark_joined("joined");
+
+        let settings = Settings::default();
+
+        let trigger = state.calculate_next_trigger(&settings);
+        assert!(trigger.is_some());
+        assert_eq!(trigger.unwrap().meeting.call_id, "pending");
+    }
+
+    #[test]
+    fn test_calculate_next_trigger_respects_exclude_filters() {
+        let mut state = DaemonState::default();
+        let meetings = vec![
+            create_test_meeting("optional", "Optional: Team Sync", 5),
+            create_test_meeting("required", "Sprint Planning", 10),
+        ];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            title_exclude_filters: vec!["Optional".to_string()],
+            ..Settings::default()
+        };
+
+        let trigger = state.calculate_next_trigger(&settings);
+        assert!(trigger.is_some());
+        assert_eq!(trigger.unwrap().meeting.call_id, "required");
+    }
+
+    #[test]
+    fn test_meeting_serialization() {
+        let meeting = create_test_meeting("abc-defg-hij", "Test Meeting", 5);
+        let json = serde_json::to_string(&meeting).unwrap();
+        assert!(json.contains("abc-defg-hij"));
+        assert!(json.contains("Test Meeting"));
+
+        let parsed: Meeting = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.call_id, meeting.call_id);
+        assert_eq!(parsed.title, meeting.title);
+    }
+}
