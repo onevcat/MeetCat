@@ -1,0 +1,33 @@
+{
+  "name": "@meetcat/settings",
+  "version": "0.1.0",
+  "description": "Settings schema for MeetCat",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.4",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.4"
+  }
+}
