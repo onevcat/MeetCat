@@ -2,6 +2,7 @@
 
 mod daemon;
 mod settings;
+mod tray;
 
 use daemon::{DaemonState, Meeting};
 use settings::Settings;
@@ -95,6 +96,9 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .setup(|app| {
+            // Set up system tray
+            tray::setup_tray(app)?;
+
             // Start daemon by default
             let state = app.state::<AppState>();
             let mut daemon = state.daemon.lock().unwrap();
