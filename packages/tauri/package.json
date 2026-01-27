@@ -1,0 +1,40 @@
+{
+  "name": "@meetcat/tauri",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MeetCat Desktop App",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:settings": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "dev:tauri": "tauri dev",
+    "build:tauri": "tauri build",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@meetcat/core": "workspace:*",
+    "@meetcat/settings": "workspace:*",
+    "@tauri-apps/api": "^2.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.4",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^3.0.4",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11",
+    "vitest": "^3.0.4"
+  }
+}
