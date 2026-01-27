@@ -1,12 +1,13 @@
 import type { Meeting, SchedulerConfig, SchedulerEvent } from "../types.js";
+import { DEFAULT_SETTINGS } from "@meetcat/settings";
 
 /**
  * Default scheduler configuration
  */
 export const DEFAULT_SCHEDULER_CONFIG: Required<SchedulerConfig> = {
-  joinBeforeMinutes: 1,
-  titleExcludeFilters: [],
-  maxMinutesAfterStart: 5,
+  joinBeforeMinutes: DEFAULT_SETTINGS.joinBeforeMinutes,
+  titleExcludeFilters: DEFAULT_SETTINGS.titleExcludeFilters,
+  maxMinutesAfterStart: 30, // Not user-configurable, fixed at 30 minutes
 };
 
 /**
@@ -35,7 +36,7 @@ export function createSchedulerLogic(initialConfig: Partial<SchedulerConfig> = {
     now: number = Date.now()
   ): SchedulerEvent {
     const joinThreshold = config.joinBeforeMinutes * 60 * 1000;
-    const graceAfterStart = config.maxMinutesAfterStart * 60 * 1000;
+    const maxAfterStart = config.maxMinutesAfterStart * 60 * 1000;
 
     let nextUpcoming: Meeting | null = null;
     let nextUpcomingMinutes = Infinity;
@@ -56,9 +57,9 @@ export function createSchedulerLogic(initialConfig: Partial<SchedulerConfig> = {
       const timeUntilStart = startTime - now;
 
       // Check if it's time to join
-      // Join if: within joinThreshold before start, or within grace period after start
+      // Join if: within joinThreshold before start, or up to maxAfterStart after start
       const shouldJoin =
-        timeUntilStart <= joinThreshold && timeUntilStart >= -graceAfterStart;
+        timeUntilStart <= joinThreshold && timeUntilStart > -maxAfterStart;
 
       if (shouldJoin) {
         return {
@@ -70,7 +71,7 @@ export function createSchedulerLogic(initialConfig: Partial<SchedulerConfig> = {
       // Track next upcoming meeting
       if (timeUntilStart > 0 && timeUntilStart < nextUpcomingMinutes * 60000) {
         nextUpcoming = meeting;
-        nextUpcomingMinutes = Math.ceil(timeUntilStart / 60000);
+        nextUpcomingMinutes = Math.round(timeUntilStart / 60000);
       }
     }
 
