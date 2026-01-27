@@ -25,6 +25,10 @@
     "./ui": {
       "types": "./dist/ui/index.d.ts",
       "import": "./dist/ui/index.js"
+    },
+    "./tauri-bridge": {
+      "types": "./dist/tauri-bridge.d.ts",
+      "import": "./dist/tauri-bridge.js"
     }
   },
   "files": [
