@@ -1,0 +1,39 @@
+{
+  "name": "@meetcat/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MeetCat Chrome Extension",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm build:content && vite build --watch",
+    "build": "rm -rf dist && pnpm build:content && pnpm build:popup && pnpm build:rename",
+    "build:rename": "cd dist && mv content-homepage.global.js content-homepage.js && mv content-meeting.global.js content-meeting.js && mv service-worker.global.js service-worker.js",
+    "build:content": "tsup",
+    "build:popup": "vite build",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@meetcat/core": "workspace:*",
+    "@meetcat/settings": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.1",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@types/chrome": "^0.0.301",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^3.0.4",
+    "jsdom": "^26.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.11",
+    "vitest": "^3.0.4"
+  }
+}
