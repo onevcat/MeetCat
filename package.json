@@ -1,0 +1,21 @@
+{
+  "name": "meetcat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auto-join Google Meet meetings with Chrome Extension and Tauri desktop app",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @meetcat/extension dev",
+    "bootstrap": "bash scripts/bootstrap.sh",
+    "test": "pnpm -r test",
+    "clean": "pnpm -r clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
