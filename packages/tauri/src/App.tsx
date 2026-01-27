@@ -1,8 +1,347 @@
+import { useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type { Settings, MediaState } from "@meetcat/settings";
+import { DEFAULT_SETTINGS, DEFAULT_TAURI_SETTINGS } from "@meetcat/settings";
+
+/**
+ * Settings window for MeetCat Tauri app
+ */
 export function App() {
+  const [settings, setSettings] = useState<Settings>({
+    ...DEFAULT_SETTINGS,
+    tauri: DEFAULT_TAURI_SETTINGS,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [filterInput, setFilterInput] = useState("");
+
+  // Load settings
+  useEffect(() => {
+    async function load() {
+      try {
+        const loadedSettings = await invoke<Settings>("get_settings");
+        setSettings(loadedSettings);
+      } catch (e) {
+        console.error("Failed to load settings:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+
+    // Listen for settings changes from main process
+    const unlisten = listen<Settings>("settings_changed", (event) => {
+      setSettings(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Save settings
+  const saveSettings = useCallback(async (newSettings: Settings) => {
+    setSaving(true);
+    try {
+      await invoke("save_settings", { settings: newSettings });
+    } catch (e) {
+      console.error("Failed to save settings:", e);
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  // Update and save
+  const updateSettings = (updates: Partial<Settings>) => {
+    const newSettings = { ...settings, ...updates };
+    setSettings(newSettings);
+    saveSettings(newSettings);
+  };
+
+  // Add filter
+  const addFilter = () => {
+    const filter = filterInput.trim();
+    if (filter && !settings.titleExcludeFilters.includes(filter)) {
+      updateSettings({
+        titleExcludeFilters: [...settings.titleExcludeFilters, filter],
+      });
+      setFilterInput("");
+    }
+  };
+
+  // Remove filter
+  const removeFilter = (filter: string) => {
+    updateSettings({
+      titleExcludeFilters: settings.titleExcludeFilters.filter(
+        (f) => f !== filter
+      ),
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="settings-window">
+        <div className="loading">Loading settings...</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="app">
-      <h1>MeetCat</h1>
-      <p>Settings UI coming soon.</p>
+    <div className="settings-window">
+      <header className="settings-header">
+        <img className="settings-icon" src="/icons/icon128.png" alt="MeetCat" />
+        <h1>MeetCat Settings</h1>
+      </header>
+
+      <main className="settings-content">
+        {/* Timing Section */}
+        <section className="settings-section">
+          <h2>Timing</h2>
+
+          <div className="form-group">
+            <label className="form-label">Join before meeting starts</label>
+            <div className="input-with-suffix">
+              <input
+                type="number"
+                className="form-input"
+                min="0"
+                max="30"
+                value={settings.joinBeforeMinutes}
+                onChange={(e) =>
+                  updateSettings({
+                    joinBeforeMinutes: Math.max(
+                      0,
+                      Math.min(30, parseInt(e.target.value) || 0)
+                    ),
+                  })
+                }
+              />
+              <span className="input-suffix">minutes</span>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Countdown before auto-join</label>
+            <div className="input-with-suffix">
+              <input
+                type="number"
+                className="form-input"
+                min="0"
+                max="60"
+                value={settings.joinCountdownSeconds}
+                onChange={(e) =>
+                  updateSettings({
+                    joinCountdownSeconds: Math.max(
+                      0,
+                      Math.min(60, parseInt(e.target.value) || 0)
+                    ),
+                  })
+                }
+              />
+              <span className="input-suffix">seconds</span>
+            </div>
+          </div>
+        </section>
+
+        {/* Join Behavior Section */}
+        <section className="settings-section">
+          <h2>Join Behavior</h2>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="autoClickJoin"
+                className="form-checkbox"
+                checked={settings.autoClickJoin}
+                onChange={(e) =>
+                  updateSettings({ autoClickJoin: e.target.checked })
+                }
+              />
+              <label htmlFor="autoClickJoin" className="form-checkbox-label">
+                Automatically click join button
+              </label>
+            </div>
+            <p className="form-hint">
+              When disabled, only opens the meeting page
+            </p>
+          </div>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="showCountdownOverlay"
+                className="form-checkbox"
+                checked={settings.showCountdownOverlay}
+                onChange={(e) =>
+                  updateSettings({ showCountdownOverlay: e.target.checked })
+                }
+              />
+              <label
+                htmlFor="showCountdownOverlay"
+                className="form-checkbox-label"
+              >
+                Show countdown overlay
+              </label>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="showNotifications"
+                className="form-checkbox"
+                checked={settings.showNotifications}
+                onChange={(e) =>
+                  updateSettings({ showNotifications: e.target.checked })
+                }
+              />
+              <label
+                htmlFor="showNotifications"
+                className="form-checkbox-label"
+              >
+                Show notifications
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* Media Defaults Section */}
+        <section className="settings-section">
+          <h2>Media Defaults</h2>
+
+          <div className="form-group">
+            <label className="form-label">Microphone</label>
+            <select
+              className="form-select"
+              value={settings.defaultMicState}
+              onChange={(e) =>
+                updateSettings({
+                  defaultMicState: e.target.value as MediaState,
+                })
+              }
+            >
+              <option value="muted">Muted</option>
+              <option value="unmuted">Unmuted</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Camera</label>
+            <select
+              className="form-select"
+              value={settings.defaultCameraState}
+              onChange={(e) =>
+                updateSettings({
+                  defaultCameraState: e.target.value as MediaState,
+                })
+              }
+            >
+              <option value="muted">Off</option>
+              <option value="unmuted">On</option>
+            </select>
+          </div>
+        </section>
+
+        {/* Exclude Filters Section */}
+        <section className="settings-section">
+          <h2>Exclude Filters</h2>
+          <p className="section-description">
+            Skip meetings with titles containing these strings
+          </p>
+
+          <div className="form-group">
+            <div className="filter-input-row">
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Enter filter text..."
+                value={filterInput}
+                onChange={(e) => setFilterInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addFilter()}
+              />
+              <button className="btn btn-secondary" onClick={addFilter}>
+                Add
+              </button>
+            </div>
+          </div>
+
+          {settings.titleExcludeFilters.length > 0 && (
+            <div className="filter-list">
+              {settings.titleExcludeFilters.map((filter) => (
+                <div key={filter} className="filter-item">
+                  <span className="filter-text">{filter}</span>
+                  <button
+                    className="filter-remove"
+                    onClick={() => removeFilter(filter)}
+                    title="Remove filter"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* App Behavior Section */}
+        <section className="settings-section">
+          <h2>App Behavior</h2>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="runInBackground"
+                className="form-checkbox"
+                checked={settings.tauri?.runInBackground ?? true}
+                onChange={(e) =>
+                  updateSettings({
+                    tauri: {
+                      ...settings.tauri,
+                      ...DEFAULT_TAURI_SETTINGS,
+                      runInBackground: e.target.checked,
+                    },
+                  })
+                }
+              />
+              <label htmlFor="runInBackground" className="form-checkbox-label">
+                Keep running when window is closed
+              </label>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="startAtLogin"
+                className="form-checkbox"
+                checked={settings.tauri?.startAtLogin ?? false}
+                onChange={(e) =>
+                  updateSettings({
+                    tauri: {
+                      ...settings.tauri,
+                      ...DEFAULT_TAURI_SETTINGS,
+                      startAtLogin: e.target.checked,
+                    },
+                  })
+                }
+              />
+              <label htmlFor="startAtLogin" className="form-checkbox-label">
+                Start at login
+              </label>
+            </div>
+            <p className="form-hint">Not yet implemented</p>
+          </div>
+        </section>
+      </main>
+
+      {saving && <div className="saving-indicator">Saving...</div>}
     </div>
   );
 }
