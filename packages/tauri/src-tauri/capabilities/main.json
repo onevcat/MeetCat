@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "main-capability",
+  "description": "Main window capability for MeetCat",
+  "windows": ["main", "settings"],
+  "remote": {
+    "urls": ["https://*.google.com/*", "https://*.google.com.hk/*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "core:webview:default",
+    "core:webview:allow-webview-position",
+    "core:webview:allow-webview-size",
+    "core:app:default",
+    "shell:default",
+    "shell:allow-open",
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-show",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission"
+  ]
+}

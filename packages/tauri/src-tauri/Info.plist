@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>MeetCat needs microphone access for Google Meet calls</string>
+    <key>NSCameraUsageDescription</key>
+    <string>MeetCat needs camera access for Google Meet video calls</string>
+</dict>
+</plist>
