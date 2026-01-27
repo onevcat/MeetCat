@@ -1,0 +1,38 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+    {
+      "blend-mode" : "normal",
+      "blur-material" : 0.37,
+      "layers" : [
+        {
+          "image-name" : "Image.png",
+          "name" : "Image",
+          "position" : {
+            "scale" : 1.63,
+            "translation-in-points" : [
+              0,
+              -23.63134981517578
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.7
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.43
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
