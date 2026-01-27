@@ -1,12 +1,22 @@
 import type { JoinButtonResult } from "../types.js";
 
 /**
- * Join button text patterns (initial English-only version)
+ * Join button text patterns for multiple languages
  */
 export const JOIN_BUTTON_PATTERNS = [
+  // Chinese
+  "立即加入",
+  "仍要加入",
+  "加入会议",
+  "请求加入",
+  // English
   "Join now",
   "Join anyway",
   "Ask to join",
+  // Japanese
+  "今すぐ参加",
+  "参加をリクエスト",
+  "参加",
 ];
 
 /**
@@ -43,8 +53,23 @@ export function clickJoinButton(container: Document | Element): boolean {
     return false;
   }
 
-  // Click the button directly
+  // Click the button
   (button as HTMLElement).click();
+
+  // Also dispatch a proper mouse event for better compatibility
+  try {
+    const doc = "ownerDocument" in container ? container.ownerDocument : container;
+    const win = doc?.defaultView;
+    button.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        view: win || undefined,
+      })
+    );
+  } catch {
+    // Ignore MouseEvent errors in test environments
+  }
 
   return true;
 }
