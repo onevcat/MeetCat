@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 
 const root = resolve(process.cwd());
 const nextVersion = process.argv[2];
@@ -42,30 +43,10 @@ updateText("packages/tauri/src-tauri/Cargo.toml", (content) =>
   content.replace(/^version = ".*"$/m, `version = "${nextVersion}"`)
 );
 
-updateText("packages/tauri/src-tauri/Cargo.lock", (content) => {
-  const lines = content.split("\n");
-  let inMeetcatPackage = false;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-
-    if (line.startsWith("[[package]]")) {
-      inMeetcatPackage = false;
-      continue;
-    }
-
-    if (line === 'name = "meetcat"' || line === 'name = "meetcat_lib"') {
-      inMeetcatPackage = true;
-      continue;
-    }
-
-    if (inMeetcatPackage && line.startsWith("version = ")) {
-      lines[i] = `version = "${nextVersion}"`;
-      inMeetcatPackage = false;
-    }
-  }
-
-  return lines.join("\n");
+const tauriCargoDir = resolve(root, "packages/tauri/src-tauri");
+execSync("cargo generate-lockfile", {
+  cwd: tauriCargoDir,
+  stdio: "inherit",
 });
 
 console.log(`[meetcat] version updated to ${nextVersion}`);
