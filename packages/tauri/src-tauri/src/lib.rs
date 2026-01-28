@@ -331,7 +331,7 @@ fn setup_new_window_handler(app: &AppHandle) {
             // Wait for page to be ready
             tokio::time::sleep(Duration::from_millis(2000)).await;
 
-            // Request media permissions first
+            // Request media permissions
             if let Err(e) = window_clone.eval(REQUEST_MEDIA_SCRIPT) {
                 eprintln!("Failed to request media permissions: {}", e);
             }
