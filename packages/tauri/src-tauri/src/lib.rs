@@ -18,10 +18,6 @@ use tauri::webview::PageLoadEvent;
 use tauri_plugin_notification::NotificationExt;
 use tauri::async_runtime::JoinHandle;
 
-/// Safari User-Agent string (macOS WebView uses WebKit like Safari)
-#[allow(dead_code)]
-const SAFARI_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15";
-
 /// Application state shared across commands
 pub struct AppState {
     pub settings: Mutex<Settings>,
