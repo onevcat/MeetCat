@@ -11,7 +11,10 @@ use daemon::{DaemonState, Meeting};
 use settings::Settings;
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Listener, Manager, State, WebviewWindowBuilder, WebviewUrl};
+use tauri::{
+    AppHandle, Emitter, Listener, Manager, State, WebviewWindowBuilder, WebviewUrl,
+};
+use tauri::webview::PageLoadEvent;
 use tauri_plugin_notification::NotificationExt;
 use tauri::async_runtime::JoinHandle;
 
@@ -445,6 +448,38 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
+        .on_page_load(|webview, payload| {
+            if payload.event() != PageLoadEvent::Finished {
+                return;
+            }
+
+            if webview.label() != "main" {
+                return;
+            }
+
+            let url = payload.url();
+            if url.host_str() != Some("meet.google.com") {
+                return;
+            }
+
+            let webview = webview.clone();
+            let url_str = url.to_string();
+
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+
+                if let Err(e) = webview.eval(INTERCEPT_SCRIPT) {
+                    eprintln!("Failed to inject intercept script: {}", e);
+                }
+
+                let script = get_inject_script();
+                if let Err(e) = webview.eval(script) {
+                    eprintln!("Failed to inject MeetCat script: {}", e);
+                } else {
+                    println!("[MeetCat] Script injected on page load: {}", url_str);
+                }
+            });
+        })
         .setup(|app| {
             // Set up system tray
             tray::setup_tray(app)?;
