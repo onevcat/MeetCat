@@ -5,6 +5,16 @@ import type { ExtensionStatus, GetSettingsMessage, UpdateSettingsMessage, GetSta
 
 const STORAGE_KEY = "meetcat_settings";
 
+function getExtensionVersion(): string | null {
+  try {
+    if (typeof chrome === "undefined") return null;
+    if (!chrome.runtime?.getManifest) return null;
+    return chrome.runtime.getManifest().version || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Reusable number input with validation on blur
  */
@@ -138,6 +148,7 @@ export function Popup() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState<ExtensionStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const version = getExtensionVersion();
 
   // Load settings and status
   useEffect(() => {
@@ -335,7 +346,7 @@ export function Popup() {
       </div>
 
       <div className="popup-footer">
-        MeetCat v0.0.1
+        {version ? `MeetCat v${version}` : "MeetCat"}
       </div>
     </div>
   );

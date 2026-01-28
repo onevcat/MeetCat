@@ -15,6 +15,7 @@ const chromeMock = {
   },
   runtime: {
     sendMessage: vi.fn().mockResolvedValue({}),
+    getManifest: vi.fn().mockReturnValue({ version: "0.0.1" }),
     onMessage: {
       addListener: vi.fn(),
       removeListener: vi.fn(),
