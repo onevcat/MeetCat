@@ -50,3 +50,6 @@ export {
   ensureStyles,
   createOverlayStyles,
 } from "./ui/index.js";
+
+// Re-export auto-join helpers
+export { appendAutoJoinParam, hasAutoJoinParam } from "./auto-join.js";

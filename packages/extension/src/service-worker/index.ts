@@ -8,7 +8,7 @@
  * - Coordinate between content scripts and popup
  */
 
-import { createSchedulerLogic, type Meeting } from "@meetcat/core";
+import { appendAutoJoinParam, createSchedulerLogic, type Meeting } from "@meetcat/core";
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 import type { ExtensionMessage, ExtensionStatus } from "../types.js";
 
@@ -89,18 +89,19 @@ async function saveSettings(settings: Partial<Settings>): Promise<void> {
  */
 async function openMeeting(meeting: Meeting): Promise<void> {
   const openInNewTab = state.settings.extension?.openInNewTab ?? true;
+  const meetingUrl = appendAutoJoinParam(meeting.url);
 
   let tab: chrome.tabs.Tab;
 
   if (openInNewTab) {
-    tab = await chrome.tabs.create({ url: meeting.url, active: true });
+    tab = await chrome.tabs.create({ url: meetingUrl, active: true });
   } else {
     // Find an existing Meet tab or create new
     const tabs = await chrome.tabs.query({ url: "https://meet.google.com/*" });
     if (tabs.length > 0 && tabs[0].id) {
-      tab = await chrome.tabs.update(tabs[0].id, { url: meeting.url, active: true });
+      tab = await chrome.tabs.update(tabs[0].id, { url: meetingUrl, active: true });
     } else {
-      tab = await chrome.tabs.create({ url: meeting.url, active: true });
+      tab = await chrome.tabs.create({ url: meetingUrl, active: true });
     }
   }
 

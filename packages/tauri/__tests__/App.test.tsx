@@ -120,6 +120,60 @@ describe("App", () => {
     });
   });
 
+  it("should default joinBeforeMinutes to 0 when input is invalid", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Timing")).toBeDefined();
+    });
+
+    const inputs = screen.getAllByRole("spinbutton");
+    const joinBeforeInput = inputs[0];
+    fireEvent.change(joinBeforeInput, { target: { value: "invalid" } });
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ joinBeforeMinutes: 0 }),
+      });
+    });
+  });
+
+  it("should update joinCountdownSeconds when input changes", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Timing")).toBeDefined();
+    });
+
+    const inputs = screen.getAllByRole("spinbutton");
+    const countdownInput = inputs[1];
+    fireEvent.change(countdownInput, { target: { value: "15" } });
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ joinCountdownSeconds: 15 }),
+      });
+    });
+  });
+
+  it("should default joinCountdownSeconds to 0 when input is invalid", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Timing")).toBeDefined();
+    });
+
+    const inputs = screen.getAllByRole("spinbutton");
+    const countdownInput = inputs[1];
+    fireEvent.change(countdownInput, { target: { value: "invalid" } });
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ joinCountdownSeconds: 0 }),
+      });
+    });
+  });
+
   it("should clamp joinBeforeMinutes to valid range", async () => {
     render(<App />);
 
@@ -309,6 +363,61 @@ describe("App", () => {
     });
   });
 
+  it("should use defaults when tauri settings are missing", async () => {
+    mockInvoke.mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      tauri: undefined,
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      const runInBackground = screen.getByLabelText(
+        "Keep running when window is closed"
+      ) as HTMLInputElement;
+      const startAtLogin = screen.getByLabelText(
+        "Start at login"
+      ) as HTMLInputElement;
+
+      expect(runInBackground.checked).toBe(true);
+      expect(startAtLogin.checked).toBe(false);
+    });
+  });
+
+  it("should update showCountdownOverlay setting", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Join Behavior")).toBeDefined();
+    });
+
+    const checkbox = screen.getByLabelText("Show countdown overlay");
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ showCountdownOverlay: false }),
+      });
+    });
+  });
+
+  it("should update showNotifications setting", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Join Behavior")).toBeDefined();
+    });
+
+    const checkbox = screen.getByLabelText("Show notifications");
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ showNotifications: false }),
+      });
+    });
+  });
+
   it("should handle settings loading error gracefully", async () => {
     mockInvoke.mockRejectedValue(new Error("Load error"));
 
@@ -317,6 +426,38 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("MeetCat Settings")).toBeDefined();
     });
+  });
+
+  it("should handle save settings error gracefully", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") {
+        return Promise.resolve(defaultSettings);
+      }
+      if (cmd === "save_settings") {
+        return Promise.reject(new Error("Save error"));
+      }
+      return Promise.resolve(defaultSettings);
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Join Behavior")).toBeDefined();
+    });
+
+    const checkbox = screen.getByLabelText("Automatically click join button");
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Failed to save settings:",
+        expect.any(Error)
+      );
+    });
+
+    errorSpy.mockRestore();
   });
 
   it("should listen for settings_changed event", async () => {

@@ -5,7 +5,7 @@ import type { ExtensionStatus, GetSettingsMessage, UpdateSettingsMessage, GetSta
 
 const STORAGE_KEY = "meetcat_settings";
 
-function getExtensionVersion(): string | null {
+export function getExtensionVersion(): string | null {
   try {
     if (typeof chrome === "undefined") return null;
     if (!chrome.runtime?.getManifest) return null;

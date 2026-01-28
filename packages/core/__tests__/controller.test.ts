@@ -30,6 +30,13 @@ describe("Controller - Media Buttons", () => {
     return button;
   }
 
+  function createUnknownMediaButton(): HTMLElement {
+    const button = document.createElement("div");
+    button.setAttribute("role", "button");
+    button.setAttribute("data-is-muted", "");
+    return button;
+  }
+
   describe("findMediaButtons", () => {
     it("should find mic and camera buttons", () => {
       const micBtn = createMediaButton(true);
@@ -114,6 +121,18 @@ describe("Controller - Media Buttons", () => {
       expect(result.success).toBe(false);
       expect(result.changed).toBe(false);
     });
+
+    it("should return failure when muted state cannot be determined", () => {
+      const micBtn = createUnknownMediaButton();
+      const camBtn = createMediaButton(true);
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      const result = setMicState(document, true);
+
+      expect(result.success).toBe(false);
+      expect(result.changed).toBe(false);
+    });
   });
 
   describe("setCameraState", () => {
@@ -130,6 +149,40 @@ describe("Controller - Media Buttons", () => {
       expect(result.success).toBe(true);
       expect(result.changed).toBe(true);
       expect(clickSpy).toHaveBeenCalled();
+    });
+
+    it("should not click when camera already in desired state", () => {
+      const micBtn = createMediaButton(true);
+      const camBtn = createMediaButton(false); // on
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      const clickSpy = vi.spyOn(camBtn, "click");
+
+      const result = setCameraState(document, true); // want on
+
+      expect(result.success).toBe(true);
+      expect(result.changed).toBe(false);
+      expect(clickSpy).not.toHaveBeenCalled();
+    });
+
+    it("should return failure when camera button not found", () => {
+      const result = setCameraState(document, true);
+
+      expect(result.success).toBe(false);
+      expect(result.changed).toBe(false);
+    });
+
+    it("should return failure when muted state cannot be determined", () => {
+      const micBtn = createMediaButton(true);
+      const camBtn = createUnknownMediaButton();
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      const result = setCameraState(document, true);
+
+      expect(result.success).toBe(false);
+      expect(result.changed).toBe(false);
     });
   });
 });
@@ -199,6 +252,17 @@ describe("Controller - Join Button", () => {
       expect(result.button).toBe(button);
       expect(result.matchedText).toBe("Join now");
     });
+
+    it("should handle button with empty text", () => {
+      const button = createJoinButton("");
+      button.textContent = null;
+      document.body.appendChild(button);
+
+      const result = findJoinButton(document);
+
+      expect(result.button).toBeNull();
+      expect(result.matchedText).toBeNull();
+    });
   });
 
   describe("clickJoinButton", () => {
@@ -217,6 +281,40 @@ describe("Controller - Join Button", () => {
     it("should return false when button not found", () => {
       const result = clickJoinButton(document);
       expect(result).toBe(false);
+    });
+
+    it("should ignore MouseEvent errors", () => {
+      const button = createJoinButton("Join now");
+      document.body.appendChild(button);
+
+      const clickSpy = vi.spyOn(button, "click");
+      const originalMouseEvent = globalThis.MouseEvent;
+      globalThis.MouseEvent = class {
+        constructor() {
+          throw new Error("Boom");
+        }
+      } as typeof MouseEvent;
+
+      const result = clickJoinButton(document);
+
+      expect(result).toBe(true);
+      expect(clickSpy).toHaveBeenCalled();
+
+      globalThis.MouseEvent = originalMouseEvent;
+    });
+
+    it("should handle container without ownerDocument", () => {
+      const button = createJoinButton("Join now");
+      const container = {
+        querySelectorAll: () => [button],
+      } as unknown as Document;
+
+      const clickSpy = vi.spyOn(button, "click");
+
+      const result = clickJoinButton(container);
+
+      expect(result).toBe(true);
+      expect(clickSpy).toHaveBeenCalled();
     });
   });
 

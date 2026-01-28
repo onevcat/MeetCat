@@ -15,6 +15,7 @@ import {
   getMeetingCodeFromPath,
   createJoinCountdown,
   type JoinCountdown,
+  hasAutoJoinParam,
 } from "@meetcat/core";
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 
@@ -167,10 +168,17 @@ async function init(): Promise<void> {
 
   await loadSettings();
 
+  const isAutoJoinRequested = hasAutoJoinParam(window.location.href);
+
   // Wait for media buttons and apply settings
   waitForMediaButtons(() => {
     if (!state.mediaApplied) {
       state.mediaApplied = applyMediaSettings();
+    }
+
+    if (!isAutoJoinRequested) {
+      console.log("[MeetCat] Skip auto-join: meeting not opened by MeetCat");
+      return;
     }
 
     // Start countdown if overlay is enabled

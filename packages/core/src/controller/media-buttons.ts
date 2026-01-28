@@ -28,7 +28,9 @@ export function findMediaButtons(container: Document | Element): MediaButtons {
  */
 export function isMuted(button: Element | null): boolean | null {
   if (!button) return null;
-  return (button as HTMLElement).dataset.isMuted === "true";
+  const value = (button as HTMLElement).dataset.isMuted;
+  if (value === undefined || value === "") return null;
+  return value === "true";
 }
 
 /**

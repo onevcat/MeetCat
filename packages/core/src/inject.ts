@@ -28,6 +28,7 @@ import {
   type HomepageOverlay,
   type JoinCountdown,
 } from "./ui/index.js";
+import { appendAutoJoinParam, hasAutoJoinParam } from "./auto-join.js";
 import {
   isTauriEnvironment,
   reportMeetings,
@@ -248,7 +249,7 @@ function handleNavigateAndJoin(cmd: NavigateAndJoinCommand): void {
   settings = cmd.settings;
 
   // Navigate to meeting URL
-  location.href = cmd.url;
+  location.href = appendAutoJoinParam(cmd.url);
 }
 
 /**
@@ -257,12 +258,18 @@ function handleNavigateAndJoin(cmd: NavigateAndJoinCommand): void {
 async function initMeetingPage(): Promise<void> {
   const meetingCode = getMeetingCodeFromPath(location.pathname);
   console.log("[MeetCat] Initializing meeting page:", meetingCode);
+  const isAutoJoinRequested = hasAutoJoinParam(location.href);
 
   // Wait for media buttons to appear
   await waitForMediaButtons();
 
   // Apply media settings
   applyMediaSettings();
+
+  if (!isAutoJoinRequested) {
+    console.log("[MeetCat] Skip auto-join: meeting not opened by MeetCat");
+    return;
+  }
 
   // Start join countdown if enabled
   if (settings?.autoClickJoin && settings?.showCountdownOverlay) {

@@ -14,6 +14,7 @@
     "dev:tauri": "bash scripts/app.sh",
     "version:set": "node scripts/set-version.mjs",
     "test": "pnpm -r test && pnpm --filter @meetcat/tauri test:rust",
+    "test:coverage": "pnpm -r test:coverage && pnpm --filter @meetcat/tauri test:rust",
     "test:core": "pnpm --filter @meetcat/core test",
     "test:settings": "pnpm --filter @meetcat/settings test",
     "test:extension": "pnpm --filter @meetcat/extension test",

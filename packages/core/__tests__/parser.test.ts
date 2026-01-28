@@ -97,6 +97,46 @@ describe("Parser", () => {
       expect(meeting).not.toBeNull();
       expect(meeting!.startsInMinutes).toBe(-10);
     });
+
+    it("should return null for invalid begin/end timestamps", () => {
+      const now = Date.now();
+      const card = document.createElement("div");
+      card.setAttribute("data-call-id", "abc-defg-hij");
+      card.setAttribute("data-begin-time", "not-a-number");
+      card.setAttribute("data-end-time", (now + 60 * 60 * 1000).toString());
+
+      const meeting = parseMeetingCard(card, now);
+
+      expect(meeting).toBeNull();
+    });
+
+    it("should use aria-label title when title element is missing", () => {
+      const now = Date.now();
+      const card = document.createElement("div");
+      card.setAttribute("data-call-id", "abc-defg-hij");
+      card.setAttribute("data-begin-time", (now + 5 * 60 * 1000).toString());
+      card.setAttribute("data-end-time", (now + 65 * 60 * 1000).toString());
+      card.setAttribute("aria-label", "10:00。From Aria Label");
+
+      const meeting = parseMeetingCard(card, now);
+
+      expect(meeting).not.toBeNull();
+      expect(meeting!.title).toBe("From Aria Label");
+    });
+
+    it("should fall back to Unknown title when no title is available", () => {
+      const now = Date.now();
+      const card = document.createElement("div");
+      card.setAttribute("data-call-id", "abc-defg-hij");
+      card.setAttribute("data-begin-time", (now + 5 * 60 * 1000).toString());
+      card.setAttribute("data-end-time", (now + 65 * 60 * 1000).toString());
+      card.setAttribute("aria-label", "No separator");
+
+      const meeting = parseMeetingCard(card, now);
+
+      expect(meeting).not.toBeNull();
+      expect(meeting!.title).toBe("Unknown");
+    });
   });
 
   describe("parseMeetingCards", () => {
