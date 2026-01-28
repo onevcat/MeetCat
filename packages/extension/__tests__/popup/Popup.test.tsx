@@ -165,7 +165,7 @@ describe("Popup", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("MeetCat v0.0.1")).toBeDefined();
+      expect(screen.getByText(/MeetCat v\\d+\\.\\d+\\.\\d+/)).toBeDefined();
     });
   });
 
