@@ -335,7 +335,7 @@ export function Popup() {
       </div>
 
       <div className="popup-footer">
-        MeetCat v0.1.0
+        MeetCat v0.0.1
       </div>
     </div>
   );
