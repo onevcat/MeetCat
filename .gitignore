@@ -36,7 +36,7 @@ coverage/
 # --- Tauri / Rust ---
 target/
 packages/tauri/src-tauri/target/
+packages/tauri/src-tauri/gen/
 
 # --- Tauri bundler outputs ---
 packages/tauri/src-tauri/.tauri/
-
