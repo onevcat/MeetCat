@@ -10,13 +10,11 @@
     "app": "bash scripts/app.sh",
     "dev:extension": "pnpm --filter @meetcat/extension dev",
     "dev:tauri": "pnpm --filter @meetcat/core build && pnpm --filter @meetcat/tauri tauri dev",
-    "dev:tauri:bootstrap": "bash scripts/dev-tauri.sh",
     "build:tauri": "pnpm --filter @meetcat/core build && pnpm --filter @meetcat/tauri build:tauri",
     "test": "pnpm -r test && pnpm --filter @meetcat/tauri test:rust",
     "test:unit": "pnpm --filter @meetcat/core test",
     "test:coverage": "pnpm -r test:coverage",
     "test:e2e": "pnpm --filter @meetcat/extension test:e2e",
-    "lint": "pnpm -r lint",
     "clean": "pnpm -r clean",
     "clean:all": "pnpm -r clean && rm -rf node_modules .turbo packages/tauri/src-tauri/target && find packages -name node_modules -type d -prune -exec rm -rf {} +"
   },
