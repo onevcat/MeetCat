@@ -19,6 +19,8 @@ export const ExtensionSettingsSchema = z.object({
 export const TauriSettingsSchema = z.object({
   /** Run in background when window is closed (default: true) */
   runInBackground: z.boolean().default(true),
+  /** Hide the app instead of quitting when pressing Command-Q (default: true) */
+  quitToHide: z.boolean().default(true),
   /** Start app at system login (default: false) */
   startAtLogin: z.boolean().default(false),
   /** Show system tray icon (default: true) */

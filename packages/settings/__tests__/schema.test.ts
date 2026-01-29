@@ -137,7 +137,12 @@ describe("Settings", () => {
 
     it("should accept tauri settings", () => {
       const result = SettingsSchema.safeParse({
-        tauri: { runInBackground: true, startAtLogin: true, showTrayIcon: true },
+        tauri: {
+          runInBackground: true,
+          quitToHide: true,
+          startAtLogin: true,
+          showTrayIcon: true,
+        },
       });
       expect(result.success).toBe(true);
     });

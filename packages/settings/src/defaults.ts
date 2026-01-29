@@ -34,6 +34,7 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
  */
 export const DEFAULT_TAURI_SETTINGS: TauriSettings = {
   runInBackground: true,
+  quitToHide: true,
   startAtLogin: false,
   showTrayIcon: true,
 };

@@ -22,6 +22,7 @@ export interface TauriSettings {
   showCountdownOverlay: boolean;
   tauri?: {
     runInBackground: boolean;
+    quitToHide: boolean;
     startAtLogin: boolean;
     showTrayIcon: boolean;
   };

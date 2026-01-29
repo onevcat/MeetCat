@@ -319,6 +319,32 @@ export function App() {
             <div className="form-checkbox-group">
               <input
                 type="checkbox"
+                id="quitToHide"
+                className="form-checkbox"
+                checked={settings.tauri?.quitToHide ?? true}
+                onChange={(e) =>
+                  updateSettings({
+                    tauri: {
+                      ...settings.tauri,
+                      ...DEFAULT_TAURI_SETTINGS,
+                      quitToHide: e.target.checked,
+                    },
+                  })
+                }
+              />
+              <label htmlFor="quitToHide" className="form-checkbox-label">
+                Hide app instead of quitting when pressing Command-Q
+              </label>
+            </div>
+            <p className="form-hint">
+              Disable to let Command-Q quit the app
+            </p>
+          </div>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
                 id="startAtLogin"
                 className="form-checkbox"
                 checked={settings.tauri?.startAtLogin ?? false}

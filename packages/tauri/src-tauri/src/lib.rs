@@ -9,11 +9,14 @@ mod tray;
 
 use daemon::{DaemonState, Meeting};
 use settings::Settings;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{
     AppHandle, Emitter, Listener, Manager, State, WebviewWindowBuilder, WebviewUrl,
 };
+#[cfg(target_os = "macos")]
+use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri_plugin_notification::NotificationExt;
 use tauri::async_runtime::JoinHandle;
@@ -24,6 +27,7 @@ pub struct AppState {
     pub daemon: Mutex<DaemonState>,
     /// Handle to cancel the current join trigger timer
     pub join_trigger_handle: Mutex<Option<JoinHandle<()>>>,
+    pub exit_requested: AtomicBool,
 }
 
 impl Default for AppState {
@@ -32,6 +36,7 @@ impl Default for AppState {
             settings: Mutex::new(Settings::load().unwrap_or_default()),
             daemon: Mutex::new(DaemonState::default()),
             join_trigger_handle: Mutex::new(None),
+            exit_requested: AtomicBool::new(false),
         }
     }
 }
@@ -42,6 +47,21 @@ pub struct AppStatus {
     enabled: bool,
     next_meeting: Option<Meeting>,
     meetings: Vec<Meeting>,
+}
+
+fn should_hide_on_quit(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|state| {
+            state
+                .settings
+                .lock()
+                .unwrap()
+                .tauri
+                .as_ref()
+                .map(|tauri| tauri.quit_to_hide)
+                .unwrap_or(true)
+        })
+        .unwrap_or(true)
 }
 
 // =============================================================================
@@ -141,6 +161,12 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
                 let mut daemon = state.daemon.lock().unwrap();
                 daemon.mark_joined(&call_id);
                 println!("[MeetCat] Marked meeting as triggered: {}", call_id);
+            }
+
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
             }
 
             // Emit navigate-and-join command to WebView
@@ -470,6 +496,74 @@ pub fn run() {
             // Set up system tray
             tray::setup_tray(app)?;
 
+            #[cfg(target_os = "macos")]
+            {
+                let app_name = app.package_info().name.clone();
+                let quit_item = MenuItem::with_id(
+                    app,
+                    "app-quit",
+                    format!("Quit {}", app_name),
+                    true,
+                    Some("Cmd+Q"),
+                )?;
+
+                let app_menu = SubmenuBuilder::with_id(app, "app", &app_name)
+                    .about(None)
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .item(&quit_item)
+                    .build()?;
+
+                let edit_menu = SubmenuBuilder::new(app, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .separator()
+                    .select_all()
+                    .build()?;
+
+                let view_menu = SubmenuBuilder::new(app, "View")
+                    .fullscreen()
+                    .build()?;
+
+                let window_menu = SubmenuBuilder::new(app, "Window")
+                    .minimize()
+                    .maximize()
+                    .separator()
+                    .close_window()
+                    .build()?;
+
+                let menu = MenuBuilder::new(app)
+                    .item(&app_menu)
+                    .item(&edit_menu)
+                    .item(&view_menu)
+                    .item(&window_menu)
+                    .build()?;
+
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, event| {
+                    if event.id().as_ref() == "app-quit" {
+                        if should_hide_on_quit(app) {
+                            let _ = app.hide();
+                            return;
+                        }
+
+                        if let Some(state) = app.try_state::<AppState>() {
+                            state.exit_requested.store(true, Ordering::SeqCst);
+                        }
+                        app.exit(0);
+                    }
+                });
+            }
+
             // Set up script injection
             setup_script_injection(app.handle());
 
@@ -535,12 +629,29 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Reopen { .. } = event {
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::Reopen { .. } => {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.show();
+                    let _ = window.unminimize();
                     let _ = window.set_focus();
                 }
             }
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                let allow_exit = app_handle
+                    .try_state::<AppState>()
+                    .map(|state| state.exit_requested.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+
+                if allow_exit || !should_hide_on_quit(app_handle) {
+                    return;
+                }
+
+                api.prevent_exit();
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+            _ => {}
         });
 }

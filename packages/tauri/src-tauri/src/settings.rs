@@ -33,6 +33,9 @@ pub struct TauriSettings {
     #[serde(default = "default_true")]
     pub run_in_background: bool,
 
+    #[serde(default = "default_true")]
+    pub quit_to_hide: bool,
+
     #[serde(default)]
     pub start_at_login: bool,
 
@@ -44,6 +47,7 @@ impl Default for TauriSettings {
     fn default() -> Self {
         Self {
             run_in_background: true,
+            quit_to_hide: true,
             start_at_login: false,
             show_tray_icon: true,
         }
@@ -180,6 +184,7 @@ mod tests {
     fn test_default_tauri_settings() {
         let tauri_settings = TauriSettings::default();
         assert!(tauri_settings.run_in_background);
+        assert!(tauri_settings.quit_to_hide);
         assert!(!tauri_settings.start_at_login);
         assert!(tauri_settings.show_tray_icon);
     }
@@ -235,6 +240,7 @@ mod tests {
         let json = r#"{
             "tauri": {
                 "runInBackground": false,
+                "quitToHide": false,
                 "startAtLogin": true,
                 "showTrayIcon": true
             }
@@ -243,6 +249,7 @@ mod tests {
 
         let tauri = settings.tauri.unwrap();
         assert!(!tauri.run_in_background);
+        assert!(!tauri.quit_to_hide);
         assert!(tauri.start_at_login);
         assert!(tauri.show_tray_icon);
     }
@@ -268,6 +275,7 @@ mod tests {
         let json = serde_json::to_string(&tauri_settings).unwrap();
 
         assert!(json.contains("runInBackground"));
+        assert!(json.contains("quitToHide"));
         assert!(json.contains("startAtLogin"));
         assert!(json.contains("showTrayIcon"));
     }

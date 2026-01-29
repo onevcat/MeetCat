@@ -1,11 +1,13 @@
 //! System tray functionality
 
 use crate::daemon::Meeting;
+use crate::AppState;
 use tauri::{
     menu::{MenuBuilder, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
     App, AppHandle, Manager,
 };
+use std::sync::atomic::Ordering;
 
 /// Tray icon ID
 const TRAY_ID: &str = "meetcat-tray";
@@ -27,12 +29,22 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         .item(&quit)
         .build()?;
 
+    let tray_icon_bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/icons/tray-icon.png"
+    ));
+    let tray_icon = tauri::image::Image::from_bytes(tray_icon_bytes)?;
+
     let _tray = TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(tray_icon)
+        .icon_as_template(false)
         .menu(&menu)
         .tooltip("MeetCat - Auto-join Google Meet")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.exit_requested.store(true, Ordering::SeqCst);
+                }
                 app.exit(0);
             }
             "show" => {
