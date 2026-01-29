@@ -357,36 +357,26 @@ const INTERCEPT_SCRIPT: &str = r#"
     if (window.__meetcatInterceptInstalled) return;
     window.__meetcatInterceptInstalled = true;
 
-    // Intercept target="_blank" links
     document.addEventListener('click', function(e) {
         const link = e.target.closest('a[target="_blank"], a[target="blank"]');
         if (link && link.href) {
-            try {
-                const url = new URL(link.href);
-                if (url.hostname.endsWith('google.com') || url.hostname.endsWith('google.com.hk')) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.location.href = link.href;
-                }
-            } catch (ex) {}
+            e.preventDefault();
+            e.stopPropagation();
+            window.location.href = link.href;
         }
     }, true);
 
-    // Override window.open for Google domains
     const originalOpen = window.open;
     window.open = function(url, target, features) {
         if (url) {
             try {
                 const parsedUrl = new URL(url, window.location.origin);
-                if (parsedUrl.hostname.endsWith('google.com') || parsedUrl.hostname.endsWith('google.com.hk')) {
-                    window.location.href = parsedUrl.href;
-                    return null;
-                }
+                window.location.href = parsedUrl.href;
+                return null;
             } catch (e) {}
         }
         return originalOpen.call(window, url, target, features);
     };
-
     console.log('[MeetCat] Intercept script installed');
 })();
 "#;
@@ -441,7 +431,6 @@ fn setup_navigation_injection(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(AppState::default())
@@ -486,6 +475,34 @@ pub fn run() {
 
             // Set up navigation injection
             setup_navigation_injection(app.handle());
+
+            // Create main window with a custom new-window handler
+            let main_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "Missing main window config",
+                    )
+                })?;
+
+            let app_handle = app.handle().clone();
+            WebviewWindowBuilder::from_config(app.handle(), main_config)?
+                .on_new_window(move |url, features| {
+                    if matches!(url.scheme(), "http" | "https") {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.navigate(url.clone());
+                        }
+                    }
+
+                    let _ = features;
+                    tauri::webview::NewWindowResponse::Deny
+                })
+                .build()?;
 
             // Set up window lifecycle
             setup_window_lifecycle(app.handle());

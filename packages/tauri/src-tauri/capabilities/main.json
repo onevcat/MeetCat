@@ -15,8 +15,6 @@
     "core:webview:allow-webview-position",
     "core:webview:allow-webview-size",
     "core:app:default",
-    "shell:default",
-    "shell:allow-open",
     "notification:default",
     "notification:allow-notify",
     "notification:allow-show",
