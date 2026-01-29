@@ -270,10 +270,10 @@ export function Popup() {
               onChange={(e) => updateSettings({ showCountdownOverlay: e.target.checked })}
             />
             <label htmlFor="showCountdownOverlay" className="popup-checkbox-label">
-              Countdown overlay
+              Homepage overlay
             </label>
           </div>
-          <div className="popup-hint">Show overlay on Meet pages</div>
+          <div className="popup-hint">Show next meeting overlay on Meet homepage</div>
         </div>
       </div>
 

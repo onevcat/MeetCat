@@ -59,7 +59,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("General")).toBeDefined();
       expect(screen.getByText("Auto-click join")).toBeDefined();
-      expect(screen.getByText("Countdown overlay")).toBeDefined();
+      expect(screen.getByText("Homepage overlay")).toBeDefined();
       expect(screen.getByText("Notifications")).toBeDefined();
     });
   });
@@ -422,7 +422,7 @@ describe("App", () => {
       expect(screen.getByText("General")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Countdown overlay");
+    const checkbox = screen.getByLabelText("Homepage overlay");
     fireEvent.click(checkbox);
 
     await waitFor(() => {

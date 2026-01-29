@@ -272,19 +272,9 @@ async function initMeetingPage(): Promise<void> {
     return;
   }
 
-  // Start join countdown if enabled
-  if (settings?.autoClickJoin && settings?.showCountdownOverlay) {
+  // Start join countdown for auto-join (UI always shown on meeting page)
+  if (settings?.autoClickJoin) {
     startJoinCountdown();
-  } else if (settings?.autoClickJoin) {
-    // No overlay, just wait and join
-    const seconds = settings?.joinCountdownSeconds ?? SETTINGS_DEFAULTS.joinCountdownSeconds;
-    if (seconds <= 0) {
-      performJoin();
-      return;
-    }
-    setTimeout(() => {
-      performJoin();
-    }, seconds * 1000);
   }
 }
 

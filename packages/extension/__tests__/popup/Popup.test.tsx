@@ -218,7 +218,7 @@ describe("Popup", () => {
       expect(screen.getByText("General")).toBeDefined();
     });
 
-    const overlayCheckbox = screen.getByLabelText("Countdown overlay");
+    const overlayCheckbox = screen.getByLabelText("Homepage overlay");
     const notificationsCheckbox = screen.getByLabelText("Notifications");
 
     fireEvent.click(overlayCheckbox);

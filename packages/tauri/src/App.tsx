@@ -210,7 +210,7 @@ export function App() {
   return (
     <div className="settings-window">
       <header className="settings-header">
-        <img className="settings-icon" src="/icons/icon128.png" alt="MeetCat" />
+        <img className="settings-icon" src="/icons/icon-color.png" alt="MeetCat" />
         <h1>MeetCat Settings</h1>
       </header>
 
@@ -313,10 +313,10 @@ export function App() {
                 htmlFor="showCountdownOverlay"
                 className="form-checkbox-label"
               >
-                Countdown overlay
+                Homepage overlay
               </label>
             </div>
-            <p className="form-hint">Show overlay on Meet pages</p>
+            <p className="form-hint">Show next meeting overlay on Meet homepage</p>
           </div>
         </section>
 

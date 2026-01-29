@@ -181,12 +181,9 @@ async function init(): Promise<void> {
       return;
     }
 
-    // Start countdown if overlay is enabled
-    if (state.settings.showCountdownOverlay) {
+    // Start countdown for auto-join (UI always shown on meeting page)
+    if (state.settings.autoClickJoin) {
       startJoinCountdown();
-    } else if (state.settings.autoClickJoin) {
-      // No overlay, join after a short delay
-      setTimeout(performJoin, state.settings.joinCountdownSeconds * 1000);
     }
   });
 }

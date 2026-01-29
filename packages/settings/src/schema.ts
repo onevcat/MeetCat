@@ -111,7 +111,7 @@ export const SettingsSchema = z.object({
   // UI
   /** Show desktop notifications */
   showNotifications: z.boolean().default(DEFAULTS.showNotifications),
-  /** Show countdown overlay on Google Meet pages */
+  /** Show next meeting overlay on Google Meet homepage */
   showCountdownOverlay: z.boolean().default(DEFAULTS.showCountdownOverlay),
 
   // Platform-specific
