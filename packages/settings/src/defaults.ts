@@ -37,6 +37,8 @@ export const DEFAULT_TAURI_SETTINGS: TauriSettings = {
   quitToHide: true,
   startAtLogin: false,
   showTrayIcon: true,
+  trayDisplayMode: "iconOnly",
+  trayShowMeetingTitle: false,
 };
 
 /**

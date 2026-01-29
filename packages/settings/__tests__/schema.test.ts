@@ -51,6 +51,8 @@ describe("Settings", () => {
         expect(result.data.runInBackground).toBe(true);
         expect(result.data.startAtLogin).toBe(false);
         expect(result.data.showTrayIcon).toBe(true);
+        expect(result.data.trayDisplayMode).toBe("iconOnly");
+        expect(result.data.trayShowMeetingTitle).toBe(false);
       }
     });
 
@@ -59,12 +61,16 @@ describe("Settings", () => {
         runInBackground: false,
         startAtLogin: true,
         showTrayIcon: false,
+        trayDisplayMode: "iconWithCountdown",
+        trayShowMeetingTitle: true,
       });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.runInBackground).toBe(false);
         expect(result.data.startAtLogin).toBe(true);
         expect(result.data.showTrayIcon).toBe(false);
+        expect(result.data.trayDisplayMode).toBe("iconWithCountdown");
+        expect(result.data.trayShowMeetingTitle).toBe(true);
       }
     });
   });
@@ -142,6 +148,8 @@ describe("Settings", () => {
           quitToHide: true,
           startAtLogin: true,
           showTrayIcon: true,
+          trayDisplayMode: "iconWithTime",
+          trayShowMeetingTitle: true,
         },
       });
       expect(result.success).toBe(true);

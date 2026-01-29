@@ -92,13 +92,19 @@ fn save_settings(
     state: State<AppState>,
     settings: Settings,
 ) -> Result<(), String> {
-    let mut current = state.settings.lock().unwrap();
-    *current = settings.clone();
-    current.save().map_err(|e| e.to_string())?;
+    {
+        let mut current = state.settings.lock().unwrap();
+        *current = settings.clone();
+        current.save().map_err(|e| e.to_string())?;
+    }
 
     // Notify WebView of settings change
     app.emit("settings_changed", &settings)
         .map_err(|e| e.to_string())?;
+
+    // Refresh tray display with new settings
+    let next_meeting = state.daemon.lock().unwrap().get_next_meeting();
+    tray::update_tray_status(&app, next_meeting.as_ref());
 
     Ok(())
 }
@@ -200,12 +206,8 @@ fn meetings_updated(app: AppHandle, state: State<AppState>, meetings: Vec<Meetin
     schedule_join_trigger(&app, &state);
 
     // Update tray with next meeting info
-    let daemon = state.daemon.lock().unwrap();
-    if let Some(next) = daemon.get_next_meeting() {
-        tray::update_tray_status(&app, Some(&next));
-    } else {
-        tray::update_tray_status(&app, None);
-    }
+    let next_meeting = state.daemon.lock().unwrap().get_next_meeting();
+    tray::update_tray_status(&app, next_meeting.as_ref());
 }
 
 /// Mark a meeting as joined
@@ -459,6 +461,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::AppleScript,
+            None,
+        ))
         .manage(AppState::default())
         .on_page_load(|webview, payload| {
             if payload.event() != PageLoadEvent::Finished {

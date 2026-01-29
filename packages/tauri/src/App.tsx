@@ -1,8 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  enable as enableAutostart,
+  disable as disableAutostart,
+  isEnabled as isAutostartEnabled,
+} from "@tauri-apps/plugin-autostart";
 import type { Settings, MediaState } from "@meetcat/settings";
 import { DEFAULT_SETTINGS, DEFAULT_TAURI_SETTINGS } from "@meetcat/settings";
+import {
+  applyTrayDisplayModeChange,
+  canShowTrayTitle,
+  getTrayDisplayMode,
+  getTrayShowMeetingTitle,
+  type TrayDisplayMode,
+} from "./tray-settings";
 
 /**
  * Settings window for MeetCat Tauri app
@@ -21,7 +33,27 @@ export function App() {
     async function load() {
       try {
         const loadedSettings = await invoke<Settings>("get_settings");
-        setSettings(loadedSettings);
+        let resolvedSettings = loadedSettings;
+        try {
+          const systemEnabled = await isAutostartEnabled();
+          const currentEnabled =
+            loadedSettings.tauri?.startAtLogin ??
+            DEFAULT_TAURI_SETTINGS.startAtLogin;
+          if (systemEnabled != currentEnabled) {
+            resolvedSettings = {
+              ...loadedSettings,
+              tauri: {
+                ...DEFAULT_TAURI_SETTINGS,
+                ...loadedSettings.tauri,
+                startAtLogin: systemEnabled,
+              },
+            };
+            await invoke("save_settings", { settings: resolvedSettings });
+          }
+        } catch (e) {
+          console.error("Failed to sync autostart status:", e);
+        }
+        setSettings(resolvedSettings);
       } catch (e) {
         console.error("Failed to load settings:", e);
       } finally {
@@ -59,6 +91,34 @@ export function App() {
     setSettings(newSettings);
     saveSettings(newSettings);
   };
+
+  const updateStartAtLogin = async (enabled: boolean) => {
+    try {
+      const isEnabled = await isAutostartEnabled();
+      if (enabled) {
+        if (!isEnabled) {
+          await enableAutostart();
+        }
+      } else if (isEnabled) {
+        await disableAutostart();
+      }
+
+      const updated = await isAutostartEnabled();
+      updateSettings({
+        tauri: {
+          ...DEFAULT_TAURI_SETTINGS,
+          ...settings.tauri,
+          startAtLogin: updated,
+        },
+      });
+    } catch (e) {
+      console.error("Failed to update autostart:", e);
+    }
+  };
+
+  const trayDisplayMode = getTrayDisplayMode(settings);
+  const trayShowMeetingTitle = getTrayShowMeetingTitle(settings);
+  const allowTrayTitle = canShowTrayTitle(trayDisplayMode);
 
   // Add filter
   const addFilter = () => {
@@ -302,8 +362,8 @@ export function App() {
                 onChange={(e) =>
                   updateSettings({
                     tauri: {
-                      ...settings.tauri,
                       ...DEFAULT_TAURI_SETTINGS,
+                      ...settings.tauri,
                       runInBackground: e.target.checked,
                     },
                   })
@@ -325,8 +385,8 @@ export function App() {
                 onChange={(e) =>
                   updateSettings({
                     tauri: {
-                      ...settings.tauri,
                       ...DEFAULT_TAURI_SETTINGS,
+                      ...settings.tauri,
                       quitToHide: e.target.checked,
                     },
                   })
@@ -348,21 +408,68 @@ export function App() {
                 id="startAtLogin"
                 className="form-checkbox"
                 checked={settings.tauri?.startAtLogin ?? false}
-                onChange={(e) =>
-                  updateSettings({
-                    tauri: {
-                      ...settings.tauri,
-                      ...DEFAULT_TAURI_SETTINGS,
-                      startAtLogin: e.target.checked,
-                    },
-                  })
-                }
+                onChange={(e) => updateStartAtLogin(e.target.checked)}
               />
               <label htmlFor="startAtLogin" className="form-checkbox-label">
                 Start at login
               </label>
             </div>
-            <p className="form-hint">Not yet implemented</p>
+            <p className="form-hint">Launch MeetCat automatically when you log in</p>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="trayDisplayMode" className="form-label">
+              Tray display
+            </label>
+            <select
+              id="trayDisplayMode"
+              className="form-select"
+              value={trayDisplayMode}
+              onChange={(e) =>
+                updateSettings(
+                  applyTrayDisplayModeChange(
+                    settings,
+                    e.target.value as TrayDisplayMode
+                  )
+                )
+              }
+            >
+              <option value="iconOnly">Icon only</option>
+              <option value="iconWithTime">Icon + next meeting time</option>
+              <option value="iconWithCountdown">
+                Icon + countdown to next meeting
+              </option>
+            </select>
+            <p className="form-hint">
+              Shows additional text next to the tray icon when available
+            </p>
+          </div>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="trayShowMeetingTitle"
+                className="form-checkbox"
+                checked={allowTrayTitle ? trayShowMeetingTitle : false}
+                disabled={!allowTrayTitle}
+                onChange={(e) =>
+                  updateSettings({
+                    tauri: {
+                      ...DEFAULT_TAURI_SETTINGS,
+                      ...settings.tauri,
+                      trayShowMeetingTitle: e.target.checked,
+                    },
+                  })
+                }
+              />
+              <label
+                htmlFor="trayShowMeetingTitle"
+                className="form-checkbox-label"
+              >
+                Show meeting title next to tray icon
+              </label>
+            </div>
           </div>
         </section>
       </main>

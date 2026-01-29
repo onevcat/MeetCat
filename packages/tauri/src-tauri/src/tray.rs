@@ -1,6 +1,7 @@
 //! System tray functionality
 
 use crate::daemon::Meeting;
+use crate::settings::{TauriSettings, TrayDisplayMode};
 use crate::AppState;
 use tauri::{
     menu::{MenuBuilder, MenuItem, PredefinedMenuItem},
@@ -121,6 +122,14 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
 
     let _ = tray.set_tooltip(Some(&tooltip));
 
+    // Update tray title based on settings
+    let tray_settings = app
+        .try_state::<AppState>()
+        .and_then(|state| state.settings.lock().ok().and_then(|s| s.tauri.clone()))
+        .unwrap_or_default();
+    let title = build_tray_title(meeting, &tray_settings);
+    let _ = tray.set_title(Some(&title));
+
     // Rebuild menu with updated status
     let status_text = match meeting {
         Some(m) => {
@@ -166,11 +175,58 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
 
 /// Truncate title if too long
 fn truncate_title(title: &str, max_len: usize) -> String {
-    if title.len() <= max_len {
-        title.to_string()
-    } else {
-        format!("{}...", &title[..max_len - 3])
+    if max_len == 0 {
+        return String::new();
     }
+
+    let chars: Vec<char> = title.chars().collect();
+    if chars.len() <= max_len {
+        return title.to_string();
+    }
+
+    if max_len <= 3 {
+        return chars.into_iter().take(max_len).collect();
+    }
+
+    let mut truncated: String = chars.into_iter().take(max_len - 3).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+fn format_countdown(starts_in_minutes: i64) -> String {
+    if starts_in_minutes > 0 {
+        format!("in {}m", starts_in_minutes)
+    } else if starts_in_minutes == 0 {
+        "now".to_string()
+    } else {
+        format!("{}m ago", -starts_in_minutes)
+    }
+}
+
+fn build_tray_title(meeting: Option<&Meeting>, settings: &TauriSettings) -> String {
+    if matches!(settings.tray_display_mode, TrayDisplayMode::IconOnly) {
+        return String::new();
+    }
+
+    let Some(meeting) = meeting else {
+        return String::new();
+    };
+
+    let base = match settings.tray_display_mode {
+        TrayDisplayMode::IconWithTime => meeting.display_time.clone(),
+        TrayDisplayMode::IconWithCountdown => format_countdown(meeting.starts_in_minutes),
+        TrayDisplayMode::IconOnly => return String::new(),
+    };
+
+    if settings.tray_show_meeting_title {
+        let truncated = truncate_title(&meeting.title, 24);
+        if truncated.is_empty() {
+            return base;
+        }
+        return format!("{} - {}", base, truncated);
+    }
+
+    base
 }
 
 #[cfg(test)]
@@ -201,11 +257,9 @@ mod tests {
 
     #[test]
     fn test_truncate_title_with_unicode() {
-        // Note: This test may fail with multi-byte chars at boundary
-        // For now, test ASCII only as the original function uses byte indexing
-        let title = "Meeting ABC";
-        let result = truncate_title(title, 10);
-        assert_eq!(result, "Meeting...");
+        let title = "会议同步会";
+        let result = truncate_title(title, 4);
+        assert_eq!(result, "会...");
     }
 
     #[test]
@@ -213,5 +267,74 @@ mod tests {
         let title = "ABCDEFGHIJ";
         let result = truncate_title(title, 5);
         assert_eq!(result, "AB...");
+    }
+
+    #[test]
+    fn test_format_countdown() {
+        assert_eq!(format_countdown(5), "in 5m");
+        assert_eq!(format_countdown(0), "now");
+        assert_eq!(format_countdown(-3), "3m ago");
+    }
+
+    #[test]
+    fn test_build_tray_title_icon_only() {
+        let meeting = create_test_meeting("Design Sync", "10:30 AM", 5);
+        let settings = TauriSettings {
+            tray_display_mode: TrayDisplayMode::IconOnly,
+            ..TauriSettings::default()
+        };
+
+        assert_eq!(build_tray_title(Some(&meeting), &settings), "");
+    }
+
+    #[test]
+    fn test_build_tray_title_time_with_name() {
+        let meeting = create_test_meeting("Design Sync", "10:30 AM", 5);
+        let settings = TauriSettings {
+            tray_display_mode: TrayDisplayMode::IconWithTime,
+            tray_show_meeting_title: true,
+            ..TauriSettings::default()
+        };
+
+        assert_eq!(
+            build_tray_title(Some(&meeting), &settings),
+            "10:30 AM - Design Sync"
+        );
+    }
+
+    #[test]
+    fn test_build_tray_title_countdown_without_name() {
+        let meeting = create_test_meeting("Design Sync", "10:30 AM", -2);
+        let settings = TauriSettings {
+            tray_display_mode: TrayDisplayMode::IconWithCountdown,
+            tray_show_meeting_title: false,
+            ..TauriSettings::default()
+        };
+
+        assert_eq!(build_tray_title(Some(&meeting), &settings), "2m ago");
+    }
+
+    #[test]
+    fn test_build_tray_title_no_meeting() {
+        let settings = TauriSettings {
+            tray_display_mode: TrayDisplayMode::IconWithTime,
+            tray_show_meeting_title: true,
+            ..TauriSettings::default()
+        };
+
+        assert_eq!(build_tray_title(None, &settings), "");
+    }
+
+    fn create_test_meeting(title: &str, display_time: &str, starts_in_minutes: i64) -> Meeting {
+        Meeting {
+            call_id: "abc123".to_string(),
+            url: "https://meet.google.com/abc123".to_string(),
+            title: title.to_string(),
+            display_time: display_time.to_string(),
+            begin_time: chrono::Utc::now(),
+            end_time: chrono::Utc::now(),
+            event_id: None,
+            starts_in_minutes,
+        }
     }
 }

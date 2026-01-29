@@ -11,6 +11,13 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
 }));
 
+// Mock @tauri-apps/plugin-autostart
+vi.mock("@tauri-apps/plugin-autostart", () => ({
+  enable: vi.fn().mockResolvedValue(undefined),
+  disable: vi.fn().mockResolvedValue(undefined),
+  isEnabled: vi.fn().mockResolvedValue(false),
+}));
+
 // Reset mocks before each test
 beforeEach(() => {
   vi.clearAllMocks();

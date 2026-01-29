@@ -25,6 +25,8 @@ export interface TauriSettings {
     quitToHide: boolean;
     startAtLogin: boolean;
     showTrayIcon: boolean;
+    trayDisplayMode: "iconOnly" | "iconWithTime" | "iconWithCountdown";
+    trayShowMeetingTitle: boolean;
   };
 }
 

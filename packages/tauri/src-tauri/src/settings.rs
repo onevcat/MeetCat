@@ -26,6 +26,16 @@ pub enum MediaState {
     Unmuted,
 }
 
+/// Tray display options
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum TrayDisplayMode {
+    #[default]
+    IconOnly,
+    IconWithTime,
+    IconWithCountdown,
+}
+
 /// Tauri-specific settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +51,12 @@ pub struct TauriSettings {
 
     #[serde(default = "default_true")]
     pub show_tray_icon: bool,
+
+    #[serde(default)]
+    pub tray_display_mode: TrayDisplayMode,
+
+    #[serde(default)]
+    pub tray_show_meeting_title: bool,
 }
 
 impl Default for TauriSettings {
@@ -50,6 +66,8 @@ impl Default for TauriSettings {
             quit_to_hide: true,
             start_at_login: false,
             show_tray_icon: true,
+            tray_display_mode: TrayDisplayMode::IconOnly,
+            tray_show_meeting_title: false,
         }
     }
 }
@@ -187,6 +205,8 @@ mod tests {
         assert!(tauri_settings.quit_to_hide);
         assert!(!tauri_settings.start_at_login);
         assert!(tauri_settings.show_tray_icon);
+        assert_eq!(tauri_settings.tray_display_mode, TrayDisplayMode::IconOnly);
+        assert!(!tauri_settings.tray_show_meeting_title);
     }
 
     #[test]
@@ -242,7 +262,9 @@ mod tests {
                 "runInBackground": false,
                 "quitToHide": false,
                 "startAtLogin": true,
-                "showTrayIcon": true
+                "showTrayIcon": true,
+                "trayDisplayMode": "iconWithCountdown",
+                "trayShowMeetingTitle": true
             }
         }"#;
         let settings: Settings = serde_json::from_str(json).unwrap();
@@ -252,6 +274,8 @@ mod tests {
         assert!(!tauri.quit_to_hide);
         assert!(tauri.start_at_login);
         assert!(tauri.show_tray_icon);
+        assert_eq!(tauri.tray_display_mode, TrayDisplayMode::IconWithCountdown);
+        assert!(tauri.tray_show_meeting_title);
     }
 
     #[test]
@@ -278,6 +302,8 @@ mod tests {
         assert!(json.contains("quitToHide"));
         assert!(json.contains("startAtLogin"));
         assert!(json.contains("showTrayIcon"));
+        assert!(json.contains("trayDisplayMode"));
+        assert!(json.contains("trayShowMeetingTitle"));
     }
 
     #[test]
@@ -294,8 +320,11 @@ mod tests {
             show_countdown_overlay: false,
             tauri: Some(TauriSettings {
                 run_in_background: false,
+                quit_to_hide: false,
                 start_at_login: true,
                 show_tray_icon: false,
+                tray_display_mode: TrayDisplayMode::IconWithTime,
+                tray_show_meeting_title: true,
             }),
         };
 
@@ -314,7 +343,10 @@ mod tests {
 
         let tauri = parsed.tauri.unwrap();
         assert!(!tauri.run_in_background);
+        assert!(!tauri.quit_to_hide);
         assert!(tauri.start_at_login);
         assert!(!tauri.show_tray_icon);
+        assert_eq!(tauri.tray_display_mode, TrayDisplayMode::IconWithTime);
+        assert!(tauri.tray_show_meeting_title);
     }
 }

@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  enable as enableAutostart,
+  disable as disableAutostart,
+  isEnabled as isAutostartEnabled,
+} from "@tauri-apps/plugin-autostart";
 import { App } from "../src/App.js";
 import { DEFAULT_SETTINGS, DEFAULT_TAURI_SETTINGS } from "@meetcat/settings";
 
@@ -345,6 +350,11 @@ describe("App", () => {
   });
 
   it("should update startAtLogin setting", async () => {
+    (isAutostartEnabled as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
     render(<App />);
 
     await waitFor(() => {
@@ -521,6 +531,181 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Saving...")).toBeDefined();
+    });
+  });
+
+  it("should update tray display mode and reset title toggle from icon-only", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      ...defaultSettings,
+      tauri: {
+        ...DEFAULT_TAURI_SETTINGS,
+        trayDisplayMode: "iconOnly",
+        trayShowMeetingTitle: true,
+      },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("App Behavior")).toBeDefined();
+    });
+
+    const select = screen.getByLabelText("Tray display") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "iconWithTime" } });
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          tauri: expect.objectContaining({
+            trayDisplayMode: "iconWithTime",
+            trayShowMeetingTitle: false,
+          }),
+        }),
+      });
+    });
+  });
+
+  it("should update tray meeting title toggle when enabled", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      ...defaultSettings,
+      tauri: {
+        ...DEFAULT_TAURI_SETTINGS,
+        trayDisplayMode: "iconWithTime",
+        trayShowMeetingTitle: false,
+      },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("App Behavior")).toBeDefined();
+    });
+
+    const checkbox = screen.getByLabelText(
+      "Show meeting title next to tray icon"
+    ) as HTMLInputElement;
+    expect(checkbox.disabled).toBe(false);
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          tauri: expect.objectContaining({
+            trayShowMeetingTitle: true,
+          }),
+        }),
+      });
+    });
+  });
+
+  it("should update quitToHide setting", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("App Behavior")).toBeDefined();
+    });
+
+    const checkbox = screen.getByLabelText(
+      "Hide app instead of quitting when pressing Command-Q"
+    );
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          tauri: expect.objectContaining({ quitToHide: false }),
+        }),
+      });
+    });
+  });
+
+  it("should enable autostart when startAtLogin is toggled on", async () => {
+    (isAutostartEnabled as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("App Behavior")).toBeDefined();
+    });
+
+    const checkbox = screen.getByLabelText(
+      "Start at login"
+    ) as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(enableAutostart).toHaveBeenCalled();
+      expect(isAutostartEnabled).toHaveBeenCalled();
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          tauri: expect.objectContaining({ startAtLogin: true }),
+        }),
+      });
+    });
+  });
+
+  it("should disable autostart when startAtLogin is toggled off", async () => {
+    (isAutostartEnabled as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    mockInvoke.mockResolvedValueOnce({
+      ...defaultSettings,
+      tauri: {
+        ...DEFAULT_TAURI_SETTINGS,
+        startAtLogin: true,
+      },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("App Behavior")).toBeDefined();
+    });
+
+    const checkbox = screen.getByLabelText(
+      "Start at login"
+    ) as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(disableAutostart).toHaveBeenCalled();
+      expect(isAutostartEnabled).toHaveBeenCalled();
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          tauri: expect.objectContaining({ startAtLogin: false }),
+        }),
+      });
+    });
+  });
+
+  it("should sync startAtLogin on load when system entry is missing", async () => {
+    (isAutostartEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    mockInvoke.mockResolvedValueOnce({
+      ...defaultSettings,
+      tauri: {
+        ...DEFAULT_TAURI_SETTINGS,
+        startAtLogin: true,
+      },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("App Behavior")).toBeDefined();
+    });
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          tauri: expect.objectContaining({ startAtLogin: false }),
+        }),
+      });
     });
   });
 });

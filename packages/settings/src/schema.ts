@@ -6,6 +6,15 @@ import { z } from "zod";
 export const MediaStateSchema = z.enum(["muted", "unmuted"]);
 
 /**
+ * Tray display options
+ */
+export const TrayDisplayModeSchema = z.enum([
+  "iconOnly",
+  "iconWithTime",
+  "iconWithCountdown",
+]);
+
+/**
  * Extension-specific settings
  */
 export const ExtensionSettingsSchema = z.object({
@@ -25,6 +34,10 @@ export const TauriSettingsSchema = z.object({
   startAtLogin: z.boolean().default(false),
   /** Show system tray icon (default: true) */
   showTrayIcon: z.boolean().default(true),
+  /** Tray display mode (default: iconOnly) */
+  trayDisplayMode: TrayDisplayModeSchema.default("iconOnly"),
+  /** Show next meeting title in tray (default: false) */
+  trayShowMeetingTitle: z.boolean().default(false),
 });
 
 /**
