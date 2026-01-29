@@ -36,6 +36,7 @@ export function App() {
     defaultValue,
     min,
     max,
+    prefix,
     suffix,
     onChange,
   }: {
@@ -43,6 +44,7 @@ export function App() {
     defaultValue: number;
     min: number;
     max: number;
+    prefix?: string;
     suffix: string;
     onChange: (value: number) => void;
   }) => {
@@ -64,6 +66,7 @@ export function App() {
 
     return (
       <div className="input-with-suffix">
+        {prefix && <span className="input-prefix">{prefix}</span>}
         <input
           type="number"
           className="form-input"
@@ -212,222 +215,24 @@ export function App() {
       </header>
 
       <main className="settings-content">
-        {/* Timing Section */}
+        {/* General Section */}
         <section className="settings-section">
-          <h2>Timing</h2>
-
-          <div className="form-group">
-            <label className="form-label">Join before meeting starts</label>
-            <NumberInput
-              value={settings.joinBeforeMinutes}
-              defaultValue={DEFAULT_SETTINGS.joinBeforeMinutes}
-              min={0}
-              max={30}
-              suffix="minutes"
-              onChange={(value) => updateSettings({ joinBeforeMinutes: value })}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Stop auto-join after start</label>
-            <NumberInput
-              value={settings.maxMinutesAfterStart}
-              defaultValue={DEFAULT_SETTINGS.maxMinutesAfterStart}
-              min={0}
-              max={30}
-              suffix="minutes"
-              onChange={(value) =>
-                updateSettings({ maxMinutesAfterStart: value })
-              }
-            />
-            <p className="form-hint">
-              Set to 0 to avoid auto-joining after the meeting starts
-            </p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Countdown before auto-join</label>
-            <NumberInput
-              value={settings.joinCountdownSeconds}
-              defaultValue={DEFAULT_SETTINGS.joinCountdownSeconds}
-              min={0}
-              max={60}
-              suffix="seconds"
-              onChange={(value) =>
-                updateSettings({ joinCountdownSeconds: value })
-              }
-            />
-          </div>
-        </section>
-
-        {/* Join Behavior Section */}
-        <section className="settings-section">
-          <h2>Join Behavior</h2>
+          <h2>General</h2>
 
           <div className="form-group">
             <div className="form-checkbox-group">
               <input
                 type="checkbox"
-                id="autoClickJoin"
+                id="startAtLogin"
                 className="form-checkbox"
-                checked={settings.autoClickJoin}
-                onChange={(e) =>
-                  updateSettings({ autoClickJoin: e.target.checked })
-                }
+                checked={settings.tauri?.startAtLogin ?? false}
+                onChange={(e) => updateStartAtLogin(e.target.checked)}
               />
-              <label htmlFor="autoClickJoin" className="form-checkbox-label">
-                Automatically click join button
+              <label htmlFor="startAtLogin" className="form-checkbox-label">
+                Start at login
               </label>
             </div>
-            <p className="form-hint">
-              When disabled, only opens the meeting page
-            </p>
-          </div>
-
-          <div className="form-group">
-            <div className="form-checkbox-group">
-              <input
-                type="checkbox"
-                id="showCountdownOverlay"
-                className="form-checkbox"
-                checked={settings.showCountdownOverlay}
-                onChange={(e) =>
-                  updateSettings({ showCountdownOverlay: e.target.checked })
-                }
-              />
-              <label
-                htmlFor="showCountdownOverlay"
-                className="form-checkbox-label"
-              >
-                Show countdown overlay
-              </label>
-            </div>
-          </div>
-
-          <div className="form-group">
-            <div className="form-checkbox-group">
-              <input
-                type="checkbox"
-                id="showNotifications"
-                className="form-checkbox"
-                checked={settings.showNotifications}
-                onChange={(e) =>
-                  updateSettings({ showNotifications: e.target.checked })
-                }
-              />
-              <label
-                htmlFor="showNotifications"
-                className="form-checkbox-label"
-              >
-                Show notifications
-              </label>
-            </div>
-          </div>
-        </section>
-
-        {/* Media Defaults Section */}
-        <section className="settings-section">
-          <h2>Media Defaults</h2>
-
-          <div className="form-group">
-            <label className="form-label">Microphone</label>
-            <select
-              className="form-select"
-              value={settings.defaultMicState}
-              onChange={(e) =>
-                updateSettings({
-                  defaultMicState: e.target.value as MediaState,
-                })
-              }
-            >
-              <option value="muted">Muted</option>
-              <option value="unmuted">Unmuted</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Camera</label>
-            <select
-              className="form-select"
-              value={settings.defaultCameraState}
-              onChange={(e) =>
-                updateSettings({
-                  defaultCameraState: e.target.value as MediaState,
-                })
-              }
-            >
-              <option value="muted">Off</option>
-              <option value="unmuted">On</option>
-            </select>
-          </div>
-        </section>
-
-        {/* Exclude Filters Section */}
-        <section className="settings-section">
-          <h2>Exclude Filters</h2>
-          <p className="section-description">
-            Skip meetings with titles containing these strings
-          </p>
-
-          <div className="form-group">
-            <div className="filter-input-row">
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Enter filter text..."
-                value={filterInput}
-                onChange={(e) => setFilterInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addFilter()}
-              />
-              <button className="btn btn-secondary" onClick={addFilter}>
-                Add
-              </button>
-            </div>
-          </div>
-
-          {settings.titleExcludeFilters.length > 0 && (
-            <div className="filter-list">
-              {settings.titleExcludeFilters.map((filter) => (
-                <div key={filter} className="filter-item">
-                  <span className="filter-text">{filter}</span>
-                  <button
-                    className="filter-remove"
-                    onClick={() => removeFilter(filter)}
-                    title="Remove filter"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* App Behavior Section */}
-        <section className="settings-section">
-          <h2>App Behavior</h2>
-
-          <div className="form-group">
-            <div className="form-checkbox-group">
-              <input
-                type="checkbox"
-                id="runInBackground"
-                className="form-checkbox"
-                checked={settings.tauri?.runInBackground ?? true}
-                onChange={(e) =>
-                  updateSettings({
-                    tauri: {
-                      ...DEFAULT_TAURI_SETTINGS,
-                      ...settings.tauri,
-                      runInBackground: e.target.checked,
-                    },
-                  })
-                }
-              />
-              <label htmlFor="runInBackground" className="form-checkbox-label">
-                Keep running when window is closed
-              </label>
-            </div>
+            <p className="form-hint">Launch MeetCat when you sign in</p>
           </div>
 
           <div className="form-group">
@@ -448,28 +253,192 @@ export function App() {
                 }
               />
               <label htmlFor="quitToHide" className="form-checkbox-label">
-                Hide app instead of quitting when pressing Command-Q
+                Command-Q hides app
               </label>
             </div>
-            <p className="form-hint">
-              Disable to let Command-Q quit the app
-            </p>
+            <p className="form-hint">Turn off to quit instead</p>
           </div>
 
           <div className="form-group">
             <div className="form-checkbox-group">
               <input
                 type="checkbox"
-                id="startAtLogin"
+                id="autoClickJoin"
                 className="form-checkbox"
-                checked={settings.tauri?.startAtLogin ?? false}
-                onChange={(e) => updateStartAtLogin(e.target.checked)}
+                checked={settings.autoClickJoin}
+                onChange={(e) =>
+                  updateSettings({ autoClickJoin: e.target.checked })
+                }
               />
-              <label htmlFor="startAtLogin" className="form-checkbox-label">
-                Start at login
+              <label htmlFor="autoClickJoin" className="form-checkbox-label">
+                Auto-click join
               </label>
             </div>
-            <p className="form-hint">Launch MeetCat automatically when you log in</p>
+            <p className="form-hint">Off: only open the meeting page</p>
+          </div>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="showNotifications"
+                className="form-checkbox"
+                checked={settings.showNotifications}
+                onChange={(e) =>
+                  updateSettings({ showNotifications: e.target.checked })
+                }
+              />
+              <label
+                htmlFor="showNotifications"
+                className="form-checkbox-label"
+              >
+                Notifications
+              </label>
+            </div>
+            <p className="form-hint">Desktop alerts for auto-join</p>
+          </div>
+
+          <div className="form-group">
+            <div className="form-checkbox-group">
+              <input
+                type="checkbox"
+                id="showCountdownOverlay"
+                className="form-checkbox"
+                checked={settings.showCountdownOverlay}
+                onChange={(e) =>
+                  updateSettings({ showCountdownOverlay: e.target.checked })
+                }
+              />
+              <label
+                htmlFor="showCountdownOverlay"
+                className="form-checkbox-label"
+              >
+                Countdown overlay
+              </label>
+            </div>
+            <p className="form-hint">Show overlay on Meet pages</p>
+          </div>
+        </section>
+
+        {/* Timing Section */}
+        <section className="settings-section">
+          <h2>Timing</h2>
+
+          <div className="form-group">
+            <label className="form-label">Open Meeting Preparing Page</label>
+            <NumberInput
+              value={settings.joinBeforeMinutes}
+              defaultValue={DEFAULT_SETTINGS.joinBeforeMinutes}
+              min={0}
+              max={30}
+              prefix="before meeting starts"
+              suffix="minutes"
+              onChange={(value) => updateSettings({ joinBeforeMinutes: value })}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Auto-join countdown</label>
+            <NumberInput
+              value={settings.joinCountdownSeconds}
+              defaultValue={DEFAULT_SETTINGS.joinCountdownSeconds}
+              min={0}
+              max={60}
+              prefix="before auto-join"
+              suffix="seconds"
+              onChange={(value) =>
+                updateSettings({ joinCountdownSeconds: value })
+              }
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Stop auto-join</label>
+            <NumberInput
+              value={settings.maxMinutesAfterStart}
+              defaultValue={DEFAULT_SETTINGS.maxMinutesAfterStart}
+              min={0}
+              max={30}
+              prefix="after meeting starts"
+              suffix="minutes"
+              onChange={(value) =>
+                updateSettings({ maxMinutesAfterStart: value })
+              }
+            />
+          </div>
+        </section>
+
+        {/* Advanced Section */}
+        <section className="settings-section">
+          <h2>Advanced</h2>
+
+          <div className="form-group">
+            <label className="form-label">Exclude keywords</label>
+            <div className="filter-input-row">
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Enter filter text..."
+                value={filterInput}
+                onChange={(e) => setFilterInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addFilter()}
+              />
+              <button className="btn btn-secondary" onClick={addFilter}>
+                Add
+              </button>
+            </div>
+            <p className="form-hint">Skip meetings with matching titles</p>
+          </div>
+
+          {settings.titleExcludeFilters.length > 0 && (
+            <div className="filter-list">
+              {settings.titleExcludeFilters.map((filter) => (
+                <div key={filter} className="filter-item">
+                  <span className="filter-text">{filter}</span>
+                  <button
+                    className="filter-remove"
+                    onClick={() => removeFilter(filter)}
+                    title="Remove filter"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="form-group">
+            <label className="form-label">Default microphone</label>
+            <select
+              className="form-select"
+              value={settings.defaultMicState}
+              onChange={(e) =>
+                updateSettings({
+                  defaultMicState: e.target.value as MediaState,
+                })
+              }
+            >
+              <option value="muted">Muted</option>
+              <option value="unmuted">Unmuted</option>
+            </select>
+            <p className="form-hint">Applied when joining</p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Default camera</label>
+            <select
+              className="form-select"
+              value={settings.defaultCameraState}
+              onChange={(e) =>
+                updateSettings({
+                  defaultCameraState: e.target.value as MediaState,
+                })
+              }
+            >
+              <option value="muted">Off</option>
+              <option value="unmuted">On</option>
+            </select>
+            <p className="form-hint">Applied when joining</p>
           </div>
 
           <div className="form-group">
@@ -496,7 +465,7 @@ export function App() {
               </option>
             </select>
             <p className="form-hint">
-              Shows additional text next to the tray icon when available
+              Text shown next to tray icon. Blank when there is no next meeting.
             </p>
           </div>
 
@@ -520,11 +489,12 @@ export function App() {
               />
               <label
                 htmlFor="trayShowMeetingTitle"
-                className="form-checkbox-label"
+                className={`form-checkbox-label${allowTrayTitle ? "" : " is-disabled"}`}
               >
-                Show meeting title next to tray icon
+                Show next meeting title
               </label>
             </div>
+            <p className="form-hint">Only available when tray text is enabled</p>
           </div>
         </section>
       </main>

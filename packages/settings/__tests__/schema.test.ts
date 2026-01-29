@@ -48,7 +48,6 @@ describe("Settings", () => {
       const result = TauriSettingsSchema.safeParse({});
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.runInBackground).toBe(true);
         expect(result.data.startAtLogin).toBe(false);
         expect(result.data.showTrayIcon).toBe(true);
         expect(result.data.trayDisplayMode).toBe("iconOnly");
@@ -58,7 +57,6 @@ describe("Settings", () => {
 
     it("should accept custom values", () => {
       const result = TauriSettingsSchema.safeParse({
-        runInBackground: false,
         startAtLogin: true,
         showTrayIcon: false,
         trayDisplayMode: "iconWithCountdown",
@@ -66,7 +64,6 @@ describe("Settings", () => {
       });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.runInBackground).toBe(false);
         expect(result.data.startAtLogin).toBe(true);
         expect(result.data.showTrayIcon).toBe(false);
         expect(result.data.trayDisplayMode).toBe("iconWithCountdown");
@@ -152,7 +149,6 @@ describe("Settings", () => {
     it("should accept tauri settings", () => {
       const result = SettingsSchema.safeParse({
         tauri: {
-          runInBackground: true,
           quitToHide: true,
           startAtLogin: true,
           showTrayIcon: true,

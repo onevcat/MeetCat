@@ -72,6 +72,23 @@
   margin-bottom: 4px;
 }
 
+.popup-inline-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.popup-inline-input .popup-input {
+  width: 72px;
+  text-align: center;
+}
+
+.popup-inline-label {
+  font-size: 12px;
+  color: #5f6368;
+}
+
 .popup-input {
   width: 100%;
   padding: 8px 12px;

@@ -45,10 +45,6 @@ describe("Settings Defaults", () => {
   });
 
   describe("DEFAULT_TAURI_SETTINGS", () => {
-    it("should have runInBackground enabled by default", () => {
-      expect(DEFAULT_TAURI_SETTINGS.runInBackground).toBe(true);
-    });
-
     it("should have startAtLogin disabled by default", () => {
       expect(DEFAULT_TAURI_SETTINGS.startAtLogin).toBe(false);
     });

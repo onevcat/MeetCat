@@ -13,7 +13,6 @@
     "openInNewTab": true
   },
   "tauri": {
-    "runInBackground": true,
     "quitToHide": true,
     "startAtLogin": false,
     "showTrayIcon": true,

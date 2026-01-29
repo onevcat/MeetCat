@@ -157,6 +157,11 @@ body {
   text-align: center;
 }
 
+.input-prefix {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
 .input-suffix {
   font-size: 13px;
   color: var(--color-text-secondary);
@@ -198,6 +203,11 @@ body {
   color: var(--color-text);
   cursor: pointer;
   user-select: none;
+}
+
+.form-checkbox-label.is-disabled {
+  color: #9aa0a6;
+  cursor: not-allowed;
 }
 
 /* Buttons */

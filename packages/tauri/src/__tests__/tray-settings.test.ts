@@ -20,7 +20,6 @@ function baseSettings(): Settings {
     showNotifications: true,
     showCountdownOverlay: true,
     tauri: {
-      runInBackground: true,
       quitToHide: true,
       startAtLogin: false,
       showTrayIcon: true,

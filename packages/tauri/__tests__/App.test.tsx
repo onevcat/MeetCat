@@ -47,48 +47,48 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Timing")).toBeDefined();
-      expect(screen.getByText("Join before meeting starts")).toBeDefined();
-      expect(screen.getByText("Stop auto-join after start")).toBeDefined();
-      expect(screen.getByText("Countdown before auto-join")).toBeDefined();
+      expect(screen.getByText("Open Meeting Preparing Page")).toBeDefined();
+      expect(screen.getByText("Auto-join countdown")).toBeDefined();
+      expect(screen.getByText("Stop auto-join")).toBeDefined();
     });
   });
 
-  it("should render join behavior section", async () => {
+  it("should render general section", async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Join Behavior")).toBeDefined();
-      expect(screen.getByText("Automatically click join button")).toBeDefined();
-      expect(screen.getByText("Show countdown overlay")).toBeDefined();
-      expect(screen.getByText("Show notifications")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
+      expect(screen.getByText("Auto-click join")).toBeDefined();
+      expect(screen.getByText("Countdown overlay")).toBeDefined();
+      expect(screen.getByText("Notifications")).toBeDefined();
     });
   });
 
-  it("should render media defaults section", async () => {
+  it("should render advanced section media defaults", async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Media Defaults")).toBeDefined();
-      expect(screen.getByText("Microphone")).toBeDefined();
-      expect(screen.getByText("Camera")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
+      expect(screen.getByText("Default microphone")).toBeDefined();
+      expect(screen.getByText("Default camera")).toBeDefined();
     });
   });
 
-  it("should render exclude filters section", async () => {
+  it("should render advanced section exclude filters", async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Exclude Filters")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
+      expect(screen.getByText("Exclude keywords")).toBeDefined();
       expect(screen.getByPlaceholderText("Enter filter text...")).toBeDefined();
     });
   });
 
-  it("should render app behavior section", async () => {
+  it("should render general section app behavior", async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
-      expect(screen.getByText("Keep running when window is closed")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
       expect(screen.getByText("Start at login")).toBeDefined();
     });
   });
@@ -100,7 +100,7 @@ describe("App", () => {
       expect(screen.getByText("Timing")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Automatically click join button");
+    const checkbox = screen.getByLabelText("Auto-click join");
     fireEvent.click(checkbox);
 
     await waitFor(() => {
@@ -154,7 +154,7 @@ describe("App", () => {
     });
 
     const inputs = screen.getAllByRole("spinbutton");
-    const countdownInput = inputs[2];
+    const countdownInput = inputs[1];
     fireEvent.change(countdownInput, { target: { value: "15" } });
     fireEvent.blur(countdownInput);
 
@@ -173,7 +173,7 @@ describe("App", () => {
     });
 
     const inputs = screen.getAllByRole("spinbutton");
-    const countdownInput = inputs[2];
+    const countdownInput = inputs[1];
     fireEvent.change(countdownInput, { target: { value: "invalid" } });
     fireEvent.blur(countdownInput);
 
@@ -211,7 +211,7 @@ describe("App", () => {
     });
 
     const inputs = screen.getAllByRole("spinbutton");
-    const maxAfterStartInput = inputs[1];
+    const maxAfterStartInput = inputs[2];
     fireEvent.change(maxAfterStartInput, { target: { value: "12" } });
     fireEvent.blur(maxAfterStartInput);
 
@@ -230,7 +230,7 @@ describe("App", () => {
     });
 
     const inputs = screen.getAllByRole("spinbutton");
-    const maxAfterStartInput = inputs[1];
+    const maxAfterStartInput = inputs[2];
     fireEvent.change(maxAfterStartInput, { target: { value: "invalid" } });
     fireEvent.blur(maxAfterStartInput);
 
@@ -245,7 +245,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Exclude Filters")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
     const filterInput = screen.getByPlaceholderText("Enter filter text...");
@@ -265,7 +265,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Exclude Filters")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
     const filterInput = screen.getByPlaceholderText("Enter filter text...");
@@ -285,7 +285,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Exclude Filters")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
     fireEvent.click(screen.getByText("Add"));
@@ -342,7 +342,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Media Defaults")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
     const selects = screen.getAllByRole("combobox");
@@ -360,7 +360,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Media Defaults")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
     const selects = screen.getAllByRole("combobox");
@@ -374,25 +374,6 @@ describe("App", () => {
     });
   });
 
-  it("should update runInBackground setting", async () => {
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
-    });
-
-    const checkbox = screen.getByLabelText("Keep running when window is closed");
-    fireEvent.click(checkbox);
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
-        settings: expect.objectContaining({
-          tauri: expect.objectContaining({ runInBackground: false }),
-        }),
-      });
-    });
-  });
-
   it("should update startAtLogin setting", async () => {
     (isAutostartEnabled as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(false)
@@ -402,7 +383,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
     const checkbox = screen.getByLabelText("Start at login");
@@ -426,14 +407,10 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      const runInBackground = screen.getByLabelText(
-        "Keep running when window is closed"
-      ) as HTMLInputElement;
       const startAtLogin = screen.getByLabelText(
         "Start at login"
       ) as HTMLInputElement;
 
-      expect(runInBackground.checked).toBe(true);
       expect(startAtLogin.checked).toBe(false);
     });
   });
@@ -442,10 +419,10 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Join Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Show countdown overlay");
+    const checkbox = screen.getByLabelText("Countdown overlay");
     fireEvent.click(checkbox);
 
     await waitFor(() => {
@@ -459,10 +436,10 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Join Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Show notifications");
+    const checkbox = screen.getByLabelText("Notifications");
     fireEvent.click(checkbox);
 
     await waitFor(() => {
@@ -498,10 +475,10 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Join Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Automatically click join button");
+    const checkbox = screen.getByLabelText("Auto-click join");
     fireEvent.click(checkbox);
 
     await waitFor(() => {
@@ -570,7 +547,7 @@ describe("App", () => {
       expect(screen.getByText("Timing")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Automatically click join button");
+    const checkbox = screen.getByLabelText("Auto-click join");
     fireEvent.click(checkbox);
 
     await waitFor(() => {
@@ -591,7 +568,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
     const select = screen.getByLabelText("Tray display") as HTMLSelectElement;
@@ -622,12 +599,10 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText(
-      "Show meeting title next to tray icon"
-    ) as HTMLInputElement;
+    const checkbox = screen.getByLabelText("Show next meeting title") as HTMLInputElement;
     expect(checkbox.disabled).toBe(false);
     fireEvent.click(checkbox);
 
@@ -646,12 +621,10 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText(
-      "Hide app instead of quitting when pressing Command-Q"
-    );
+    const checkbox = screen.getByLabelText("Command-Q hides app");
     fireEvent.click(checkbox);
 
     await waitFor(() => {
@@ -672,7 +645,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
     const checkbox = screen.getByLabelText(
@@ -708,7 +681,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
     const checkbox = screen.getByLabelText(
@@ -741,7 +714,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("App Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
     await waitFor(() => {

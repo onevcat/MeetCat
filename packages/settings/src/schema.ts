@@ -16,7 +16,6 @@ type DefaultsJson = {
     openInNewTab: boolean;
   };
   tauri: {
-    runInBackground: boolean;
     quitToHide: boolean;
     startAtLogin: boolean;
     showTrayIcon: boolean;
@@ -53,8 +52,6 @@ export const ExtensionSettingsSchema = z.object({
  * Tauri-specific settings
  */
 export const TauriSettingsSchema = z.object({
-  /** Run in background when window is closed (default: true) */
-  runInBackground: z.boolean().default(DEFAULTS.tauri.runInBackground),
   /** Hide the app instead of quitting when pressing Command-Q (default: true) */
   quitToHide: z.boolean().default(DEFAULTS.tauri.quitToHide),
   /** Start app at system login (default: false) */

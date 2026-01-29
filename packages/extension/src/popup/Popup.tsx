@@ -224,94 +224,9 @@ export function Popup() {
         </div>
       </div>
 
-      {/* Timing Settings */}
+      {/* General Settings */}
       <div className="popup-section">
-        <div className="popup-section-title">Timing</div>
-
-        <div className="popup-form-group">
-          <label className="popup-label">Join before meeting (minutes)</label>
-          <NumberInput
-            value={settings.joinBeforeMinutes}
-            defaultValue={DEFAULT_SETTINGS.joinBeforeMinutes}
-            min={0}
-            max={30}
-            onChange={(v) => updateSettings({ joinBeforeMinutes: v })}
-          />
-        </div>
-
-        <div className="popup-form-group">
-          <label className="popup-label">Stop auto-join after start (minutes)</label>
-          <NumberInput
-            value={settings.maxMinutesAfterStart}
-            defaultValue={DEFAULT_SETTINGS.maxMinutesAfterStart}
-            min={0}
-            max={30}
-            onChange={(v) => updateSettings({ maxMinutesAfterStart: v })}
-          />
-          <div className="popup-hint">
-            Set to 0 to avoid auto-joining after the meeting starts
-          </div>
-        </div>
-
-        <div className="popup-form-group">
-          <label className="popup-label">Countdown before join (seconds)</label>
-          <NumberInput
-            value={settings.joinCountdownSeconds}
-            defaultValue={DEFAULT_SETTINGS.joinCountdownSeconds}
-            min={0}
-            max={60}
-            onChange={(v) => updateSettings({ joinCountdownSeconds: v })}
-          />
-          <div className="popup-hint">
-            Set to 0 to join immediately without countdown
-          </div>
-        </div>
-
-        <div className="popup-form-group">
-          <label className="popup-label">Exclude filters</label>
-          <FilterList
-            filters={settings.titleExcludeFilters || []}
-            onChange={(filters) => updateSettings({ titleExcludeFilters: filters })}
-          />
-          <div className="popup-hint">
-            Meetings containing these keywords will NOT auto-join (case-sensitive).
-            Clear text and press Enter to remove.
-          </div>
-        </div>
-      </div>
-
-      {/* Media Settings */}
-      <div className="popup-section">
-        <div className="popup-section-title">Media Defaults</div>
-
-        <div className="popup-form-group">
-          <label className="popup-label">Microphone</label>
-          <select
-            className="popup-select"
-            value={settings.defaultMicState}
-            onChange={(e) => updateSettings({ defaultMicState: e.target.value as MediaState })}
-          >
-            <option value="muted">Muted</option>
-            <option value="unmuted">Unmuted</option>
-          </select>
-        </div>
-
-        <div className="popup-form-group">
-          <label className="popup-label">Camera</label>
-          <select
-            className="popup-select"
-            value={settings.defaultCameraState}
-            onChange={(e) => updateSettings({ defaultCameraState: e.target.value as MediaState })}
-          >
-            <option value="muted">Off</option>
-            <option value="unmuted">On</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Behavior Settings */}
-      <div className="popup-section">
-        <div className="popup-section-title">Behavior</div>
+        <div className="popup-section-title">General</div>
 
         <div className="popup-form-group">
           <div className="popup-checkbox-group">
@@ -323,24 +238,10 @@ export function Popup() {
               onChange={(e) => updateSettings({ autoClickJoin: e.target.checked })}
             />
             <label htmlFor="autoClickJoin" className="popup-checkbox-label">
-              Auto-click join button
+              Auto-click join
             </label>
           </div>
-        </div>
-
-        <div className="popup-form-group">
-          <div className="popup-checkbox-group">
-            <input
-              type="checkbox"
-              id="showCountdownOverlay"
-              className="popup-checkbox"
-              checked={settings.showCountdownOverlay}
-              onChange={(e) => updateSettings({ showCountdownOverlay: e.target.checked })}
-            />
-            <label htmlFor="showCountdownOverlay" className="popup-checkbox-label">
-              Show countdown overlay
-            </label>
-          </div>
+          <div className="popup-hint">Off: only open the meeting page</div>
         </div>
 
         <div className="popup-form-group">
@@ -353,9 +254,118 @@ export function Popup() {
               onChange={(e) => updateSettings({ showNotifications: e.target.checked })}
             />
             <label htmlFor="showNotifications" className="popup-checkbox-label">
-              Show notifications
+              Notifications
             </label>
           </div>
+          <div className="popup-hint">Desktop alerts for auto-join</div>
+        </div>
+
+        <div className="popup-form-group">
+          <div className="popup-checkbox-group">
+            <input
+              type="checkbox"
+              id="showCountdownOverlay"
+              className="popup-checkbox"
+              checked={settings.showCountdownOverlay}
+              onChange={(e) => updateSettings({ showCountdownOverlay: e.target.checked })}
+            />
+            <label htmlFor="showCountdownOverlay" className="popup-checkbox-label">
+              Countdown overlay
+            </label>
+          </div>
+          <div className="popup-hint">Show overlay on Meet pages</div>
+        </div>
+      </div>
+
+      {/* Timing Settings */}
+      <div className="popup-section">
+        <div className="popup-section-title">Timing</div>
+
+        <div className="popup-form-group">
+          <label className="popup-label">Open Meeting Preparing Page</label>
+          <div className="popup-inline-input">
+            <span className="popup-inline-label">before meeting starts</span>
+            <NumberInput
+              value={settings.joinBeforeMinutes}
+              defaultValue={DEFAULT_SETTINGS.joinBeforeMinutes}
+              min={0}
+              max={30}
+              onChange={(v) => updateSettings({ joinBeforeMinutes: v })}
+            />
+            <span className="popup-inline-label">minutes</span>
+          </div>
+        </div>
+
+        <div className="popup-form-group">
+          <label className="popup-label">Auto-join countdown</label>
+          <div className="popup-inline-input">
+            <span className="popup-inline-label">before auto-join</span>
+            <NumberInput
+              value={settings.joinCountdownSeconds}
+              defaultValue={DEFAULT_SETTINGS.joinCountdownSeconds}
+              min={0}
+              max={60}
+              onChange={(v) => updateSettings({ joinCountdownSeconds: v })}
+            />
+            <span className="popup-inline-label">seconds</span>
+          </div>
+        </div>
+
+        <div className="popup-form-group">
+          <label className="popup-label">Stop auto-join</label>
+          <div className="popup-inline-input">
+            <span className="popup-inline-label">after meeting starts</span>
+            <NumberInput
+              value={settings.maxMinutesAfterStart}
+              defaultValue={DEFAULT_SETTINGS.maxMinutesAfterStart}
+              min={0}
+              max={30}
+              onChange={(v) => updateSettings({ maxMinutesAfterStart: v })}
+            />
+            <span className="popup-inline-label">minutes</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced Settings */}
+      <div className="popup-section">
+        <div className="popup-section-title">Advanced</div>
+
+        <div className="popup-form-group">
+          <label className="popup-label">Exclude keywords</label>
+          <FilterList
+            filters={settings.titleExcludeFilters || []}
+            onChange={(filters) => updateSettings({ titleExcludeFilters: filters })}
+          />
+          <div className="popup-hint">
+            Skip meetings with matching titles. Clear text and press Enter to remove.
+          </div>
+        </div>
+
+        <div className="popup-form-group">
+          <label className="popup-label">Default microphone</label>
+          <select
+            className="popup-select"
+            value={settings.defaultMicState}
+            onChange={(e) => updateSettings({ defaultMicState: e.target.value as MediaState })}
+          >
+            <option value="muted">Muted</option>
+            <option value="unmuted">Unmuted</option>
+          </select>
+          <div className="popup-hint">Applied when joining</div>
+        </div>
+
+        <div className="popup-form-group">
+          <label className="popup-label">Default camera</label>
+          <select
+            className="popup-select"
+            value={settings.defaultCameraState}
+            onChange={(e) => updateSettings({ defaultCameraState: e.target.value as MediaState })}
+          >
+            <option value="muted">Off</option>
+            <option value="unmuted">On</option>
+          </select>
+          <div className="popup-hint">Applied when joining</div>
         </div>
       </div>
 

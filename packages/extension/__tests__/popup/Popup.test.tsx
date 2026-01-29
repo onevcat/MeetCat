@@ -150,27 +150,28 @@ describe("Popup", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Timing")).toBeDefined();
-      expect(screen.getByText("Join before meeting (minutes)")).toBeDefined();
-      expect(screen.getByText("Stop auto-join after start (minutes)")).toBeDefined();
+      expect(screen.getByText("Open Meeting Preparing Page")).toBeDefined();
+      expect(screen.getByText("Auto-join countdown")).toBeDefined();
+      expect(screen.getByText("Stop auto-join")).toBeDefined();
     });
   });
 
-  it("should render media defaults section", async () => {
+  it("should render advanced section media defaults", async () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("Media Defaults")).toBeDefined();
-      expect(screen.getByText("Microphone")).toBeDefined();
-      expect(screen.getByText("Camera")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
+      expect(screen.getByText("Default microphone")).toBeDefined();
+      expect(screen.getByText("Default camera")).toBeDefined();
     });
   });
 
-  it("should render behavior section", async () => {
+  it("should render general section", async () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("Behavior")).toBeDefined();
-      expect(screen.getByText("Auto-click join button")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
+      expect(screen.getByText("Auto-click join")).toBeDefined();
     });
   });
 
@@ -182,10 +183,10 @@ describe("Popup", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Auto-click join button");
+    const checkbox = screen.getByLabelText("Auto-click join");
     fireEvent.click(checkbox);
 
     expect(chrome.storage.sync.set).toHaveBeenCalled();
@@ -195,7 +196,7 @@ describe("Popup", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("Media Defaults")).toBeDefined();
+      expect(screen.getByText("Advanced")).toBeDefined();
     });
 
     const selects = screen.getAllByRole("combobox");
@@ -214,11 +215,11 @@ describe("Popup", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
-    const overlayCheckbox = screen.getByLabelText("Show countdown overlay");
-    const notificationsCheckbox = screen.getByLabelText("Show notifications");
+    const overlayCheckbox = screen.getByLabelText("Countdown overlay");
+    const notificationsCheckbox = screen.getByLabelText("Notifications");
 
     fireEvent.click(overlayCheckbox);
     fireEvent.click(notificationsCheckbox);
@@ -251,7 +252,7 @@ describe("Popup", () => {
       expect(screen.getByText("Timing")).toBeDefined();
     });
 
-    const input = screen.getAllByRole("spinbutton")[1];
+    const input = screen.getAllByRole("spinbutton")[2];
     fireEvent.change(input, { target: { value: "12" } });
     fireEvent.blur(input);
 
@@ -267,7 +268,7 @@ describe("Popup", () => {
       expect(screen.getByText("Timing")).toBeDefined();
     });
 
-    const input = screen.getAllByRole("spinbutton")[2];
+    const input = screen.getAllByRole("spinbutton")[1];
     fireEvent.change(input, { target: { value: "15" } });
     fireEvent.blur(input);
 
@@ -334,10 +335,10 @@ describe("Popup", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("Behavior")).toBeDefined();
+      expect(screen.getByText("General")).toBeDefined();
     });
 
-    const checkbox = screen.getByLabelText("Auto-click join button");
+    const checkbox = screen.getByLabelText("Auto-click join");
     fireEvent.click(checkbox);
 
     await waitFor(() => {
