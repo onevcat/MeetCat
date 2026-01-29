@@ -158,8 +158,9 @@ describe("Tauri Bridge", () => {
       const mockSettings = {
         checkIntervalSeconds: 30,
         joinBeforeMinutes: 1,
+        maxMinutesAfterStart: 10,
         autoClickJoin: true,
-        joinCountdownSeconds: 30,
+        joinCountdownSeconds: 20,
         titleExcludeFilters: [],
         defaultMicState: "muted",
         defaultCameraState: "muted",

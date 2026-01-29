@@ -1,0 +1,23 @@
+{
+  "checkIntervalSeconds": 30,
+  "joinBeforeMinutes": 1,
+  "maxMinutesAfterStart": 10,
+  "autoClickJoin": true,
+  "joinCountdownSeconds": 20,
+  "titleExcludeFilters": [],
+  "defaultMicState": "muted",
+  "defaultCameraState": "muted",
+  "showNotifications": true,
+  "showCountdownOverlay": true,
+  "extension": {
+    "openInNewTab": true
+  },
+  "tauri": {
+    "runInBackground": true,
+    "quitToHide": true,
+    "startAtLogin": false,
+    "showTrayIcon": true,
+    "trayDisplayMode": "iconOnly",
+    "trayShowMeetingTitle": false
+  }
+}

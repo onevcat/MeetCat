@@ -60,6 +60,7 @@ const ICON_URL = "https://avatars.githubusercontent.com/u/1019875?s=128&v=4";
 const DEFAULT_SETTINGS: TauriSettings = {
   checkIntervalSeconds: SETTINGS_DEFAULTS.checkIntervalSeconds,
   joinBeforeMinutes: SETTINGS_DEFAULTS.joinBeforeMinutes,
+  maxMinutesAfterStart: SETTINGS_DEFAULTS.maxMinutesAfterStart,
   autoClickJoin: SETTINGS_DEFAULTS.autoClickJoin,
   joinCountdownSeconds: SETTINGS_DEFAULTS.joinCountdownSeconds,
   titleExcludeFilters: SETTINGS_DEFAULTS.titleExcludeFilters,
@@ -276,9 +277,14 @@ async function initMeetingPage(): Promise<void> {
     startJoinCountdown();
   } else if (settings?.autoClickJoin) {
     // No overlay, just wait and join
+    const seconds = settings?.joinCountdownSeconds ?? SETTINGS_DEFAULTS.joinCountdownSeconds;
+    if (seconds <= 0) {
+      performJoin();
+      return;
+    }
     setTimeout(() => {
       performJoin();
-    }, (settings?.joinCountdownSeconds || SETTINGS_DEFAULTS.joinCountdownSeconds) * 1000);
+    }, seconds * 1000);
   }
 }
 
@@ -340,7 +346,12 @@ function applyMediaSettings(): void {
 function startJoinCountdown(): void {
   if (countdown || !settings) return;
 
-  const seconds = settings.joinCountdownSeconds || SETTINGS_DEFAULTS.joinCountdownSeconds;
+  const seconds = settings.joinCountdownSeconds ?? SETTINGS_DEFAULTS.joinCountdownSeconds;
+
+  if (seconds <= 0) {
+    performJoin();
+    return;
+  }
 
   countdown = createJoinCountdown(document.body, {
     seconds,

@@ -89,7 +89,7 @@ impl DaemonState {
     /// Check if any meeting should be joined now based on settings
     pub fn should_join_now(&self, settings: &Settings) -> Option<Meeting> {
         let join_threshold = settings.join_before_minutes as i64;
-        let max_after_start = 30i64; // Max 30 minutes after start
+        let max_after_start = settings.max_minutes_after_start as i64;
 
         self.meetings
             .iter()
@@ -117,7 +117,7 @@ impl DaemonState {
     /// when we SHOULD trigger in the future.
     pub fn calculate_next_trigger(&self, settings: &Settings) -> Option<NextJoinTrigger> {
         let join_before_ms = (settings.join_before_minutes as i64) * 60 * 1000;
-        let max_after_start_ms = 30i64 * 60 * 1000; // 30 minutes
+        let max_after_start_ms = (settings.max_minutes_after_start as i64) * 60 * 1000;
         let now = Utc::now();
 
         self.meetings
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn test_should_join_now_after_start_within_grace() {
         let mut state = DaemonState::default();
-        // Meeting that started 5 minutes ago (within 30-minute grace period)
+        // Meeting that started 5 minutes ago (within grace period)
         let meetings = vec![create_test_meeting("abc", "Test Meeting", -5)];
         state.update_meetings(meetings);
 
@@ -334,11 +334,26 @@ mod tests {
     #[test]
     fn test_should_join_now_too_late() {
         let mut state = DaemonState::default();
-        // Meeting that started 35 minutes ago (beyond 30-minute grace period)
+        // Meeting that started 35 minutes ago (beyond grace period)
         let meetings = vec![create_test_meeting("abc", "Test Meeting", -35)];
         state.update_meetings(meetings);
 
         let settings = Settings::default();
+
+        let should_join = state.should_join_now(&settings);
+        assert!(should_join.is_none());
+    }
+
+    #[test]
+    fn test_should_join_now_respects_max_after_start() {
+        let mut state = DaemonState::default();
+        let meetings = vec![create_test_meeting("abc", "Test Meeting", -5)];
+        state.update_meetings(meetings);
+
+        let settings = Settings {
+            max_minutes_after_start: 3,
+            ..Settings::default()
+        };
 
         let should_join = state.should_join_now(&settings);
         assert!(should_join.is_none());

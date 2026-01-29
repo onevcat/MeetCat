@@ -240,6 +240,20 @@ export function Popup() {
         </div>
 
         <div className="popup-form-group">
+          <label className="popup-label">Stop auto-join after start (minutes)</label>
+          <NumberInput
+            value={settings.maxMinutesAfterStart}
+            defaultValue={DEFAULT_SETTINGS.maxMinutesAfterStart}
+            min={0}
+            max={30}
+            onChange={(v) => updateSettings({ maxMinutesAfterStart: v })}
+          />
+          <div className="popup-hint">
+            Set to 0 to avoid auto-joining after the meeting starts
+          </div>
+        </div>
+
+        <div className="popup-form-group">
           <label className="popup-label">Countdown before join (seconds)</label>
           <NumberInput
             value={settings.joinCountdownSeconds}

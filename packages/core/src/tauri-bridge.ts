@@ -13,6 +13,7 @@ import type { Meeting } from "./types.js";
 export interface TauriSettings {
   checkIntervalSeconds: number;
   joinBeforeMinutes: number;
+  maxMinutesAfterStart: number;
   autoClickJoin: boolean;
   joinCountdownSeconds: number;
   titleExcludeFilters: string[];

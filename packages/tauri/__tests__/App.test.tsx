@@ -48,6 +48,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("Timing")).toBeDefined();
       expect(screen.getByText("Join before meeting starts")).toBeDefined();
+      expect(screen.getByText("Stop auto-join after start")).toBeDefined();
       expect(screen.getByText("Countdown before auto-join")).toBeDefined();
     });
   });
@@ -117,6 +118,7 @@ describe("App", () => {
     const inputs = screen.getAllByRole("spinbutton");
     const joinBeforeInput = inputs[0];
     fireEvent.change(joinBeforeInput, { target: { value: "5" } });
+    fireEvent.blur(joinBeforeInput);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
@@ -125,7 +127,7 @@ describe("App", () => {
     });
   });
 
-  it("should default joinBeforeMinutes to 0 when input is invalid", async () => {
+  it("should default joinBeforeMinutes to default when input is invalid", async () => {
     render(<App />);
 
     await waitFor(() => {
@@ -135,10 +137,11 @@ describe("App", () => {
     const inputs = screen.getAllByRole("spinbutton");
     const joinBeforeInput = inputs[0];
     fireEvent.change(joinBeforeInput, { target: { value: "invalid" } });
+    fireEvent.blur(joinBeforeInput);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
-        settings: expect.objectContaining({ joinBeforeMinutes: 0 }),
+        settings: expect.objectContaining({ joinBeforeMinutes: 1 }),
       });
     });
   });
@@ -151,8 +154,9 @@ describe("App", () => {
     });
 
     const inputs = screen.getAllByRole("spinbutton");
-    const countdownInput = inputs[1];
+    const countdownInput = inputs[2];
     fireEvent.change(countdownInput, { target: { value: "15" } });
+    fireEvent.blur(countdownInput);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
@@ -161,7 +165,7 @@ describe("App", () => {
     });
   });
 
-  it("should default joinCountdownSeconds to 0 when input is invalid", async () => {
+  it("should default joinCountdownSeconds to default when input is invalid", async () => {
     render(<App />);
 
     await waitFor(() => {
@@ -169,17 +173,18 @@ describe("App", () => {
     });
 
     const inputs = screen.getAllByRole("spinbutton");
-    const countdownInput = inputs[1];
+    const countdownInput = inputs[2];
     fireEvent.change(countdownInput, { target: { value: "invalid" } });
+    fireEvent.blur(countdownInput);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
-        settings: expect.objectContaining({ joinCountdownSeconds: 0 }),
+        settings: expect.objectContaining({ joinCountdownSeconds: 20 }),
       });
     });
   });
 
-  it("should clamp joinBeforeMinutes to valid range", async () => {
+  it("should default joinBeforeMinutes when input is out of range", async () => {
     render(<App />);
 
     await waitFor(() => {
@@ -189,10 +194,49 @@ describe("App", () => {
     const inputs = screen.getAllByRole("spinbutton");
     const joinBeforeInput = inputs[0];
     fireEvent.change(joinBeforeInput, { target: { value: "100" } });
+    fireEvent.blur(joinBeforeInput);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
-        settings: expect.objectContaining({ joinBeforeMinutes: 30 }),
+        settings: expect.objectContaining({ joinBeforeMinutes: 1 }),
+      });
+    });
+  });
+
+  it("should update maxMinutesAfterStart when input changes", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Timing")).toBeDefined();
+    });
+
+    const inputs = screen.getAllByRole("spinbutton");
+    const maxAfterStartInput = inputs[1];
+    fireEvent.change(maxAfterStartInput, { target: { value: "12" } });
+    fireEvent.blur(maxAfterStartInput);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ maxMinutesAfterStart: 12 }),
+      });
+    });
+  });
+
+  it("should default maxMinutesAfterStart when input is invalid", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Timing")).toBeDefined();
+    });
+
+    const inputs = screen.getAllByRole("spinbutton");
+    const maxAfterStartInput = inputs[1];
+    fireEvent.change(maxAfterStartInput, { target: { value: "invalid" } });
+    fireEvent.blur(maxAfterStartInput);
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({ maxMinutesAfterStart: 10 }),
       });
     });
   });

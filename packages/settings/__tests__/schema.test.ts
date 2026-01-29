@@ -108,6 +108,14 @@ describe("Settings", () => {
       expect(tooLarge.success).toBe(false);
     });
 
+    it("should reject invalid maxMinutesAfterStart", () => {
+      const tooSmall = SettingsSchema.safeParse({ maxMinutesAfterStart: -1 });
+      expect(tooSmall.success).toBe(false);
+
+      const tooLarge = SettingsSchema.safeParse({ maxMinutesAfterStart: 60 });
+      expect(tooLarge.success).toBe(false);
+    });
+
     it("should reject invalid checkIntervalSeconds", () => {
       // Min is 30 (Chrome Alarms API limit since Chrome 120)
       const tooSmall = SettingsSchema.safeParse({ checkIntervalSeconds: 10 });
@@ -162,6 +170,10 @@ describe("Settings", () => {
         expect(result.data.checkIntervalSeconds).toBe(30);
         expect(result.data.joinBeforeMinutes).toBe(1);
         expect(result.data.autoClickJoin).toBe(true);
+        expect(result.data.maxMinutesAfterStart).toBe(10);
+        expect(result.data.joinCountdownSeconds).toBe(20);
+        expect(result.data.showNotifications).toBe(true);
+        expect(result.data.showCountdownOverlay).toBe(true);
       }
     });
   });

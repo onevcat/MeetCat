@@ -81,6 +81,21 @@ describe("Scheduler", () => {
       expect(event.meeting).toBeNull();
     });
 
+    it("should not join if meeting is too far after start", () => {
+      const scheduler = createSchedulerLogic({
+        joinBeforeMinutes: 1,
+        maxMinutesAfterStart: 10,
+      });
+      const meetings = [
+        createMeeting({ callId: "abc-defg-hij", title: "Meeting", startsInMinutes: -20 }),
+      ];
+      const now = Date.now();
+
+      const event = scheduler.check(meetings, new Set(), now);
+
+      expect(event.type).toBe("none");
+    });
+
     it("should skip already joined meetings", () => {
       const scheduler = createSchedulerLogic({ joinBeforeMinutes: 2 });
       const meetings = [

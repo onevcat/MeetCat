@@ -11,8 +11,9 @@ function baseSettings(): Settings {
   return {
     checkIntervalSeconds: 30,
     joinBeforeMinutes: 1,
+    maxMinutesAfterStart: 10,
     autoClickJoin: true,
-    joinCountdownSeconds: 30,
+    joinCountdownSeconds: 20,
     titleExcludeFilters: [],
     defaultMicState: "muted",
     defaultCameraState: "muted",

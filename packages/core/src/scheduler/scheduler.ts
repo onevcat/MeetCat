@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from "@meetcat/settings";
 export const DEFAULT_SCHEDULER_CONFIG: Required<SchedulerConfig> = {
   joinBeforeMinutes: DEFAULT_SETTINGS.joinBeforeMinutes,
   titleExcludeFilters: DEFAULT_SETTINGS.titleExcludeFilters,
-  maxMinutesAfterStart: 30, // Not user-configurable, fixed at 30 minutes
+  maxMinutesAfterStart: DEFAULT_SETTINGS.maxMinutesAfterStart,
 };
 
 /**

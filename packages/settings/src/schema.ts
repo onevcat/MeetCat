@@ -1,4 +1,31 @@
 import { z } from "zod";
+import defaults from "./defaults.json";
+
+type DefaultsJson = {
+  checkIntervalSeconds: number;
+  joinBeforeMinutes: number;
+  maxMinutesAfterStart: number;
+  autoClickJoin: boolean;
+  joinCountdownSeconds: number;
+  titleExcludeFilters: string[];
+  defaultMicState: "muted" | "unmuted";
+  defaultCameraState: "muted" | "unmuted";
+  showNotifications: boolean;
+  showCountdownOverlay: boolean;
+  extension: {
+    openInNewTab: boolean;
+  };
+  tauri: {
+    runInBackground: boolean;
+    quitToHide: boolean;
+    startAtLogin: boolean;
+    showTrayIcon: boolean;
+    trayDisplayMode: "iconOnly" | "iconWithTime" | "iconWithCountdown";
+    trayShowMeetingTitle: boolean;
+  };
+};
+
+const DEFAULTS = defaults as DefaultsJson;
 
 /**
  * Media state options
@@ -19,7 +46,7 @@ export const TrayDisplayModeSchema = z.enum([
  */
 export const ExtensionSettingsSchema = z.object({
   /** Open meeting in new tab (default: true) */
-  openInNewTab: z.boolean().default(true),
+  openInNewTab: z.boolean().default(DEFAULTS.extension.openInNewTab),
 });
 
 /**
@@ -27,17 +54,17 @@ export const ExtensionSettingsSchema = z.object({
  */
 export const TauriSettingsSchema = z.object({
   /** Run in background when window is closed (default: true) */
-  runInBackground: z.boolean().default(true),
+  runInBackground: z.boolean().default(DEFAULTS.tauri.runInBackground),
   /** Hide the app instead of quitting when pressing Command-Q (default: true) */
-  quitToHide: z.boolean().default(true),
+  quitToHide: z.boolean().default(DEFAULTS.tauri.quitToHide),
   /** Start app at system login (default: false) */
-  startAtLogin: z.boolean().default(false),
+  startAtLogin: z.boolean().default(DEFAULTS.tauri.startAtLogin),
   /** Show system tray icon (default: true) */
-  showTrayIcon: z.boolean().default(true),
+  showTrayIcon: z.boolean().default(DEFAULTS.tauri.showTrayIcon),
   /** Tray display mode (default: iconOnly) */
-  trayDisplayMode: TrayDisplayModeSchema.default("iconOnly"),
+  trayDisplayMode: TrayDisplayModeSchema.default(DEFAULTS.tauri.trayDisplayMode),
   /** Show next meeting title in tray (default: false) */
-  trayShowMeetingTitle: z.boolean().default(false),
+  trayShowMeetingTitle: z.boolean().default(DEFAULTS.tauri.trayShowMeetingTitle),
 });
 
 /**
@@ -46,29 +73,49 @@ export const TauriSettingsSchema = z.object({
 export const SettingsSchema = z.object({
   // Timing
   /** Interval in seconds between checking for meetings (30-120, default: 30) */
-  checkIntervalSeconds: z.number().min(30).max(120).default(30),
+  checkIntervalSeconds: z
+    .number()
+    .min(30)
+    .max(120)
+    .default(DEFAULTS.checkIntervalSeconds),
   /** Minutes before meeting start to trigger auto-join (default: 1) */
-  joinBeforeMinutes: z.number().min(0).max(30).default(1),
+  joinBeforeMinutes: z
+    .number()
+    .min(0)
+    .max(30)
+    .default(DEFAULTS.joinBeforeMinutes),
+  /** Max minutes after start to still auto-join (0-30, default: 10) */
+  maxMinutesAfterStart: z
+    .number()
+    .min(0)
+    .max(30)
+    .default(DEFAULTS.maxMinutesAfterStart),
 
   // Join behavior
   /** Automatically click join button (false = only open page) */
-  autoClickJoin: z.boolean().default(true),
+  autoClickJoin: z.boolean().default(DEFAULTS.autoClickJoin),
   /** Seconds to countdown before auto-join (allows user to cancel) */
-  joinCountdownSeconds: z.number().min(0).max(60).default(30),
+  joinCountdownSeconds: z
+    .number()
+    .min(0)
+    .max(60)
+    .default(DEFAULTS.joinCountdownSeconds),
   /** Exclude meetings with titles containing any of these strings (case-sensitive) */
-  titleExcludeFilters: z.array(z.string()).default([]),
+  titleExcludeFilters: z
+    .array(z.string())
+    .default([...DEFAULTS.titleExcludeFilters]),
 
   // Media defaults
   /** Default microphone state when joining */
-  defaultMicState: MediaStateSchema.default("muted"),
+  defaultMicState: MediaStateSchema.default(DEFAULTS.defaultMicState),
   /** Default camera state when joining */
-  defaultCameraState: MediaStateSchema.default("muted"),
+  defaultCameraState: MediaStateSchema.default(DEFAULTS.defaultCameraState),
 
   // UI
   /** Show desktop notifications */
-  showNotifications: z.boolean().default(true),
+  showNotifications: z.boolean().default(DEFAULTS.showNotifications),
   /** Show countdown overlay on Google Meet pages */
-  showCountdownOverlay: z.boolean().default(true),
+  showCountdownOverlay: z.boolean().default(DEFAULTS.showCountdownOverlay),
 
   // Platform-specific
   /** Chrome Extension specific settings */

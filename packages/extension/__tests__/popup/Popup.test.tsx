@@ -151,6 +151,7 @@ describe("Popup", () => {
     await waitFor(() => {
       expect(screen.getByText("Timing")).toBeDefined();
       expect(screen.getByText("Join before meeting (minutes)")).toBeDefined();
+      expect(screen.getByText("Stop auto-join after start (minutes)")).toBeDefined();
     });
   });
 
@@ -243,7 +244,7 @@ describe("Popup", () => {
     });
   });
 
-  it("should update joinCountdownSeconds on blur", async () => {
+  it("should update maxMinutesAfterStart on blur", async () => {
     render(<Popup />);
 
     await waitFor(() => {
@@ -251,6 +252,22 @@ describe("Popup", () => {
     });
 
     const input = screen.getAllByRole("spinbutton")[1];
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(chrome.storage.sync.set).toHaveBeenCalled();
+    });
+  });
+
+  it("should update joinCountdownSeconds on blur", async () => {
+    render(<Popup />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Timing")).toBeDefined();
+    });
+
+    const input = screen.getAllByRole("spinbutton")[2];
     fireEvent.change(input, { target: { value: "15" } });
     fireEvent.blur(input);
 

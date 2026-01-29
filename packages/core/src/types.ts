@@ -79,6 +79,6 @@ export interface SchedulerConfig {
   joinBeforeMinutes: number;
   /** Exclude meetings with titles containing any of these strings (case-sensitive) */
   titleExcludeFilters?: string[];
-  /** Maximum minutes after start to still allow joining (default: 30) */
+  /** Maximum minutes after start to still allow joining (default: 10) */
   maxMinutesAfterStart?: number;
 }

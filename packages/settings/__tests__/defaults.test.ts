@@ -18,11 +18,12 @@ describe("Settings Defaults", () => {
     it("should have expected timing defaults", () => {
       expect(DEFAULT_SETTINGS.checkIntervalSeconds).toBe(30);
       expect(DEFAULT_SETTINGS.joinBeforeMinutes).toBe(1);
+      expect(DEFAULT_SETTINGS.maxMinutesAfterStart).toBe(10);
     });
 
     it("should have expected join behavior defaults", () => {
       expect(DEFAULT_SETTINGS.autoClickJoin).toBe(true);
-      expect(DEFAULT_SETTINGS.joinCountdownSeconds).toBe(30);
+      expect(DEFAULT_SETTINGS.joinCountdownSeconds).toBe(20);
       expect(DEFAULT_SETTINGS.titleExcludeFilters).toEqual([]);
     });
 

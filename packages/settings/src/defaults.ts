@@ -1,44 +1,58 @@
 import type { Settings, ExtensionSettings, TauriSettings } from "./schema.js";
+import defaults from "./defaults.json";
+
+type DefaultsJson = {
+  checkIntervalSeconds: number;
+  joinBeforeMinutes: number;
+  maxMinutesAfterStart: number;
+  autoClickJoin: boolean;
+  joinCountdownSeconds: number;
+  titleExcludeFilters: string[];
+  defaultMicState: Settings["defaultMicState"];
+  defaultCameraState: Settings["defaultCameraState"];
+  showNotifications: boolean;
+  showCountdownOverlay: boolean;
+  extension: ExtensionSettings;
+  tauri: TauriSettings;
+};
+
+const DEFAULTS = defaults as DefaultsJson;
 
 /**
  * Default settings values
  */
 export const DEFAULT_SETTINGS: Settings = {
   // Timing
-  checkIntervalSeconds: 30,
-  joinBeforeMinutes: 1,
+  checkIntervalSeconds: DEFAULTS.checkIntervalSeconds,
+  joinBeforeMinutes: DEFAULTS.joinBeforeMinutes,
+  maxMinutesAfterStart: DEFAULTS.maxMinutesAfterStart,
 
   // Join behavior
-  autoClickJoin: true,
-  joinCountdownSeconds: 30,
-  titleExcludeFilters: [],
+  autoClickJoin: DEFAULTS.autoClickJoin,
+  joinCountdownSeconds: DEFAULTS.joinCountdownSeconds,
+  titleExcludeFilters: [...DEFAULTS.titleExcludeFilters],
 
   // Media defaults
-  defaultMicState: "muted",
-  defaultCameraState: "muted",
+  defaultMicState: DEFAULTS.defaultMicState,
+  defaultCameraState: DEFAULTS.defaultCameraState,
 
   // UI
-  showNotifications: true,
-  showCountdownOverlay: true,
+  showNotifications: DEFAULTS.showNotifications,
+  showCountdownOverlay: DEFAULTS.showCountdownOverlay,
 };
 
 /**
  * Default extension settings
  */
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
-  openInNewTab: true,
+  ...DEFAULTS.extension,
 };
 
 /**
  * Default Tauri settings
  */
 export const DEFAULT_TAURI_SETTINGS: TauriSettings = {
-  runInBackground: true,
-  quitToHide: true,
-  startAtLogin: false,
-  showTrayIcon: true,
-  trayDisplayMode: "iconOnly",
-  trayShowMeetingTitle: false,
+  ...DEFAULTS.tauri,
 };
 
 /**

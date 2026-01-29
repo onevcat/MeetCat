@@ -59,6 +59,7 @@ async function loadSettings(): Promise<void> {
       state.settings = { ...DEFAULT_SETTINGS, ...result[STORAGE_KEY] };
       state.scheduler.updateConfig({
         joinBeforeMinutes: state.settings.joinBeforeMinutes,
+        maxMinutesAfterStart: state.settings.maxMinutesAfterStart,
         titleExcludeFilters: state.settings.titleExcludeFilters,
       });
     }
@@ -77,6 +78,7 @@ async function saveSettings(settings: Partial<Settings>): Promise<void> {
     state.settings = newSettings;
     state.scheduler.updateConfig({
       joinBeforeMinutes: newSettings.joinBeforeMinutes,
+      maxMinutesAfterStart: newSettings.maxMinutesAfterStart,
       titleExcludeFilters: newSettings.titleExcludeFilters,
     });
   } catch (e) {
@@ -170,8 +172,8 @@ async function setupAlarm(): Promise<void> {
 /**
  * Schedule a precise join trigger for the next meeting
  *
- * This calculates the exact time when we should open the meeting (joinBeforeMinutes before start)
- * and sets a one-shot chrome.alarm to trigger at that precise moment.
+ * This calculates the exact time when we should open the meeting
+ * (joinBeforeMinutes before start, up to maxMinutesAfterStart after).
  */
 async function scheduleJoinTrigger(): Promise<void> {
   // Clear any existing join trigger
@@ -179,7 +181,7 @@ async function scheduleJoinTrigger(): Promise<void> {
   state.scheduledJoinMeeting = null;
 
   const joinBeforeMs = state.settings.joinBeforeMinutes * 60 * 1000;
-  const maxAfterStartMs = 30 * 60 * 1000; // 30 minutes
+  const maxAfterStartMs = state.settings.maxMinutesAfterStart * 60 * 1000;
   const now = Date.now();
 
   // Find the next meeting to schedule
@@ -346,6 +348,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     state.settings = { ...DEFAULT_SETTINGS, ...changes[STORAGE_KEY].newValue };
     state.scheduler.updateConfig({
       joinBeforeMinutes: state.settings.joinBeforeMinutes,
+      maxMinutesAfterStart: state.settings.maxMinutesAfterStart,
       titleExcludeFilters: state.settings.titleExcludeFilters,
     });
     setupAlarm();

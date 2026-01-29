@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -40,34 +41,35 @@ pub enum TrayDisplayMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TauriSettings {
-    #[serde(default = "default_true")]
+    #[serde(default = "default_run_in_background")]
     pub run_in_background: bool,
 
-    #[serde(default = "default_true")]
+    #[serde(default = "default_quit_to_hide")]
     pub quit_to_hide: bool,
 
-    #[serde(default)]
+    #[serde(default = "default_start_at_login")]
     pub start_at_login: bool,
 
-    #[serde(default = "default_true")]
+    #[serde(default = "default_show_tray_icon")]
     pub show_tray_icon: bool,
 
-    #[serde(default)]
+    #[serde(default = "default_tray_display_mode")]
     pub tray_display_mode: TrayDisplayMode,
 
-    #[serde(default)]
+    #[serde(default = "default_tray_show_meeting_title")]
     pub tray_show_meeting_title: bool,
 }
 
 impl Default for TauriSettings {
     fn default() -> Self {
+        let defaults = defaults();
         Self {
-            run_in_background: true,
-            quit_to_hide: true,
-            start_at_login: false,
-            show_tray_icon: true,
-            tray_display_mode: TrayDisplayMode::IconOnly,
-            tray_show_meeting_title: false,
+            run_in_background: defaults.tauri.run_in_background,
+            quit_to_hide: defaults.tauri.quit_to_hide,
+            start_at_login: defaults.tauri.start_at_login,
+            show_tray_icon: defaults.tauri.show_tray_icon,
+            tray_display_mode: defaults.tauri.tray_display_mode.clone(),
+            tray_show_meeting_title: defaults.tauri.tray_show_meeting_title,
         }
     }
 }
@@ -83,28 +85,31 @@ pub struct Settings {
     #[serde(default = "default_join_before")]
     pub join_before_minutes: u32,
 
+    #[serde(default = "default_max_minutes_after_start")]
+    pub max_minutes_after_start: u32,
+
     // Join behavior
-    #[serde(default = "default_true")]
+    #[serde(default = "default_auto_click_join")]
     pub auto_click_join: bool,
 
     #[serde(default = "default_countdown")]
     pub join_countdown_seconds: u32,
 
-    #[serde(default)]
+    #[serde(default = "default_title_exclude_filters")]
     pub title_exclude_filters: Vec<String>,
 
     // Media defaults
-    #[serde(default)]
+    #[serde(default = "default_mic_state")]
     pub default_mic_state: MediaState,
 
-    #[serde(default)]
+    #[serde(default = "default_camera_state")]
     pub default_camera_state: MediaState,
 
     // UI
-    #[serde(default = "default_true")]
+    #[serde(default = "default_show_notifications")]
     pub show_notifications: bool,
 
-    #[serde(default = "default_true")]
+    #[serde(default = "default_show_countdown_overlay")]
     pub show_countdown_overlay: bool,
 
     // Platform-specific
@@ -112,34 +117,119 @@ pub struct Settings {
     pub tauri: Option<TauriSettings>,
 }
 
-fn default_true() -> bool {
-    true
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DefaultsTauriSettings {
+    run_in_background: bool,
+    quit_to_hide: bool,
+    start_at_login: bool,
+    show_tray_icon: bool,
+    tray_display_mode: TrayDisplayMode,
+    tray_show_meeting_title: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DefaultsFile {
+    check_interval_seconds: u32,
+    join_before_minutes: u32,
+    max_minutes_after_start: u32,
+    auto_click_join: bool,
+    join_countdown_seconds: u32,
+    title_exclude_filters: Vec<String>,
+    default_mic_state: MediaState,
+    default_camera_state: MediaState,
+    show_notifications: bool,
+    show_countdown_overlay: bool,
+    tauri: DefaultsTauriSettings,
+}
+
+fn defaults() -> &'static DefaultsFile {
+    static DEFAULTS: OnceLock<DefaultsFile> = OnceLock::new();
+    DEFAULTS.get_or_init(|| {
+        let raw = include_str!("../../../settings/src/defaults.json");
+        serde_json::from_str(raw).expect("Failed to parse shared defaults.json")
+    })
 }
 
 fn default_check_interval() -> u32 {
-    30
+    defaults().check_interval_seconds
 }
 
 fn default_join_before() -> u32 {
-    1
+    defaults().join_before_minutes
+}
+
+fn default_max_minutes_after_start() -> u32 {
+    defaults().max_minutes_after_start
+}
+
+fn default_auto_click_join() -> bool {
+    defaults().auto_click_join
 }
 
 fn default_countdown() -> u32 {
-    10
+    defaults().join_countdown_seconds
+}
+
+fn default_title_exclude_filters() -> Vec<String> {
+    defaults().title_exclude_filters.clone()
+}
+
+fn default_mic_state() -> MediaState {
+    defaults().default_mic_state.clone()
+}
+
+fn default_camera_state() -> MediaState {
+    defaults().default_camera_state.clone()
+}
+
+fn default_show_notifications() -> bool {
+    defaults().show_notifications
+}
+
+fn default_show_countdown_overlay() -> bool {
+    defaults().show_countdown_overlay
+}
+
+fn default_run_in_background() -> bool {
+    defaults().tauri.run_in_background
+}
+
+fn default_quit_to_hide() -> bool {
+    defaults().tauri.quit_to_hide
+}
+
+fn default_start_at_login() -> bool {
+    defaults().tauri.start_at_login
+}
+
+fn default_show_tray_icon() -> bool {
+    defaults().tauri.show_tray_icon
+}
+
+fn default_tray_display_mode() -> TrayDisplayMode {
+    defaults().tauri.tray_display_mode.clone()
+}
+
+fn default_tray_show_meeting_title() -> bool {
+    defaults().tauri.tray_show_meeting_title
 }
 
 impl Default for Settings {
     fn default() -> Self {
+        let defaults = defaults();
         Self {
-            check_interval_seconds: 30,
-            join_before_minutes: 1,
-            auto_click_join: true,
-            join_countdown_seconds: 10,
-            title_exclude_filters: Vec::new(),
-            default_mic_state: MediaState::Muted,
-            default_camera_state: MediaState::Muted,
-            show_notifications: true,
-            show_countdown_overlay: true,
+            check_interval_seconds: defaults.check_interval_seconds,
+            join_before_minutes: defaults.join_before_minutes,
+            max_minutes_after_start: defaults.max_minutes_after_start,
+            auto_click_join: defaults.auto_click_join,
+            join_countdown_seconds: defaults.join_countdown_seconds,
+            title_exclude_filters: defaults.title_exclude_filters.clone(),
+            default_mic_state: defaults.default_mic_state.clone(),
+            default_camera_state: defaults.default_camera_state.clone(),
+            show_notifications: defaults.show_notifications,
+            show_countdown_overlay: defaults.show_countdown_overlay,
             tauri: Some(TauriSettings::default()),
         }
     }
@@ -185,9 +275,13 @@ mod tests {
         let settings = Settings::default();
         assert_eq!(settings.check_interval_seconds, 30);
         assert_eq!(settings.join_before_minutes, 1);
+        assert_eq!(settings.max_minutes_after_start, 10);
         assert!(settings.auto_click_join);
+        assert_eq!(settings.join_countdown_seconds, 20);
         assert_eq!(settings.default_mic_state, MediaState::Muted);
         assert!(settings.title_exclude_filters.is_empty());
+        assert!(settings.show_notifications);
+        assert!(settings.show_countdown_overlay);
     }
 
     #[test]
@@ -241,6 +335,7 @@ mod tests {
         assert_eq!(settings.join_before_minutes, 5);
         // Other fields should use defaults
         assert_eq!(settings.check_interval_seconds, 30);
+        assert_eq!(settings.max_minutes_after_start, 10);
         assert!(settings.auto_click_join);
         assert_eq!(settings.default_mic_state, MediaState::Muted);
     }
@@ -311,6 +406,7 @@ mod tests {
         let original = Settings {
             check_interval_seconds: 60,
             join_before_minutes: 5,
+            max_minutes_after_start: 12,
             auto_click_join: false,
             join_countdown_seconds: 15,
             title_exclude_filters: vec!["Skip".to_string()],
@@ -333,6 +429,7 @@ mod tests {
 
         assert_eq!(parsed.check_interval_seconds, 60);
         assert_eq!(parsed.join_before_minutes, 5);
+        assert_eq!(parsed.max_minutes_after_start, 12);
         assert!(!parsed.auto_click_join);
         assert_eq!(parsed.join_countdown_seconds, 15);
         assert_eq!(parsed.title_exclude_filters, vec!["Skip".to_string()]);

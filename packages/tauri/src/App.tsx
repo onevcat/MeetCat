@@ -28,6 +28,62 @@ export function App() {
   const [saving, setSaving] = useState(false);
   const [filterInput, setFilterInput] = useState("");
 
+  /**
+   * Reusable number input with validation on blur.
+   */
+  const NumberInput = ({
+    value,
+    defaultValue,
+    min,
+    max,
+    suffix,
+    onChange,
+  }: {
+    value: number;
+    defaultValue: number;
+    min: number;
+    max: number;
+    suffix: string;
+    onChange: (value: number) => void;
+  }) => {
+    const [localValue, setLocalValue] = useState(value.toString());
+
+    useEffect(() => {
+      setLocalValue(value.toString());
+    }, [value]);
+
+    const handleBlur = () => {
+      const parsed = parseInt(localValue, 10);
+      if (isNaN(parsed) || parsed < min || parsed > max) {
+        setLocalValue(defaultValue.toString());
+        onChange(defaultValue);
+        return;
+      }
+      onChange(parsed);
+    };
+
+    return (
+      <div className="input-with-suffix">
+        <input
+          type="number"
+          className="form-input"
+          min={min}
+          max={max}
+          placeholder={defaultValue.toString()}
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            }
+          }}
+        />
+        <span className="input-suffix">{suffix}</span>
+      </div>
+    );
+  };
+
   // Load settings
   useEffect(() => {
     async function load() {
@@ -162,46 +218,45 @@ export function App() {
 
           <div className="form-group">
             <label className="form-label">Join before meeting starts</label>
-            <div className="input-with-suffix">
-              <input
-                type="number"
-                className="form-input"
-                min="0"
-                max="30"
-                value={settings.joinBeforeMinutes}
-                onChange={(e) =>
-                  updateSettings({
-                    joinBeforeMinutes: Math.max(
-                      0,
-                      Math.min(30, parseInt(e.target.value) || 0)
-                    ),
-                  })
-                }
-              />
-              <span className="input-suffix">minutes</span>
-            </div>
+            <NumberInput
+              value={settings.joinBeforeMinutes}
+              defaultValue={DEFAULT_SETTINGS.joinBeforeMinutes}
+              min={0}
+              max={30}
+              suffix="minutes"
+              onChange={(value) => updateSettings({ joinBeforeMinutes: value })}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Stop auto-join after start</label>
+            <NumberInput
+              value={settings.maxMinutesAfterStart}
+              defaultValue={DEFAULT_SETTINGS.maxMinutesAfterStart}
+              min={0}
+              max={30}
+              suffix="minutes"
+              onChange={(value) =>
+                updateSettings({ maxMinutesAfterStart: value })
+              }
+            />
+            <p className="form-hint">
+              Set to 0 to avoid auto-joining after the meeting starts
+            </p>
           </div>
 
           <div className="form-group">
             <label className="form-label">Countdown before auto-join</label>
-            <div className="input-with-suffix">
-              <input
-                type="number"
-                className="form-input"
-                min="0"
-                max="60"
-                value={settings.joinCountdownSeconds}
-                onChange={(e) =>
-                  updateSettings({
-                    joinCountdownSeconds: Math.max(
-                      0,
-                      Math.min(60, parseInt(e.target.value) || 0)
-                    ),
-                  })
-                }
-              />
-              <span className="input-suffix">seconds</span>
-            </div>
+            <NumberInput
+              value={settings.joinCountdownSeconds}
+              defaultValue={DEFAULT_SETTINGS.joinCountdownSeconds}
+              min={0}
+              max={60}
+              suffix="seconds"
+              onChange={(value) =>
+                updateSettings({ joinCountdownSeconds: value })
+              }
+            />
           </div>
         </section>
 
