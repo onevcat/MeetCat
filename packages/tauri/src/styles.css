@@ -26,13 +26,15 @@ body {
   line-height: 1.5;
   color: var(--color-text);
   background: var(--color-bg);
+  overflow: hidden;
 }
 
 /* Settings Window */
 .settings-window {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .loading {
