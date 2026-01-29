@@ -13,12 +13,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{
-    AppHandle, Emitter, Listener, Manager, State, WebviewWindowBuilder, WebviewUrl,
+    AppHandle, Emitter, Listener, Manager, State, WebviewWindowBuilder, WebviewUrl, Url,
 };
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
 use tauri::async_runtime::JoinHandle;
 
 /// Application state shared across commands
@@ -380,22 +381,78 @@ fn setup_new_window_handler(app: &AppHandle) {
 }
 
 /// Script to intercept new window requests
-const INTERCEPT_SCRIPT: &str = r#"
+const INTERCEPT_SCRIPT: &str = r##"
 (function() {
     if (window.__meetcatInterceptInstalled) return;
     window.__meetcatInterceptInstalled = true;
 
+    const originalOpen = window.open ? window.open.bind(window) : null;
+
+    function isMeetingPath(pathname) {
+        const path = (pathname || "").replace(/\/+$/, "");
+        if (path.startsWith("/lookup/")) {
+            return true;
+        }
+        return /^\/[a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{3}$/i.test(path);
+    }
+
+    function isMeetingPage() {
+        return isMeetingPath(window.location.pathname);
+    }
+
+    function isMeetHost(href) {
+        try {
+            const parsed = new URL(href, window.location.origin);
+            return parsed.host === "meet.google.com";
+        } catch (e) {
+            return false;
+        }
+    }
+
     document.addEventListener('click', function(e) {
-        const link = e.target.closest('a[target="_blank"], a[target="blank"]');
-        if (link && link.href) {
+        const link = e.target.closest('a[href]');
+        if (!link || !link.href) return;
+
+        const href = link.href;
+        const target = (link.getAttribute('target') || "").toLowerCase();
+        if (href.startsWith("javascript:") || href === "#") return;
+
+        if (isMeetingPage()) {
             e.preventDefault();
             e.stopPropagation();
-            window.location.href = link.href;
+            if (isMeetHost(href)) {
+                window.location.href = href;
+            } else if (originalOpen) {
+                originalOpen(href, "_blank");
+            } else {
+                window.location.href = href;
+            }
+            return;
+        }
+
+        if (target === "_blank" || target === "blank") {
+            e.preventDefault();
+            e.stopPropagation();
+            window.location.href = href;
         }
     }, true);
 
-    const originalOpen = window.open;
     window.open = function(url, target, features) {
+        if (isMeetingPage()) {
+            if (url && isMeetHost(url)) {
+                try {
+                    const parsed = new URL(url, window.location.origin);
+                    window.location.href = parsed.href;
+                    return null;
+                } catch (e) {
+                    return null;
+                }
+            }
+            if (originalOpen) {
+                return originalOpen(url, target, features);
+            }
+            return null;
+        }
         if (url) {
             try {
                 const parsedUrl = new URL(url, window.location.origin);
@@ -407,7 +464,7 @@ const INTERCEPT_SCRIPT: &str = r#"
     };
     console.log('[MeetCat] Intercept script installed');
 })();
-"#;
+"##;
 
 /// Inject script when navigating to Google pages
 fn setup_navigation_injection(app: &AppHandle) {
@@ -456,11 +513,112 @@ fn setup_navigation_injection(app: &AppHandle) {
     });
 }
 
+fn is_meeting_path(path: &str) -> bool {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.starts_with("/lookup/") {
+        return true;
+    }
+
+    let code = trimmed.trim_start_matches('/');
+    if code.len() != 12 {
+        return false;
+    }
+
+    let bytes = code.as_bytes();
+    for (idx, byte) in bytes.iter().enumerate() {
+        match idx {
+            3 | 8 => {
+                if *byte != b'-' {
+                    return false;
+                }
+            }
+            _ => {
+                if !byte.is_ascii_alphanumeric() {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
+}
+
+fn is_meeting_url(url: &Url) -> bool {
+    if url.host_str() != Some("meet.google.com") {
+        return false;
+    }
+    is_meeting_path(url.path())
+}
+
+fn should_open_external(current_url: &Url, target_url: &Url) -> bool {
+    if is_meeting_url(current_url) {
+        return target_url.host_str() != Some("meet.google.com");
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_meeting_path, is_meeting_url, should_open_external};
+    use tauri::Url;
+
+    #[test]
+    fn test_is_meeting_path_code() {
+        assert!(is_meeting_path("/abc-defg-hij"));
+        assert!(is_meeting_path("/abc-defg-hij/"));
+        assert!(!is_meeting_path("/ab-defg-hij"));
+        assert!(!is_meeting_path("/abc-defg-hij/extra"));
+    }
+
+    #[test]
+    fn test_is_meeting_path_lookup() {
+        assert!(is_meeting_path("/lookup/abc-defg-hij"));
+        assert!(is_meeting_path("/lookup/anything"));
+    }
+
+    #[test]
+    fn test_is_meeting_path_home() {
+        assert!(!is_meeting_path("/"));
+        assert!(!is_meeting_path(""));
+    }
+
+    #[test]
+    fn test_is_meeting_url() {
+        let url = Url::parse("https://meet.google.com/abc-defg-hij").unwrap();
+        assert!(is_meeting_url(&url));
+
+        let home = Url::parse("https://meet.google.com/").unwrap();
+        assert!(!is_meeting_url(&home));
+
+        let other = Url::parse("https://example.com/abc-defg-hij").unwrap();
+        assert!(!is_meeting_url(&other));
+    }
+
+    #[test]
+    fn test_should_open_external_from_meeting() {
+        let current = Url::parse("https://meet.google.com/abc-defg-hij").unwrap();
+        let meet_target = Url::parse("https://meet.google.com/").unwrap();
+        let external_target = Url::parse("https://example.com/").unwrap();
+
+        assert!(!should_open_external(&current, &meet_target));
+        assert!(should_open_external(&current, &external_target));
+    }
+
+    #[test]
+    fn test_should_open_external_from_home() {
+        let current = Url::parse("https://meet.google.com/").unwrap();
+        let external_target = Url::parse("https://example.com/").unwrap();
+
+        assert!(!should_open_external(&current, &external_target));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::AppleScript,
             None,
@@ -593,13 +751,24 @@ pub fn run() {
             let app_handle = app.handle().clone();
             WebviewWindowBuilder::from_config(app.handle(), main_config)?
                 .on_new_window(move |url, features| {
+                    let _ = features;
+                    let current_url = app_handle
+                        .get_webview_window("main")
+                        .and_then(|window| window.url().ok())
+                        .unwrap_or_else(|| Url::parse("https://meet.google.com/").unwrap());
+
+                    if should_open_external(&current_url, &url) {
+                        let _ = app_handle.opener().open_url(url.as_str(), None::<&str>);
+                        return tauri::webview::NewWindowResponse::Deny;
+                    }
+
                     if matches!(url.scheme(), "http" | "https") {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             let _ = window.navigate(url.clone());
                         }
+                    } else {
+                        let _ = app_handle.opener().open_url(url.as_str(), None::<&str>);
                     }
-
-                    let _ = features;
                     tauri::webview::NewWindowResponse::Deny
                 })
                 .build()?;
