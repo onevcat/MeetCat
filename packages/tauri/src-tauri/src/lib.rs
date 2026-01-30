@@ -16,7 +16,7 @@ use tauri::{
     AppHandle, Emitter, Listener, Manager, State, WebviewWindowBuilder, WebviewUrl, Url,
 };
 #[cfg(target_os = "macos")]
-use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
+use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri_plugin_opener::OpenerExt;
 use tauri::async_runtime::JoinHandle;
@@ -649,7 +649,16 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
-                let app_name = app.package_info().name.clone();
+                let app_name = "MeetCat";
+                let about_icon_bytes = include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/icons/icon.png"
+                ));
+                let about_icon = tauri::image::Image::from_bytes(about_icon_bytes)?;
+                let mut about_metadata = AboutMetadata::default();
+                about_metadata.name = Some(app_name.to_string());
+                about_metadata.icon = Some(about_icon);
+
                 let quit_item = MenuItem::with_id(
                     app,
                     "app-quit",
@@ -658,8 +667,8 @@ pub fn run() {
                     Some("Cmd+Q"),
                 )?;
 
-                let app_menu = SubmenuBuilder::with_id(app, "app", &app_name)
-                    .about(None)
+                let app_menu = SubmenuBuilder::with_id(app, "app", app_name)
+                    .about(Some(about_metadata))
                     .separator()
                     .services()
                     .separator()
