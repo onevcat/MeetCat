@@ -62,86 +62,15 @@ describe("Popup", () => {
 
     render(<Popup />);
 
-    expect(screen.getByText("Loading...")).toBeDefined();
+    expect(screen.getByText("Loading settings...")).toBeDefined();
   });
 
   it("should render MeetCat title after loading", async () => {
     const { container } = render(<Popup />);
 
     await waitFor(() => {
-      const title = container.querySelector(".popup-title");
-      expect(title?.textContent).toBe("MeetCat");
-    });
-  });
-
-  it("should show auto-join status", async () => {
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Status")).toBeDefined();
-      expect(screen.getByText("Auto-join")).toBeDefined();
-    });
-  });
-
-  it("should show Enabled when autoClickJoin is true", async () => {
-    (chrome.storage.sync.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      meetcat_settings: { autoClickJoin: true },
-    });
-
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Enabled")).toBeDefined();
-    });
-  });
-
-  it("should show Disabled when autoClickJoin is false", async () => {
-    (chrome.storage.sync.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      meetcat_settings: { autoClickJoin: false },
-    });
-
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Disabled")).toBeDefined();
-    });
-  });
-
-  it("should show next meeting when available", async () => {
-    (chrome.runtime.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
-      enabled: true,
-      nextMeeting: {
-        title: "Team Standup",
-        callId: "abc-defg-hij",
-      },
-      lastCheck: Date.now(),
-    });
-
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Next meeting")).toBeDefined();
-      expect(screen.getByText("Team Standup")).toBeDefined();
-    });
-  });
-
-  it("should show ellipsis for long meeting titles", async () => {
-    const longTitle = "12345678901234567890extra";
-    (chrome.runtime.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
-      enabled: true,
-      nextMeeting: {
-        title: longTitle,
-        callId: "abc-defg-hij",
-      },
-      lastCheck: Date.now(),
-    });
-
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Next meeting")).toBeDefined();
-      expect(screen.getByText(/12345678901234567890/)).toBeDefined();
-      expect(screen.getByText(/\.{3}/)).toBeDefined();
+      const title = container.querySelector(".settings-header h1");
+      expect(title?.textContent).toBe("MeetCat Settings");
     });
   });
 
@@ -293,7 +222,7 @@ describe("Popup", () => {
     const { container } = render(<Popup />);
 
     await waitFor(() => {
-      const footer = container.querySelector(".popup-footer");
+      const footer = container.querySelector(".settings-footer");
       expect(footer?.textContent).toMatch(/MeetCat v\d+\.\d+\.\d+/);
     });
   });
@@ -306,7 +235,7 @@ describe("Popup", () => {
     const { container } = render(<Popup />);
 
     await waitFor(() => {
-      const footer = container.querySelector(".popup-footer");
+      const footer = container.querySelector(".settings-footer");
       expect(footer?.textContent).toBe("MeetCat");
     });
   });
@@ -319,7 +248,7 @@ describe("Popup", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getAllByText("MeetCat").length).toBeGreaterThan(0);
+      expect(screen.getByText("MeetCat Settings")).toBeDefined();
     });
   });
 
@@ -385,7 +314,7 @@ describe("FilterList", () => {
     });
   });
 
-  it("should render filter inputs", async () => {
+  it("should render filter chips when filters are provided", async () => {
     (chrome.storage.sync.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       meetcat_settings: { titleExcludeFilters: ["1:1", "Optional"] },
     });
@@ -393,8 +322,8 @@ describe("FilterList", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-      expect(filterInputs.length).toBe(2);
+      expect(screen.getByText("1:1")).toBeDefined();
+      expect(screen.getByText("Optional")).toBeDefined();
     });
   });
 
@@ -406,73 +335,28 @@ describe("FilterList", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-      expect(filterInputs.length).toBe(1);
+      expect(screen.getByPlaceholderText("Enter filter text...")).toBeDefined();
+      expect(screen.queryByText("Optional")).toBeNull();
     });
   });
 
-  it("should add new filter when clicking Add filter button", async () => {
+  it("should add new filter when clicking Add button", async () => {
     render(<Popup />);
 
     await waitFor(() => {
-      expect(screen.getByText("+ Add filter")).toBeDefined();
+      expect(screen.getByText("Add")).toBeDefined();
     });
 
-    fireEvent.click(screen.getByText("+ Add filter"));
-
-    const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-    expect(filterInputs.length).toBe(2);
-  });
-
-  it("should save filter on blur", async () => {
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("+ Add filter")).toBeDefined();
-    });
-
-    const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-    fireEvent.change(filterInputs[0], { target: { value: "test-filter" } });
-    fireEvent.blur(filterInputs[0]);
+    const input = screen.getByPlaceholderText("Enter filter text...");
+    fireEvent.change(input, { target: { value: "test-filter" } });
+    fireEvent.click(screen.getByText("Add"));
 
     await waitFor(() => {
       expect(chrome.storage.sync.set).toHaveBeenCalled();
     });
   });
 
-  it("should trim filter value on blur", async () => {
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("+ Add filter")).toBeDefined();
-    });
-
-    const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-    fireEvent.change(filterInputs[0], { target: { value: "  trimmed  " } });
-    fireEvent.blur(filterInputs[0]);
-
-    await waitFor(() => {
-      expect(filterInputs[0]).toHaveValue("trimmed");
-    });
-  });
-
-  it("should save filter on Enter key", async () => {
-    render(<Popup />);
-
-    await waitFor(() => {
-      expect(screen.getByText("+ Add filter")).toBeDefined();
-    });
-
-    const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-    fireEvent.change(filterInputs[0], { target: { value: "test-filter" } });
-    fireEvent.keyDown(filterInputs[0], { key: "Enter" });
-
-    await waitFor(() => {
-      expect(chrome.storage.sync.set).toHaveBeenCalled();
-    });
-  });
-
-  it("should remove filter on Enter with empty value", async () => {
+  it("should remove filter when clicking remove button", async () => {
     (chrome.storage.sync.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       meetcat_settings: { titleExcludeFilters: ["1:1", "Optional"] },
     });
@@ -480,13 +364,11 @@ describe("FilterList", () => {
     render(<Popup />);
 
     await waitFor(() => {
-      const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-      expect(filterInputs.length).toBe(2);
+      expect(screen.getByText("1:1")).toBeDefined();
     });
 
-    const filterInputs = screen.getAllByPlaceholderText("Enter keyword to exclude");
-    fireEvent.change(filterInputs[0], { target: { value: "" } });
-    fireEvent.keyDown(filterInputs[0], { key: "Enter" });
+    const removeButtons = screen.getAllByTitle("Remove filter");
+    fireEvent.click(removeButtons[0]);
 
     await waitFor(() => {
       expect(chrome.storage.sync.set).toHaveBeenCalled();
