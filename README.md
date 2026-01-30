@@ -10,13 +10,13 @@ MeetCat is an auto-join assistant for Google Meet, built as:
 - Rust toolchain (for Tauri build and Rust tests)
 
 **Quick Start (New Clone)**
-1. Install dependencies and prepare the workspace:
+1. Install dependencies:
 
 ```bash
-pnpm run bootstrap
+pnpm install
 ```
 
-2. Run the Tauri app in dev mode:
+2. Run the Tauri app in dev mode (shared packages will be built and watched):
 
 ```bash
 pnpm run dev
@@ -58,19 +58,10 @@ Testing:
 pnpm run test
 ```
 
-- Per package:
+- Run tests with coverage (includes Rust):
 
 ```bash
-pnpm run test:core
-pnpm run test:settings
-pnpm run test:extension
-pnpm run test:tauri
-```
-
-- Extension E2E (optional):
-
-```bash
-pnpm run test:extension:e2e
+pnpm run test:cov
 ```
 
 **Project Structure**
@@ -80,5 +71,4 @@ pnpm run test:extension:e2e
 - `packages/tauri`: Desktop app (Tauri + React).
 
 **Notes**
-- `bootstrap` only installs dependencies and optionally fetches Rust crates.
 - `dev` and `build` are Tauri-first workflows by default.
