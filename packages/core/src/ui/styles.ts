@@ -5,7 +5,7 @@ export const OVERLAY_BASE_STYLES = `
   font-family: 'Google Sans', Roboto, Arial, sans-serif;
   font-size: 14px;
   color: #202124;
-  z-index: 9999;
+  z-index: 0;
 `;
 
 /**
