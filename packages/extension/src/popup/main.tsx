@@ -1,7 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { Popup } from "./Popup.js";
-import "./styles.css";
+import "@meetcat/settings-ui/styles.css";
+import "./extension.css";
 
 const root = document.getElementById("root");
 if (root) {
