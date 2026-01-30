@@ -42,9 +42,6 @@ const chromeMock = {
   windows: {
     update: vi.fn().mockResolvedValue({}),
   },
-  notifications: {
-    create: vi.fn(),
-  },
 };
 
 // Assign to global

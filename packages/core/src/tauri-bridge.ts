@@ -19,7 +19,6 @@ export interface TauriSettings {
   titleExcludeFilters: string[];
   defaultMicState: "muted" | "unmuted";
   defaultCameraState: "muted" | "unmuted";
-  showNotifications: boolean;
   showCountdownOverlay: boolean;
   tauri?: {
     quitToHide: boolean;
@@ -101,16 +100,6 @@ export async function reportMeetings(meetings: Meeting[]): Promise<void> {
  */
 export async function getSettings(): Promise<TauriSettings> {
   return invoke<TauriSettings>("get_settings");
-}
-
-/**
- * Request a notification to be shown
- */
-export async function showNotification(
-  title: string,
-  body: string
-): Promise<void> {
-  await invoke("show_notification", { title, body });
 }
 
 /**

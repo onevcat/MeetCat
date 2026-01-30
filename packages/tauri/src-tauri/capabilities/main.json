@@ -15,11 +15,6 @@
     "core:webview:allow-webview-position",
     "core:webview:allow-webview-size",
     "core:app:default",
-    "notification:default",
-    "notification:allow-notify",
-    "notification:allow-show",
-    "notification:allow-is-permission-granted",
-    "notification:allow-request-permission",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled"

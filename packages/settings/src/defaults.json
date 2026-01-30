@@ -7,7 +7,6 @@
   "titleExcludeFilters": [],
   "defaultMicState": "muted",
   "defaultCameraState": "muted",
-  "showNotifications": true,
   "showCountdownOverlay": true,
   "extension": {
     "openInNewTab": true

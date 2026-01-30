@@ -248,22 +248,6 @@ export function Popup() {
           <div className="popup-checkbox-group">
             <input
               type="checkbox"
-              id="showNotifications"
-              className="popup-checkbox"
-              checked={settings.showNotifications}
-              onChange={(e) => updateSettings({ showNotifications: e.target.checked })}
-            />
-            <label htmlFor="showNotifications" className="popup-checkbox-label">
-              Notifications
-            </label>
-          </div>
-          <div className="popup-hint">Desktop alerts for auto-join</div>
-        </div>
-
-        <div className="popup-form-group">
-          <div className="popup-checkbox-group">
-            <input
-              type="checkbox"
               id="showCountdownOverlay"
               className="popup-checkbox"
               checked={settings.showCountdownOverlay}

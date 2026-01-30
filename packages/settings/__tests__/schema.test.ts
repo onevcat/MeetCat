@@ -168,7 +168,6 @@ describe("Settings", () => {
         expect(result.data.autoClickJoin).toBe(true);
         expect(result.data.maxMinutesAfterStart).toBe(10);
         expect(result.data.joinCountdownSeconds).toBe(20);
-        expect(result.data.showNotifications).toBe(true);
         expect(result.data.showCountdownOverlay).toBe(true);
       }
     });

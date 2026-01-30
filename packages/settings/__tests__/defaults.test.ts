@@ -33,7 +33,6 @@ describe("Settings Defaults", () => {
     });
 
     it("should have expected UI defaults", () => {
-      expect(DEFAULT_SETTINGS.showNotifications).toBe(true);
       expect(DEFAULT_SETTINGS.showCountdownOverlay).toBe(true);
     });
   });

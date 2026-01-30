@@ -17,7 +17,6 @@ function baseSettings(): Settings {
     titleExcludeFilters: [],
     defaultMicState: "muted",
     defaultCameraState: "muted",
-    showNotifications: true,
     showCountdownOverlay: true,
     tauri: {
       quitToHide: true,

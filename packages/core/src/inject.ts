@@ -37,7 +37,6 @@ import {
   onNavigateAndJoin,
   onSettingsChanged,
   reportJoined,
-  showNotification,
   type TauriSettings,
   type NavigateAndJoinCommand,
 } from "./tauri-bridge.js";
@@ -66,7 +65,6 @@ const DEFAULT_SETTINGS: TauriSettings = {
   titleExcludeFilters: SETTINGS_DEFAULTS.titleExcludeFilters,
   defaultMicState: SETTINGS_DEFAULTS.defaultMicState,
   defaultCameraState: SETTINGS_DEFAULTS.defaultCameraState,
-  showNotifications: SETTINGS_DEFAULTS.showNotifications,
   showCountdownOverlay: SETTINGS_DEFAULTS.showCountdownOverlay,
 };
 
@@ -377,13 +375,6 @@ function performJoin(): void {
       );
     }
 
-    // Show notification
-    if (settings?.showNotifications) {
-      const title = document.title || "Meeting";
-      showNotification("MeetCat", `Joined: ${title}`).catch((e) =>
-        console.error("[MeetCat] Failed to show notification:", e)
-      );
-    }
   }
 }
 

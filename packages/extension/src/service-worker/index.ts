@@ -116,16 +116,6 @@ async function openMeeting(meeting: Meeting): Promise<void> {
     }
   }
 
-  // Show notification
-  if (state.settings.showNotifications) {
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon128.png",
-      title: "MeetCat",
-      message: `Joining: ${meeting.title}`,
-    });
-  }
-
   state.joinedMeetings.add(meeting.callId);
 }
 

@@ -18,7 +18,6 @@ use tauri::{
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri::async_runtime::JoinHandle;
 
@@ -221,17 +220,6 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
 
     // Re-schedule trigger for the next meeting
     schedule_join_trigger(&app, &state);
-}
-
-/// Show a notification
-#[tauri::command]
-fn show_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
-    app.notification()
-        .builder()
-        .title(&title)
-        .body(&body)
-        .show()
-        .map_err(|e| e.to_string())
 }
 
 /// Open the settings window
@@ -616,7 +604,6 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
@@ -799,7 +786,6 @@ pub fn run() {
             stop_daemon,
             meetings_updated,
             meeting_joined,
-            show_notification,
             open_settings_window,
         ])
         .build(tauri::generate_context!())

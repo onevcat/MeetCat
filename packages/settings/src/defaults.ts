@@ -10,7 +10,6 @@ type DefaultsJson = {
   titleExcludeFilters: string[];
   defaultMicState: Settings["defaultMicState"];
   defaultCameraState: Settings["defaultCameraState"];
-  showNotifications: boolean;
   showCountdownOverlay: boolean;
   extension: ExtensionSettings;
   tauri: TauriSettings;
@@ -37,7 +36,6 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultCameraState: DEFAULTS.defaultCameraState,
 
   // UI
-  showNotifications: DEFAULTS.showNotifications,
   showCountdownOverlay: DEFAULTS.showCountdownOverlay,
 };
 

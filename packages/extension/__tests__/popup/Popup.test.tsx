@@ -211,7 +211,7 @@ describe("Popup", () => {
     });
   });
 
-  it("should toggle overlay and notifications settings", async () => {
+  it("should toggle overlay setting", async () => {
     render(<Popup />);
 
     await waitFor(() => {
@@ -219,10 +219,7 @@ describe("Popup", () => {
     });
 
     const overlayCheckbox = screen.getByLabelText("Homepage overlay");
-    const notificationsCheckbox = screen.getByLabelText("Notifications");
-
     fireEvent.click(overlayCheckbox);
-    fireEvent.click(notificationsCheckbox);
 
     await waitFor(() => {
       expect(chrome.storage.sync.set).toHaveBeenCalled();

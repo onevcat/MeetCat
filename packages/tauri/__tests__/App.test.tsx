@@ -60,7 +60,6 @@ describe("App", () => {
       expect(screen.getByText("General")).toBeDefined();
       expect(screen.getByText("Auto-click join")).toBeDefined();
       expect(screen.getByText("Homepage overlay")).toBeDefined();
-      expect(screen.getByText("Notifications")).toBeDefined();
     });
   });
 
@@ -428,23 +427,6 @@ describe("App", () => {
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
         settings: expect.objectContaining({ showCountdownOverlay: false }),
-      });
-    });
-  });
-
-  it("should update showNotifications setting", async () => {
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("General")).toBeDefined();
-    });
-
-    const checkbox = screen.getByLabelText("Notifications");
-    fireEvent.click(checkbox);
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
-        settings: expect.objectContaining({ showNotifications: false }),
       });
     });
   });

@@ -10,7 +10,6 @@ type DefaultsJson = {
   titleExcludeFilters: string[];
   defaultMicState: "muted" | "unmuted";
   defaultCameraState: "muted" | "unmuted";
-  showNotifications: boolean;
   showCountdownOverlay: boolean;
   extension: {
     openInNewTab: boolean;
@@ -109,8 +108,6 @@ export const SettingsSchema = z.object({
   defaultCameraState: MediaStateSchema.default(DEFAULTS.defaultCameraState),
 
   // UI
-  /** Show desktop notifications */
-  showNotifications: z.boolean().default(DEFAULTS.showNotifications),
   /** Show next meeting overlay on Google Meet homepage */
   showCountdownOverlay: z.boolean().default(DEFAULTS.showCountdownOverlay),
 

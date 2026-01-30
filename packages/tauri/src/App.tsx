@@ -281,27 +281,6 @@ export function App() {
             <div className="form-checkbox-group">
               <input
                 type="checkbox"
-                id="showNotifications"
-                className="form-checkbox"
-                checked={settings.showNotifications}
-                onChange={(e) =>
-                  updateSettings({ showNotifications: e.target.checked })
-                }
-              />
-              <label
-                htmlFor="showNotifications"
-                className="form-checkbox-label"
-              >
-                Notifications
-              </label>
-            </div>
-            <p className="form-hint">Desktop alerts for auto-join</p>
-          </div>
-
-          <div className="form-group">
-            <div className="form-checkbox-group">
-              <input
-                type="checkbox"
                 id="showCountdownOverlay"
                 className="form-checkbox"
                 checked={settings.showCountdownOverlay}

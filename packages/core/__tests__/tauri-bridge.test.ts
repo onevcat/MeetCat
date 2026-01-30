@@ -5,7 +5,6 @@ import {
   listen,
   reportMeetings,
   getSettings,
-  showNotification,
   reportJoined,
   onCheckMeetings,
   onNavigateAndJoin,
@@ -164,7 +163,6 @@ describe("Tauri Bridge", () => {
         titleExcludeFilters: [],
         defaultMicState: "muted",
         defaultCameraState: "muted",
-        showNotifications: true,
         showCountdownOverlay: true,
       };
       mockInvoke.mockResolvedValue(mockSettings);
@@ -173,19 +171,6 @@ describe("Tauri Bridge", () => {
 
       expect(mockInvoke).toHaveBeenCalledWith("get_settings", undefined);
       expect(result).toEqual(mockSettings);
-    });
-  });
-
-  describe("showNotification", () => {
-    it("should call invoke with notification details", async () => {
-      mockInvoke.mockResolvedValue(undefined);
-
-      await showNotification("Test Title", "Test Body");
-
-      expect(mockInvoke).toHaveBeenCalledWith("show_notification", {
-        title: "Test Title",
-        body: "Test Body",
-      });
     });
   });
 

@@ -102,9 +102,6 @@ pub struct Settings {
     pub default_camera_state: MediaState,
 
     // UI
-    #[serde(default = "default_show_notifications")]
-    pub show_notifications: bool,
-
     #[serde(default = "default_show_countdown_overlay")]
     pub show_countdown_overlay: bool,
 
@@ -134,7 +131,6 @@ struct DefaultsFile {
     title_exclude_filters: Vec<String>,
     default_mic_state: MediaState,
     default_camera_state: MediaState,
-    show_notifications: bool,
     show_countdown_overlay: bool,
     tauri: DefaultsTauriSettings,
 }
@@ -179,10 +175,6 @@ fn default_camera_state() -> MediaState {
     defaults().default_camera_state.clone()
 }
 
-fn default_show_notifications() -> bool {
-    defaults().show_notifications
-}
-
 fn default_show_countdown_overlay() -> bool {
     defaults().show_countdown_overlay
 }
@@ -219,7 +211,6 @@ impl Default for Settings {
             title_exclude_filters: defaults.title_exclude_filters.clone(),
             default_mic_state: defaults.default_mic_state.clone(),
             default_camera_state: defaults.default_camera_state.clone(),
-            show_notifications: defaults.show_notifications,
             show_countdown_overlay: defaults.show_countdown_overlay,
             tauri: Some(TauriSettings::default()),
         }
@@ -271,7 +262,6 @@ mod tests {
         assert_eq!(settings.join_countdown_seconds, 20);
         assert_eq!(settings.default_mic_state, MediaState::Muted);
         assert!(settings.title_exclude_filters.is_empty());
-        assert!(settings.show_notifications);
         assert!(settings.show_countdown_overlay);
     }
 
@@ -399,7 +389,6 @@ mod tests {
             title_exclude_filters: vec!["Skip".to_string()],
             default_mic_state: MediaState::Unmuted,
             default_camera_state: MediaState::Unmuted,
-            show_notifications: false,
             show_countdown_overlay: false,
             tauri: Some(TauriSettings {
                 quit_to_hide: false,
@@ -421,7 +410,6 @@ mod tests {
         assert_eq!(parsed.title_exclude_filters, vec!["Skip".to_string()]);
         assert_eq!(parsed.default_mic_state, MediaState::Unmuted);
         assert_eq!(parsed.default_camera_state, MediaState::Unmuted);
-        assert!(!parsed.show_notifications);
         assert!(!parsed.show_countdown_overlay);
 
         let tauri = parsed.tauri.unwrap();
