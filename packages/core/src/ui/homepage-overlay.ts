@@ -1,4 +1,5 @@
 import type { Meeting } from "../types.js";
+import { attachOverlayHideButton } from "./overlay-controls.js";
 import { ensureStyles } from "./styles.js";
 
 export interface HomepageOverlayOptions {
@@ -82,6 +83,8 @@ export function createHomepageOverlay(
   textDiv.appendChild(subtitleEl);
 
   overlay.appendChild(textDiv);
+
+  attachOverlayHideButton(overlay);
 
   // For countdown display in subtitle
   let countdownSpan: HTMLSpanElement | null = null;

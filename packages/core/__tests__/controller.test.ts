@@ -263,6 +263,50 @@ describe("Controller - Join Button", () => {
       expect(result.button).toBeNull();
       expect(result.matchedText).toBeNull();
     });
+
+    it("should fall back to the largest visible non-menu button", () => {
+      const menuButton = createJoinButton("Other ways to join");
+      menuButton.setAttribute("aria-haspopup", "menu");
+      menuButton.getBoundingClientRect = () =>
+        ({ width: 200, height: 40 } as DOMRect);
+      document.body.appendChild(menuButton);
+
+      const smallButton = createJoinButton("Allow microphone and camera");
+      smallButton.getBoundingClientRect = () =>
+        ({ width: 160, height: 32 } as DOMRect);
+      document.body.appendChild(smallButton);
+
+      const joinButton = createJoinButton("Join now");
+      joinButton.textContent = "";
+      joinButton.setAttribute("aria-label", "Join now");
+      joinButton.getBoundingClientRect = () =>
+        ({ width: 240, height: 56 } as DOMRect);
+      document.body.appendChild(joinButton);
+
+      const result = findJoinButton(document);
+
+      expect(result.button).toBe(joinButton);
+      expect(result.matchedText).toBe("Join now");
+    });
+
+    it("should prefer promo anchor candidates when text patterns are missing", () => {
+      const promoButton = createJoinButton("");
+      promoButton.setAttribute("data-promo-anchor-id", "w5gBed");
+      promoButton.setAttribute("aria-label", "Primary action");
+      promoButton.getBoundingClientRect = () =>
+        ({ width: 220, height: 52 } as DOMRect);
+      document.body.appendChild(promoButton);
+
+      const otherButton = createJoinButton("Allow microphone and camera");
+      otherButton.getBoundingClientRect = () =>
+        ({ width: 260, height: 36 } as DOMRect);
+      document.body.appendChild(otherButton);
+
+      const result = findJoinButton(document);
+
+      expect(result.button).toBe(promoButton);
+      expect(result.matchedText).toBe("Primary action");
+    });
   });
 
   describe("clickJoinButton", () => {

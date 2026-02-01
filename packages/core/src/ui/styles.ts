@@ -5,7 +5,7 @@ export const OVERLAY_BASE_STYLES = `
   font-family: 'Google Sans', Roboto, Arial, sans-serif;
   font-size: 14px;
   color: #202124;
-  z-index: 0;
+  z-index: 9999;
 `;
 
 /**
@@ -88,6 +88,39 @@ export function createOverlayStyles(): HTMLStyleElement {
     }
 
     .meetcat-btn-cancel {
+      color: #5f6368;
+    }
+
+    .meetcat-btn-icon {
+      background: none;
+      border: none;
+      padding: 0;
+      margin-left: 8px;
+      width: 24px;
+      height: 24px;
+      color: #9aa0a6;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .meetcat-hide-btn {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+
+    .meetcat-overlay:hover .meetcat-hide-btn,
+    .meetcat-overlay:focus-within .meetcat-hide-btn {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    .meetcat-hide-btn:hover {
       color: #5f6368;
     }
 

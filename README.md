@@ -72,3 +72,19 @@ pnpm run test:cov
 
 **Notes**
 - `dev` and `build` are Tauri-first workflows by default.
+
+**Join Button Detection**
+Current strategy version: v1.
+- Step 1: text pattern match against `JOIN_BUTTON_PATTERNS` using `button.textContent`.
+- Step 2: heuristic fallback when no pattern matched:
+  - Filter to visible, enabled buttons with accessible text.
+  - Exclude menu buttons (`aria-haspopup` / `aria-expanded`).
+  - Prefer candidates with `data-promo-anchor-id="w5gBed"` (weak signal).
+  - Select by largest area, then longer accessible text as a tie-breaker.
+
+**Updating Join Detection Strategy**
+- Treat the existing v1 logic as a stable fallback. When adding a new strategy, run it first and keep v1 unchanged as the final fallback.
+- Keep `JOIN_BUTTON_PATTERNS` additive (only remove entries when they are proven wrong).
+- Prefer multi-signal heuristics over single fragile attributes (e.g., `jsname` or `jslog`).
+- Add or update tests in `packages/core/__tests__/controller.test.ts` for every new heuristic or pattern.
+- Validate on both surfaces (extension + Tauri) to avoid behavioral drift.

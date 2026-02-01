@@ -1,3 +1,4 @@
+import { attachOverlayHideButton } from "./overlay-controls.js";
 import { ensureStyles } from "./styles.js";
 
 export interface JoinCountdownOptions {
@@ -95,6 +96,8 @@ export function createJoinCountdown(
   cancelBtn.className = "meetcat-btn meetcat-btn-cancel";
   cancelBtn.textContent = "Cancel";
   overlay.appendChild(cancelBtn);
+
+  attachOverlayHideButton(overlay);
 
   let remainingSeconds = seconds;
   let intervalId: ReturnType<typeof setInterval> | null = null;

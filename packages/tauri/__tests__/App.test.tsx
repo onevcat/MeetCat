@@ -19,6 +19,17 @@ describe("App", () => {
     tauri: DEFAULT_TAURI_SETTINGS,
   };
 
+  const updateNumberInput = async (
+    input: HTMLElement,
+    value: number
+  ): Promise<void> => {
+    fireEvent.change(input, { target: { value: value.toString() } });
+    await waitFor(() => {
+      expect(input).toHaveValue(value);
+    });
+    fireEvent.blur(input);
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockResolvedValue(defaultSettings);
@@ -116,8 +127,7 @@ describe("App", () => {
 
     const inputs = screen.getAllByRole("spinbutton");
     const joinBeforeInput = inputs[0];
-    fireEvent.change(joinBeforeInput, { target: { value: "5" } });
-    fireEvent.blur(joinBeforeInput);
+    await updateNumberInput(joinBeforeInput, 5);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
@@ -154,8 +164,7 @@ describe("App", () => {
 
     const inputs = screen.getAllByRole("spinbutton");
     const countdownInput = inputs[1];
-    fireEvent.change(countdownInput, { target: { value: "15" } });
-    fireEvent.blur(countdownInput);
+    await updateNumberInput(countdownInput, 15);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
@@ -192,8 +201,7 @@ describe("App", () => {
 
     const inputs = screen.getAllByRole("spinbutton");
     const joinBeforeInput = inputs[0];
-    fireEvent.change(joinBeforeInput, { target: { value: "100" } });
-    fireEvent.blur(joinBeforeInput);
+    await updateNumberInput(joinBeforeInput, 100);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
@@ -211,8 +219,7 @@ describe("App", () => {
 
     const inputs = screen.getAllByRole("spinbutton");
     const maxAfterStartInput = inputs[2];
-    fireEvent.change(maxAfterStartInput, { target: { value: "12" } });
-    fireEvent.blur(maxAfterStartInput);
+    await updateNumberInput(maxAfterStartInput, 12);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {

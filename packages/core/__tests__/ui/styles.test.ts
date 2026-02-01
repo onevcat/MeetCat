@@ -32,7 +32,7 @@ describe("UI Styles", () => {
     });
 
     it("should contain z-index", () => {
-      expect(OVERLAY_BASE_STYLES).toContain("z-index: 0");
+      expect(OVERLAY_BASE_STYLES).toContain("z-index: 9999");
     });
   });
 
