@@ -606,25 +606,6 @@ describe("App", () => {
     });
   });
 
-  it("should update quitToHide setting", async () => {
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("General")).toBeDefined();
-    });
-
-    const checkbox = screen.getByLabelText("Command-Q hides app");
-    fireEvent.click(checkbox);
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
-        settings: expect.objectContaining({
-          tauri: expect.objectContaining({ quitToHide: false }),
-        }),
-      });
-    });
-  });
-
   it("should enable autostart when startAtLogin is toggled on", async () => {
     (isAutostartEnabled as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(false)

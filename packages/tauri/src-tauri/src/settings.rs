@@ -41,9 +41,6 @@ pub enum TrayDisplayMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TauriSettings {
-    #[serde(default = "default_quit_to_hide")]
-    pub quit_to_hide: bool,
-
     #[serde(default = "default_start_at_login")]
     pub start_at_login: bool,
 
@@ -61,7 +58,6 @@ impl Default for TauriSettings {
     fn default() -> Self {
         let defaults = defaults();
         Self {
-            quit_to_hide: defaults.tauri.quit_to_hide,
             start_at_login: defaults.tauri.start_at_login,
             show_tray_icon: defaults.tauri.show_tray_icon,
             tray_display_mode: defaults.tauri.tray_display_mode.clone(),
@@ -113,7 +109,6 @@ pub struct Settings {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DefaultsTauriSettings {
-    quit_to_hide: bool,
     start_at_login: bool,
     show_tray_icon: bool,
     tray_display_mode: TrayDisplayMode,
@@ -177,10 +172,6 @@ fn default_camera_state() -> MediaState {
 
 fn default_show_countdown_overlay() -> bool {
     defaults().show_countdown_overlay
-}
-
-fn default_quit_to_hide() -> bool {
-    defaults().tauri.quit_to_hide
 }
 
 fn default_start_at_login() -> bool {
@@ -276,7 +267,6 @@ mod tests {
     #[test]
     fn test_default_tauri_settings() {
         let tauri_settings = TauriSettings::default();
-        assert!(tauri_settings.quit_to_hide);
         assert!(!tauri_settings.start_at_login);
         assert!(tauri_settings.show_tray_icon);
         assert_eq!(tauri_settings.tray_display_mode, TrayDisplayMode::IconOnly);
@@ -334,7 +324,6 @@ mod tests {
     fn test_settings_with_tauri_config() {
         let json = r#"{
             "tauri": {
-                "quitToHide": false,
                 "startAtLogin": true,
                 "showTrayIcon": true,
                 "trayDisplayMode": "iconWithCountdown",
@@ -344,7 +333,6 @@ mod tests {
         let settings: Settings = serde_json::from_str(json).unwrap();
 
         let tauri = settings.tauri.unwrap();
-        assert!(!tauri.quit_to_hide);
         assert!(tauri.start_at_login);
         assert!(tauri.show_tray_icon);
         assert_eq!(tauri.tray_display_mode, TrayDisplayMode::IconWithCountdown);
@@ -371,7 +359,6 @@ mod tests {
         let tauri_settings = TauriSettings::default();
         let json = serde_json::to_string(&tauri_settings).unwrap();
 
-        assert!(json.contains("quitToHide"));
         assert!(json.contains("startAtLogin"));
         assert!(json.contains("showTrayIcon"));
         assert!(json.contains("trayDisplayMode"));
@@ -391,7 +378,6 @@ mod tests {
             default_camera_state: MediaState::Unmuted,
             show_countdown_overlay: false,
             tauri: Some(TauriSettings {
-                quit_to_hide: false,
                 start_at_login: true,
                 show_tray_icon: false,
                 tray_display_mode: TrayDisplayMode::IconWithTime,
@@ -413,7 +399,6 @@ mod tests {
         assert!(!parsed.show_countdown_overlay);
 
         let tauri = parsed.tauri.unwrap();
-        assert!(!tauri.quit_to_hide);
         assert!(tauri.start_at_login);
         assert!(!tauri.show_tray_icon);
         assert_eq!(tauri.tray_display_mode, TrayDisplayMode::IconWithTime);

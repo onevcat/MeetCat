@@ -21,7 +21,6 @@ export interface TauriSettings {
   defaultCameraState: "muted" | "unmuted";
   showCountdownOverlay: boolean;
   tauri?: {
-    quitToHide: boolean;
     startAtLogin: boolean;
     showTrayIcon: boolean;
     trayDisplayMode: "iconOnly" | "iconWithTime" | "iconWithCountdown";

@@ -19,7 +19,6 @@ function baseSettings(): Settings {
     defaultCameraState: "muted",
     showCountdownOverlay: true,
     tauri: {
-      quitToHide: true,
       startAtLogin: false,
       showTrayIcon: true,
       trayDisplayMode: "iconOnly",

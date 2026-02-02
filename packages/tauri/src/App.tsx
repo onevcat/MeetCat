@@ -26,7 +26,6 @@ const resolveSettings = (loaded: Settings | null): Settings => {
 const adapter: SettingsAdapter = {
   capabilities: {
     startAtLogin: true,
-    quitToHide: true,
     tray: true,
     showSavingIndicator: true,
   },

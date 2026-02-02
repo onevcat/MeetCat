@@ -2,13 +2,11 @@
 
 use crate::daemon::Meeting;
 use crate::settings::{TauriSettings, TrayDisplayMode};
-use crate::AppState;
 use tauri::{
     menu::{MenuBuilder, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
     App, AppHandle, Manager,
 };
-use std::sync::atomic::Ordering;
 
 /// Tray icon ID
 const TRAY_ID: &str = "meetcat-tray";
@@ -43,9 +41,6 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("MeetCat - Auto-join Google Meet")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => {
-                if let Some(state) = app.try_state::<AppState>() {
-                    state.exit_requested.store(true, Ordering::SeqCst);
-                }
                 app.exit(0);
             }
             "show" => {

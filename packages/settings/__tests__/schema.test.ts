@@ -149,7 +149,6 @@ describe("Settings", () => {
     it("should accept tauri settings", () => {
       const result = SettingsSchema.safeParse({
         tauri: {
-          quitToHide: true,
           startAtLogin: true,
           showTrayIcon: true,
           trayDisplayMode: "iconWithTime",

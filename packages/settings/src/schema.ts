@@ -15,7 +15,6 @@ type DefaultsJson = {
     openInNewTab: boolean;
   };
   tauri: {
-    quitToHide: boolean;
     startAtLogin: boolean;
     showTrayIcon: boolean;
     trayDisplayMode: "iconOnly" | "iconWithTime" | "iconWithCountdown";
@@ -51,8 +50,6 @@ export const ExtensionSettingsSchema = z.object({
  * Tauri-specific settings
  */
 export const TauriSettingsSchema = z.object({
-  /** Hide the app instead of quitting when pressing Command-Q (default: true) */
-  quitToHide: z.boolean().default(DEFAULTS.tauri.quitToHide),
   /** Start app at system login (default: false) */
   startAtLogin: z.boolean().default(DEFAULTS.tauri.startAtLogin),
   /** Show system tray icon (default: true) */

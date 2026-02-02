@@ -71,15 +71,13 @@ describe("SettingsView", () => {
         headerTitle="MeetCat Settings"
         headerIconSrc="/icon.png"
         footerText="MeetCat"
-        capabilities={{ startAtLogin: true, quitToHide: true }}
+        capabilities={{ startAtLogin: true }}
         onSettingsChange={vi.fn()}
       />
     );
 
     const startAtLogin = screen.getByLabelText("Start at login") as HTMLInputElement;
-    const quitToHide = screen.getByLabelText("Command-Q hides app") as HTMLInputElement;
     expect(startAtLogin.checked).toBe(false);
-    expect(quitToHide.checked).toBe(true);
     expect(screen.queryByText("Remove filter")).toBeNull();
   });
 
@@ -136,36 +134,6 @@ describe("SettingsView", () => {
 
     const nextSettings = onSettingsChange.mock.calls.at(-1)?.[0] as Settings;
     expect(nextSettings.tauri?.startAtLogin).toBe(true);
-  });
-
-  it("updates quit-to-hide setting when enabled", async () => {
-    const settings = createSettings({
-      tauri: { ...DEFAULT_TAURI_SETTINGS, quitToHide: true },
-    });
-    const onSettingsChange = vi.fn();
-
-    render(
-      <SettingsView
-        settings={settings}
-        loading={false}
-        saving={false}
-        showSavingIndicator={false}
-        headerTitle="MeetCat Settings"
-        headerIconSrc="/icon.png"
-        footerText="MeetCat"
-        capabilities={{ quitToHide: true }}
-        onSettingsChange={onSettingsChange}
-      />
-    );
-
-    fireEvent.click(screen.getByLabelText("Command-Q hides app"));
-
-    await waitFor(() => {
-      expect(onSettingsChange).toHaveBeenCalled();
-    });
-
-    const nextSettings = onSettingsChange.mock.calls.at(-1)?.[0] as Settings;
-    expect(nextSettings.tauri?.quitToHide).toBe(false);
   });
 
   it("updates homepage overlay setting", async () => {

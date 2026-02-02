@@ -11,7 +11,6 @@ import {
 
 export type SettingsCapabilities = {
   startAtLogin?: boolean;
-  quitToHide?: boolean;
   tray?: boolean;
   showSavingIndicator?: boolean;
 };
@@ -314,26 +313,6 @@ export function SettingsView({
                 </label>
               </div>
               <p className="form-hint">Launch MeetCat when you sign in</p>
-            </div>
-          )}
-
-          {capabilities.quitToHide && (
-            <div className="form-group">
-              <div className="form-checkbox-group">
-                <input
-                  type="checkbox"
-                  id="quitToHide"
-                  className="form-checkbox"
-                  checked={settings.tauri?.quitToHide ?? true}
-                  onChange={(e) =>
-                    updateTauriSettings({ quitToHide: e.target.checked })
-                  }
-                />
-                <label htmlFor="quitToHide" className="form-checkbox-label">
-                  Command-Q hides app
-                </label>
-              </div>
-              <p className="form-hint">Turn off to quit instead</p>
             </div>
           )}
 
