@@ -20,6 +20,8 @@ use tauri::webview::PageLoadEvent;
 use tauri_plugin_opener::OpenerExt;
 use tauri::async_runtime::JoinHandle;
 
+const MEET_HOME_URL: &str = "https://meet.google.com/";
+
 /// Application state shared across commands
 pub struct AppState {
     pub settings: Mutex<Settings>,
@@ -300,6 +302,17 @@ fn setup_window_lifecycle(app: &AppHandle) {
             }
         });
     }
+}
+
+pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+    let url = Url::parse(MEET_HOME_URL).map_err(|e| e.to_string())?;
+    window.navigate(url).map_err(|e| e.to_string())?;
+    let _ = window.show();
+    let _ = window.set_focus();
+    Ok(())
 }
 
 /// Script to request media permissions early
@@ -648,9 +661,17 @@ pub fn run() {
                     true,
                     Some("Cmd+Q"),
                 )?;
+                let go_home_item = MenuItem::with_id(
+                    app,
+                    "app-go-home",
+                    "Back to Google Meet Home",
+                    true,
+                    Some("Cmd+Shift+H"),
+                )?;
 
                 let app_menu = SubmenuBuilder::with_id(app, "app", app_name)
                     .about(Some(about_metadata))
+                    .item(&go_home_item)
                     .separator()
                     .services()
                     .separator()
@@ -692,8 +713,17 @@ pub fn run() {
 
                 app.set_menu(menu)?;
                 app.on_menu_event(|app, event| {
-                    if event.id().as_ref() == "app-quit" {
-                        app.exit(0);
+                    match event.id().as_ref() {
+                        "app-quit" => app.exit(0),
+                        "app-go-home" => {
+                            if let Err(e) = navigate_to_meet_home(app) {
+                                eprintln!(
+                                    "Failed to navigate to Google Meet home: {}",
+                                    e
+                                );
+                            }
+                        }
+                        _ => {}
                     }
                 });
             }

@@ -2,7 +2,7 @@
 
 use crate::daemon::Meeting;
 use crate::settings::{TauriSettings, TrayDisplayMode};
-use crate::AppState;
+use crate::{navigate_to_meet_home, AppState};
 use tauri::{
     menu::{MenuBuilder, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
@@ -16,6 +16,13 @@ const TRAY_ID: &str = "meetcat-tray";
 pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     let quit = MenuItem::with_id(app, "quit", "Quit MeetCat", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+    let go_home = MenuItem::with_id(
+        app,
+        "go-home",
+        "Back to Google Meet Home",
+        true,
+        None::<&str>,
+    )?;
     let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let status = MenuItem::with_id(app, "status", "No upcoming meetings", false, None::<&str>)?;
@@ -24,6 +31,7 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         .item(&status)
         .item(&separator)
         .item(&show)
+        .item(&go_home)
         .item(&settings)
         .item(&separator)
         .item(&quit)
@@ -48,6 +56,11 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
+                }
+            }
+            "go-home" => {
+                if let Err(e) = navigate_to_meet_home(app) {
+                    eprintln!("Failed to navigate to Google Meet home: {}", e);
                 }
             }
             "settings" => {
@@ -145,21 +158,30 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
     if let Ok(status_item) = MenuItem::with_id(app, "status", &status_text, false, None::<&str>) {
         if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit MeetCat", true, None::<&str>) {
             if let Ok(show) = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>) {
-                if let Ok(settings) =
-                    MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)
-                {
-                    if let Ok(sep1) = PredefinedMenuItem::separator(app) {
-                        if let Ok(sep2) = PredefinedMenuItem::separator(app) {
-                            if let Ok(new_menu) = MenuBuilder::new(app)
-                                .item(&status_item)
-                                .item(&sep1)
-                                .item(&show)
-                                .item(&settings)
-                                .item(&sep2)
-                                .item(&quit)
-                                .build()
-                            {
-                                let _ = tray.set_menu(Some(new_menu));
+                if let Ok(go_home) = MenuItem::with_id(
+                    app,
+                    "go-home",
+                    "Back to Google Meet Home",
+                    true,
+                    None::<&str>,
+                ) {
+                    if let Ok(settings) =
+                        MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)
+                    {
+                        if let Ok(sep1) = PredefinedMenuItem::separator(app) {
+                            if let Ok(sep2) = PredefinedMenuItem::separator(app) {
+                                if let Ok(new_menu) = MenuBuilder::new(app)
+                                    .item(&status_item)
+                                    .item(&sep1)
+                                    .item(&show)
+                                    .item(&go_home)
+                                    .item(&settings)
+                                    .item(&sep2)
+                                    .item(&quit)
+                                    .build()
+                                {
+                                    let _ = tray.set_menu(Some(new_menu));
+                                }
                             }
                         }
                     }
