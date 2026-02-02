@@ -2,6 +2,7 @@
 
 use crate::daemon::Meeting;
 use crate::settings::{TauriSettings, TrayDisplayMode};
+use crate::AppState;
 use tauri::{
     menu::{MenuBuilder, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,

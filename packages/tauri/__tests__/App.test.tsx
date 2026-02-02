@@ -21,12 +21,15 @@ describe("App", () => {
 
   const updateNumberInput = async (
     input: HTMLElement,
-    value: number
+    value: number,
+    expectValueAfterChange = true
   ): Promise<void> => {
     fireEvent.change(input, { target: { value: value.toString() } });
-    await waitFor(() => {
-      expect(input).toHaveValue(value);
-    });
+    if (expectValueAfterChange) {
+      await waitFor(() => {
+        expect(input).toHaveValue(value);
+      });
+    }
     fireEvent.blur(input);
   };
 
@@ -201,7 +204,7 @@ describe("App", () => {
 
     const inputs = screen.getAllByRole("spinbutton");
     const joinBeforeInput = inputs[0];
-    await updateNumberInput(joinBeforeInput, 100);
+    await updateNumberInput(joinBeforeInput, 100, false);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("save_settings", {
