@@ -46,7 +46,7 @@ export function SettingsContainer({
   const [version, setVersion] = useState<string | null>(null);
 
   const footerText = useMemo(() => {
-    if (version) return `${appName} v${version}`;
+    if (version) return `${appName} ${version}`;
     return appName;
   }, [appName, version]);
 

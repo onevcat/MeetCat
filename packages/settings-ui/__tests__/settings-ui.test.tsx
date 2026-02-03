@@ -45,14 +45,14 @@ describe("SettingsView", () => {
         showSavingIndicator={false}
         headerTitle="MeetCat Settings"
         headerIconSrc="/icon.png"
-        footerText="MeetCat v1.2.3"
+        footerText="MeetCat 1.2.3"
         capabilities={{}}
         onSettingsChange={vi.fn()}
       />
     );
 
     expect(screen.getByText("MeetCat Settings")).toBeDefined();
-    expect(screen.getByText("MeetCat v1.2.3")).toBeDefined();
+    expect(screen.getByText("MeetCat 1.2.3")).toBeDefined();
   });
 
   it("renders defaults when optional settings are missing", () => {
@@ -531,7 +531,7 @@ describe("SettingsContainer", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("MeetCat v1.2.3")).toBeDefined();
+      expect(screen.getByText("MeetCat 1.2.3")).toBeDefined();
     });
   });
 
@@ -557,7 +557,7 @@ describe("SettingsContainer", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("MeetCat v2.0.0")).toBeDefined();
+      expect(screen.getByText("MeetCat 2.0.0")).toBeDefined();
     });
 
     expect(getVersion).toHaveBeenCalled();
