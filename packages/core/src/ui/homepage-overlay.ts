@@ -5,6 +5,8 @@ import { ensureStyles } from "./styles.js";
 export interface HomepageOverlayOptions {
   /** URL for the icon image (uses emoji fallback if not provided) */
   iconUrl?: string;
+  /** Callback when user hides the overlay */
+  onHide?: () => void;
 }
 
 export interface HomepageOverlay {
@@ -57,7 +59,7 @@ export function createHomepageOverlay(
   container: Element,
   options: HomepageOverlayOptions = {}
 ): HomepageOverlay {
-  const { iconUrl } = options;
+  const { iconUrl, onHide } = options;
   const doc = container.ownerDocument;
   ensureStyles(doc);
 
@@ -84,7 +86,7 @@ export function createHomepageOverlay(
 
   overlay.appendChild(textDiv);
 
-  attachOverlayHideButton(overlay);
+  attachOverlayHideButton(overlay, { onHide });
 
   // For countdown display in subtitle
   let countdownSpan: HTMLSpanElement | null = null;

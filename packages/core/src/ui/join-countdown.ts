@@ -7,9 +7,16 @@ export interface JoinCountdownOptions {
   /** Callback when countdown completes */
   onComplete: () => void;
   /** Callback when user cancels */
-  onCancel: () => void;
+  onCancel: (state?: JoinCountdownState) => void;
+  /** Callback when user hides the overlay */
+  onHide?: (state: JoinCountdownState) => void;
   /** URL for the icon image (uses emoji fallback if not provided) */
   iconUrl?: string;
+}
+
+export interface JoinCountdownState {
+  remainingSeconds: number;
+  totalSeconds: number;
 }
 
 export interface JoinCountdown {
@@ -49,13 +56,17 @@ export function createJoinCountdown(
   container: Element,
   options: JoinCountdownOptions
 ): JoinCountdown {
-  const { seconds, onComplete, onCancel, iconUrl } = options;
+  const { seconds, onComplete, onCancel, onHide, iconUrl } = options;
   const doc = container.ownerDocument;
   ensureStyles(doc);
 
   // Create overlay element using DOM API (avoid innerHTML for Trusted Types CSP)
   const overlay = doc.createElement("div");
   overlay.className = "meetcat-overlay meetcat-overlay-top-center";
+
+  let remainingSeconds = seconds;
+  let intervalId: ReturnType<typeof setInterval> | null = null;
+  let isDestroyed = false;
 
   // Create icon
   const iconEl = createIconElement(doc, iconUrl);
@@ -97,11 +108,11 @@ export function createJoinCountdown(
   cancelBtn.textContent = "Cancel";
   overlay.appendChild(cancelBtn);
 
-  attachOverlayHideButton(overlay);
-
-  let remainingSeconds = seconds;
-  let intervalId: ReturnType<typeof setInterval> | null = null;
-  let isDestroyed = false;
+  attachOverlayHideButton(overlay, {
+    onHide: () => {
+      onHide?.({ remainingSeconds, totalSeconds: seconds });
+    },
+  });
 
   function updateDisplay(): void {
     countdownEl.textContent = `${remainingSeconds}s`;
@@ -115,7 +126,7 @@ export function createJoinCountdown(
       intervalId = null;
     }
     if (!isDestroyed) {
-      onCancel();
+      onCancel({ remainingSeconds, totalSeconds: seconds });
     }
   }
 

@@ -8,6 +8,7 @@ describe("Join Countdown", () => {
   let container: HTMLElement;
   let onComplete: ReturnType<typeof vi.fn>;
   let onCancel: ReturnType<typeof vi.fn>;
+  let onHide: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -16,6 +17,7 @@ describe("Join Countdown", () => {
     container = document.body;
     onComplete = vi.fn();
     onCancel = vi.fn();
+    onHide = vi.fn();
 
     // Mock global document for styles
     (globalThis as unknown as { document: Document }).document = document;
@@ -170,12 +172,17 @@ describe("Join Countdown", () => {
         seconds: 10,
         onComplete,
         onCancel,
+        onHide,
       });
 
       countdown.start();
       countdown.cancel();
 
       expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onCancel).toHaveBeenCalledWith({
+        remainingSeconds: 10,
+        totalSeconds: 10,
+      });
       expect(onComplete).not.toHaveBeenCalled();
       countdown.destroy();
     });
@@ -185,6 +192,7 @@ describe("Join Countdown", () => {
         seconds: 3,
         onComplete,
         onCancel,
+        onHide,
       });
 
       countdown.start();
@@ -201,6 +209,7 @@ describe("Join Countdown", () => {
         seconds: 10,
         onComplete,
         onCancel,
+        onHide,
       });
 
       countdown.start();
@@ -209,6 +218,27 @@ describe("Join Countdown", () => {
       cancelBtn.click();
 
       expect(onCancel).toHaveBeenCalledTimes(1);
+      countdown.destroy();
+    });
+  });
+
+  describe("hide", () => {
+    it("should call onHide when hide button is clicked", () => {
+      const countdown = createJoinCountdown(container, {
+        seconds: 10,
+        onComplete,
+        onCancel,
+        onHide,
+      });
+
+      const hideBtn = container.querySelector(".meetcat-hide-btn") as HTMLButtonElement;
+      hideBtn.click();
+
+      expect(onHide).toHaveBeenCalledTimes(1);
+      expect(onHide).toHaveBeenCalledWith({
+        remainingSeconds: 10,
+        totalSeconds: 10,
+      });
       countdown.destroy();
     });
   });

@@ -1,5 +1,6 @@
 export interface OverlayHideOptions {
   title?: string;
+  onHide?: () => void;
 }
 
 function createEyeIcon(doc: Document): SVGSVGElement {
@@ -37,6 +38,7 @@ export function attachOverlayHideButton(
 
   button.addEventListener("click", () => {
     overlay.style.display = "none";
+    options.onHide?.();
   });
 
   overlay.appendChild(button);
