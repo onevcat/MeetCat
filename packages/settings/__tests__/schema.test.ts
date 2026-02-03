@@ -52,6 +52,8 @@ describe("Settings", () => {
         expect(result.data.showTrayIcon).toBe(true);
         expect(result.data.trayDisplayMode).toBe("iconOnly");
         expect(result.data.trayShowMeetingTitle).toBe(false);
+        expect(result.data.logCollectionEnabled).toBe(false);
+        expect(result.data.logLevel).toBe("info");
       }
     });
 
@@ -61,6 +63,8 @@ describe("Settings", () => {
         showTrayIcon: false,
         trayDisplayMode: "iconWithCountdown",
         trayShowMeetingTitle: true,
+        logCollectionEnabled: true,
+        logLevel: "debug",
       });
       expect(result.success).toBe(true);
       if (result.success) {
@@ -68,6 +72,8 @@ describe("Settings", () => {
         expect(result.data.showTrayIcon).toBe(false);
         expect(result.data.trayDisplayMode).toBe("iconWithCountdown");
         expect(result.data.trayShowMeetingTitle).toBe(true);
+        expect(result.data.logCollectionEnabled).toBe(true);
+        expect(result.data.logLevel).toBe("debug");
       }
     });
   });

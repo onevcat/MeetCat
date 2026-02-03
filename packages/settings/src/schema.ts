@@ -19,6 +19,8 @@ type DefaultsJson = {
     showTrayIcon: boolean;
     trayDisplayMode: "iconOnly" | "iconWithTime" | "iconWithCountdown";
     trayShowMeetingTitle: boolean;
+    logCollectionEnabled: boolean;
+    logLevel: "error" | "warn" | "info" | "debug" | "trace";
   };
 };
 
@@ -37,6 +39,11 @@ export const TrayDisplayModeSchema = z.enum([
   "iconWithTime",
   "iconWithCountdown",
 ]);
+
+/**
+ * Log level options
+ */
+export const LogLevelSchema = z.enum(["error", "warn", "info", "debug", "trace"]);
 
 /**
  * Extension-specific settings
@@ -58,6 +65,12 @@ export const TauriSettingsSchema = z.object({
   trayDisplayMode: TrayDisplayModeSchema.default(DEFAULTS.tauri.trayDisplayMode),
   /** Show next meeting title in tray (default: false) */
   trayShowMeetingTitle: z.boolean().default(DEFAULTS.tauri.trayShowMeetingTitle),
+  /** Enable log collection to disk (default: false) */
+  logCollectionEnabled: z
+    .boolean()
+    .default(DEFAULTS.tauri.logCollectionEnabled),
+  /** Log level for collection (default: info) */
+  logLevel: LogLevelSchema.default(DEFAULTS.tauri.logLevel),
 });
 
 /**

@@ -51,6 +51,14 @@ describe("Settings Defaults", () => {
     it("should have showTrayIcon enabled by default", () => {
       expect(DEFAULT_TAURI_SETTINGS.showTrayIcon).toBe(true);
     });
+
+    it("should have log collection disabled by default", () => {
+      expect(DEFAULT_TAURI_SETTINGS.logCollectionEnabled).toBe(false);
+    });
+
+    it("should have log level set to info by default", () => {
+      expect(DEFAULT_TAURI_SETTINGS.logLevel).toBe("info");
+    });
   });
 
   describe("getExtensionDefaults", () => {
