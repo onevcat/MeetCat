@@ -33,6 +33,7 @@ export function createSchedulerLogic(initialConfig: Partial<SchedulerConfig> = {
   function check(
     meetings: Meeting[],
     alreadyJoined: Set<string> = new Set(),
+    suppressedMeetings: Map<string, number> = new Map(),
     now: number = Date.now()
   ): SchedulerEvent {
     const joinThreshold = config.joinBeforeMinutes * 60 * 1000;
@@ -42,8 +43,17 @@ export function createSchedulerLogic(initialConfig: Partial<SchedulerConfig> = {
     let nextUpcomingMinutes = Infinity;
 
     for (const meeting of meetings) {
-      // Skip already joined
-      if (alreadyJoined.has(meeting.callId)) continue;
+      const startTime = meeting.beginTime.getTime();
+      const triggerTime = startTime - joinThreshold;
+
+      // Skip already ended
+      if (meeting.endTime.getTime() <= now) continue;
+
+      // Skip suppressed after trigger time
+      if (suppressedMeetings.has(meeting.callId) && now >= triggerTime) continue;
+
+      // Skip already joined only after meeting starts
+      if (alreadyJoined.has(meeting.callId) && now >= startTime) continue;
 
       // Skip if title matches any exclude filter (case-sensitive)
       if (
@@ -53,7 +63,6 @@ export function createSchedulerLogic(initialConfig: Partial<SchedulerConfig> = {
         continue;
       }
 
-      const startTime = meeting.beginTime.getTime();
       const timeUntilStart = startTime - now;
 
       // Check if it's time to join

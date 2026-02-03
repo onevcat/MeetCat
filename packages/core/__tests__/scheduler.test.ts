@@ -52,7 +52,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       expect(event.type).toBe("join");
       expect(event.meeting).not.toBeNull();
@@ -66,7 +66,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       expect(event.type).toBe("upcoming");
       expect(event.meeting).not.toBeNull();
@@ -75,7 +75,7 @@ describe("Scheduler", () => {
 
     it("should return none when no meetings", () => {
       const scheduler = createSchedulerLogic();
-      const event = scheduler.check([], new Set());
+      const event = scheduler.check([], new Set(), new Map());
 
       expect(event.type).toBe("none");
       expect(event.meeting).toBeNull();
@@ -91,7 +91,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       expect(event.type).toBe("none");
     });
@@ -105,10 +105,38 @@ describe("Scheduler", () => {
       const alreadyJoined = new Set(["abc-defg-hij"]);
       const now = Date.now();
 
-      const event = scheduler.check(meetings, alreadyJoined, now);
+      const event = scheduler.check(meetings, alreadyJoined, new Map(), now);
+
+      expect(event.type).toBe("join");
+      expect(event.meeting!.callId).toBe("abc-defg-hij");
+    });
+
+    it("should not skip joined meetings before they start", () => {
+      const scheduler = createSchedulerLogic({ joinBeforeMinutes: 2 });
+      const meetings = [
+        createMeeting({ callId: "abc-defg-hij", title: "Meeting 1", startsInMinutes: 5 }),
+      ];
+      const alreadyJoined = new Set(["abc-defg-hij"]);
+      const now = Date.now();
+
+      const event = scheduler.check(meetings, alreadyJoined, new Map(), now);
 
       expect(event.type).toBe("upcoming");
-      expect(event.meeting!.callId).toBe("klm-nopq-rst");
+      expect(event.meeting!.callId).toBe("abc-defg-hij");
+    });
+
+    it("should skip suppressed meetings after trigger time", () => {
+      const scheduler = createSchedulerLogic({ joinBeforeMinutes: 2 });
+      const meetings = [
+        createMeeting({ callId: "abc-defg-hij", title: "Meeting 1", startsInMinutes: 1 }),
+      ];
+      const suppressed = new Map([["abc-defg-hij", Date.now()]]);
+      const now = Date.now();
+
+      const event = scheduler.check(meetings, new Set(), suppressed, now);
+
+      expect(event.type).toBe("none");
+      expect(event.meeting).toBeNull();
     });
 
     it("should exclude meetings by title filter", () => {
@@ -122,7 +150,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       // "Team Standup" should be excluded, so "Random Meeting" should be joined
       expect(event.type).toBe("join");
@@ -141,7 +169,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       // Both "1:1" and "Optional" meetings should be excluded
       expect(event.type).toBe("join");
@@ -158,7 +186,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       // "Standup" should NOT match "standup" (case-sensitive)
       expect(event.type).toBe("join");
@@ -175,7 +203,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       expect(event.type).toBe("join");
       expect(event.meeting!.callId).toBe("abc-defg-hij");
@@ -191,7 +219,7 @@ describe("Scheduler", () => {
       ];
       const now = Date.now();
 
-      const event = scheduler.check(meetings, new Set(), now);
+      const event = scheduler.check(meetings, new Set(), new Map(), now);
 
       expect(event.type).toBe("none");
     });

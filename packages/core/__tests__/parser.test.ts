@@ -235,11 +235,32 @@ describe("Parser", () => {
     });
 
     it("should skip already joined meetings", () => {
+      const recentlyStarted: Meeting = {
+        callId: "just-star-ted",
+        url: "https://meet.google.com/just-star-ted",
+        title: "Just Started",
+        displayTime: "9:58 AM",
+        beginTime: new Date(now - 2 * 60 * 1000), // 2 minutes ago
+        endTime: new Date(now + 58 * 60 * 1000),
+        eventId: null,
+        startsInMinutes: -2,
+      };
+      const alreadyJoined = new Set(["just-star-ted"]);
+      const next = getNextJoinableMeeting([recentlyStarted, ...meetings], {
+        now,
+        alreadyJoined,
+      });
+
+      expect(next).not.toBeNull();
+      expect(next!.callId).toBe("soon-meet-ing");
+    });
+
+    it("should not skip already joined meetings before they start", () => {
       const alreadyJoined = new Set(["soon-meet-ing"]);
       const next = getNextJoinableMeeting(meetings, { now, alreadyJoined });
 
       expect(next).not.toBeNull();
-      expect(next!.callId).toBe("late-meet-ing");
+      expect(next!.callId).toBe("soon-meet-ing");
     });
 
     it("should filter by title", () => {
@@ -280,6 +301,54 @@ describe("Parser", () => {
 
       expect(next).not.toBeNull();
       expect(next!.callId).toBe("just-star-ted");
+    });
+
+    it("should skip suppressed meetings after trigger time", () => {
+      const startingSoon: Meeting = {
+        callId: "starting-soon",
+        url: "https://meet.google.com/starting-soon",
+        title: "Starting Soon",
+        displayTime: "10:00 AM",
+        beginTime: new Date(now + 2 * 60 * 1000),
+        endTime: new Date(now + 62 * 60 * 1000),
+        eventId: null,
+        startsInMinutes: 2,
+      };
+
+      const next = getNextJoinableMeeting([startingSoon], {
+        now,
+        joinBeforeMinutes: 1,
+        suppressedMeetings: new Set(["starting-soon"]),
+      });
+
+      expect(next).not.toBeNull();
+      expect(next!.callId).toBe("starting-soon");
+
+      const afterTrigger = now + 90 * 1000;
+      const nextAfterTrigger = getNextJoinableMeeting([startingSoon], {
+        now: afterTrigger,
+        joinBeforeMinutes: 1,
+        suppressedMeetings: new Set(["starting-soon"]),
+      });
+
+      expect(nextAfterTrigger).toBeNull();
+    });
+
+    it("should skip meetings that have already ended", () => {
+      const endedMeeting: Meeting = {
+        callId: "ended-meet-ing",
+        url: "https://meet.google.com/ended-meet-ing",
+        title: "Ended Meeting",
+        displayTime: "9:00 AM",
+        beginTime: new Date(now - 30 * 60 * 1000),
+        endTime: new Date(now - 5 * 60 * 1000),
+        eventId: null,
+        startsInMinutes: -30,
+      };
+
+      const next = getNextJoinableMeeting([endedMeeting], { now });
+
+      expect(next).toBeNull();
     });
 
     it("should use default grace period when not provided", () => {

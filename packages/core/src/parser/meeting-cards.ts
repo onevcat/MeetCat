@@ -106,6 +106,10 @@ export function getNextJoinableMeeting(
   options: {
     /** Meetings that have already been joined */
     alreadyJoined?: Set<string>;
+    /** Meetings that should be suppressed after trigger time */
+    suppressedMeetings?: Set<string>;
+    /** Minutes before meeting to trigger join */
+    joinBeforeMinutes?: number;
     /** Title filter */
     titleFilter?: string;
     /** Current time */
@@ -116,6 +120,8 @@ export function getNextJoinableMeeting(
 ): Meeting | null {
   const {
     alreadyJoined = new Set(),
+    suppressedMeetings = new Set(),
+    joinBeforeMinutes,
     titleFilter,
     now = Date.now(),
     gracePeriodMinutes = 10,
@@ -124,15 +130,32 @@ export function getNextJoinableMeeting(
   const graceMs = gracePeriodMinutes * 60 * 1000;
 
   for (const meeting of meetings) {
-    // Skip already joined
-    if (alreadyJoined.has(meeting.callId)) continue;
+    const startTime = meeting.beginTime.getTime();
+    const triggerAtMs =
+      typeof joinBeforeMinutes === "number"
+        ? startTime - joinBeforeMinutes * 60 * 1000
+        : null;
+
+    // Skip already joined only after meeting starts
+    if (alreadyJoined.has(meeting.callId) && startTime <= now) continue;
 
     // Skip if doesn't match filter
     if (titleFilter && !meeting.title.includes(titleFilter)) continue;
 
+    // Skip meetings that have already ended
+    if (meeting.endTime.getTime() <= now) continue;
+
+    // Skip suppressed meetings after trigger time
+    if (
+      triggerAtMs !== null &&
+      suppressedMeetings.has(meeting.callId) &&
+      now >= triggerAtMs
+    ) {
+      continue;
+    }
+
     // Check if meeting is within joinable window
     // Can join if: started within grace period OR hasn't started yet
-    const startTime = meeting.beginTime.getTime();
     if (startTime > now - graceMs) {
       return meeting;
     }
