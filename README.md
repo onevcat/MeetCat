@@ -1,90 +1,81 @@
-**MeetCat**
+<p align="center">
+  <img src="resource/logo.png" alt="MeetCat" width="360" />
+</p>
 
-MeetCat is an auto-join assistant for Google Meet, built as:
-- A Chrome extension for browser-based scheduling and auto-join.
-- A Tauri desktop app that embeds Meet in a WebView with native controls.
+<p align="center">
+  <strong>Never miss a Google Meet again.</strong><br />
+  Auto-detect schedules, count down, and join on time.
+</p>
 
-**Requirements**
-- Node.js >= 20
-- pnpm >= 9
-- Rust toolchain (for Tauri build and Rust tests)
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/ochakcekieihhfoefaokllabgkgbcedf">Chrome Extension</a>
+  ·
+  <a href="https://github.com/onevcat/MeetCat/releases/latest/download/MeetCat_macos_universal.dmg">Download macOS (Universal)</a>
+  ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-**Quick Start (New Clone)**
-1. Install dependencies:
+<p align="center">
+  <a href="README.md">English</a> · <a href="doc/README_CN.md">简体中文</a> · <a href="doc/README_JP.md">日本語</a> · <a href="doc/README_KO.md">한국어</a>
+</p>
+
+> [!NOTE]
+> MeetCat is free, open source, and lightweight. Windows is planned.
+
+> [!IMPORTANT]
+> Privacy-first by design: no data collection, no analytics, no tracking.
+
+---
+
+## Why MeetCat
+
+MeetCat keeps your Google Meet schedule calm and predictable. It reads the next meeting from the Meet homepage, shows a gentle countdown, opens the meeting page early, and joins automatically based on your settings.
+
+## Highlights
+
+- Auto-detects upcoming meetings on the Meet homepage.
+- Countdown overlay with cancel/adjust before joining.
+- Microphone/camera default states applied before entry.
+- Filter meetings you never want to auto-join.
+- Two surfaces: Chrome extension + macOS desktop app.
+
+<p align="center">
+  <img src="resource/icon-color.png" alt="MeetCat Icon" width="120" />
+</p>
+
+## Download
+
+- macOS (Universal): https://github.com/onevcat/MeetCat/releases/latest/download/MeetCat_macos_universal.dmg
+- Chrome Extension: https://chromewebstore.google.com/detail/ochakcekieihhfoefaokllabgkgbcedf
+
+> [!TIP]
+> Open the Google Meet homepage once to verify the overlay appears. It confirms your schedule has been detected.
+
+## How It Works
+
+1. Open Google Meet (browser or app) so MeetCat can detect your next meeting.
+2. MeetCat starts a quiet countdown when it is time to join.
+3. The meeting opens, mic/camera settings apply, and auto-join triggers.
+
+## Platforms
+
+**Chrome Extension**
+- Lightweight in-browser experience.
+- Homepage overlays and auto-open meeting page.
+
+**macOS App (Tauri)**
+- Desktop experience with tray status.
+- Everything from the extension, plus always-on availability.
+
+## For Developers (Quick Start)
 
 ```bash
 pnpm install
-```
-
-2. Run the Tauri app in dev mode (shared packages will be built and watched):
-
-```bash
 pnpm run dev
 ```
 
-You should see the desktop app open and load Google Meet.
+That is enough to preview the app locally. For full workflows, see `doc/RELEASE.md`.
 
-**Scripts**
-Build:
-- Tauri app:
+## License
 
-```bash
-pnpm run build
-```
-
-- Chrome extension:
-
-```bash
-pnpm run build:extension
-```
-
-Development:
-- Tauri app:
-
-```bash
-pnpm run dev
-```
-
-- Chrome extension:
-
-```bash
-pnpm run dev:extension
-```
-
-Testing:
-- Run all tests (includes Rust):
-
-```bash
-pnpm run test
-```
-
-- Run tests with coverage (includes Rust):
-
-```bash
-pnpm run test:cov
-```
-
-**Project Structure**
-- `packages/settings`: Shared settings schema and defaults.
-- `packages/core`: DOM parser, scheduler logic, UI overlays, and inject bundle.
-- `packages/extension`: Chrome extension (content scripts, service worker, popup UI).
-- `packages/tauri`: Desktop app (Tauri + React).
-
-**Notes**
-- `dev` and `build` are Tauri-first workflows by default.
-
-**Join Button Detection**
-Current strategy version: v1.
-- Step 1: text pattern match against `JOIN_BUTTON_PATTERNS` using `button.textContent`.
-- Step 2: heuristic fallback when no pattern matched:
-  - Filter to visible, enabled buttons with accessible text.
-  - Exclude menu buttons (`aria-haspopup` / `aria-expanded`).
-  - Prefer candidates with `data-promo-anchor-id="w5gBed"` (weak signal).
-  - Select by largest area, then longer accessible text as a tie-breaker.
-
-**Updating Join Detection Strategy**
-- Treat the existing v1 logic as a stable fallback. When adding a new strategy, run it first and keep v1 unchanged as the final fallback.
-- Keep `JOIN_BUTTON_PATTERNS` additive (only remove entries when they are proven wrong).
-- Prefer multi-signal heuristics over single fragile attributes (e.g., `jsname` or `jslog`).
-- Add or update tests in `packages/core/__tests__/controller.test.ts` for every new heuristic or pattern.
-- Validate on both surfaces (extension + Tauri) to avoid behavioral drift.
+TBD.
