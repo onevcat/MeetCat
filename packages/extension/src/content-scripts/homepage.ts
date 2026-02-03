@@ -65,7 +65,9 @@ function updateMeetings(): void {
 
   // Update overlay
   if (state.settings.showCountdownOverlay && state.overlay) {
-    const next = getNextJoinableMeeting(result.meetings);
+    const next = getNextJoinableMeeting(result.meetings, {
+      gracePeriodMinutes: state.settings.maxMinutesAfterStart,
+    });
     state.overlay.update(next);
   }
 }
@@ -78,7 +80,9 @@ function initOverlay(): void {
   if (state.overlay) return;
 
   state.overlay = createHomepageOverlay(document.body, { iconUrl: ICON_URL });
-  const next = getNextJoinableMeeting(state.lastMeetings);
+  const next = getNextJoinableMeeting(state.lastMeetings, {
+    gracePeriodMinutes: state.settings.maxMinutesAfterStart,
+  });
   state.overlay.update(next);
 }
 
