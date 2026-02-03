@@ -65,7 +65,7 @@ export function createHomepageOverlay(
 
   // Create overlay element using DOM API (avoid innerHTML for Trusted Types CSP)
   const overlay = doc.createElement("div");
-  overlay.className = "meetcat-overlay meetcat-overlay-bottom-right";
+  overlay.className = "meetcat-overlay meetcat-overlay-bottom-left";
 
   // Create icon
   const iconEl = createIconElement(doc, iconUrl);

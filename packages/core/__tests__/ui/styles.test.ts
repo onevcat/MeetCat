@@ -52,9 +52,9 @@ describe("UI Styles", () => {
       expect(style.textContent).toContain("position: fixed");
     });
 
-    it("should contain bottom-right positioning class", () => {
+    it("should contain bottom-left positioning class", () => {
       const style = createOverlayStyles();
-      expect(style.textContent).toContain(".meetcat-overlay-bottom-right");
+      expect(style.textContent).toContain(".meetcat-overlay-bottom-left");
     });
 
     it("should contain top-center positioning class", () => {

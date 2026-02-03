@@ -26,9 +26,9 @@ export function createOverlayStyles(): HTMLStyleElement {
       gap: 8px;
     }
 
-    .meetcat-overlay-bottom-right {
+    .meetcat-overlay-bottom-left {
       bottom: 24px;
-      right: 24px;
+      left: 24px;
     }
 
     .meetcat-overlay-top-center {
