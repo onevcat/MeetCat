@@ -25,8 +25,28 @@ export interface TauriSettings {
     showTrayIcon: boolean;
     trayDisplayMode: "iconOnly" | "iconWithTime" | "iconWithCountdown";
     trayShowMeetingTitle: boolean;
+    logCollectionEnabled: boolean;
+    logLevel: "error" | "warn" | "info" | "debug" | "trace";
   };
 }
+
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
+export type LogEventInput = {
+  level: LogLevel;
+  module: string;
+  event: string;
+  message?: string;
+  context?: Record<string, unknown> | null;
+  tsMs?: number;
+  scope?: string;
+};
+
+export type CheckMeetingsPayload = {
+  checkId: number;
+  intervalSeconds: number;
+  emittedAtMs: number;
+};
 
 /**
  * Navigation command from Rust
@@ -112,9 +132,9 @@ export async function reportJoined(callId: string): Promise<void> {
  * Listen for check-meetings trigger from Rust daemon
  */
 export async function onCheckMeetings(
-  handler: () => void
+  handler: (payload: CheckMeetingsPayload) => void
 ): Promise<() => void> {
-  return listen<void>("check-meetings", handler);
+  return listen<CheckMeetingsPayload>("check-meetings", handler);
 }
 
 /**
@@ -133,6 +153,13 @@ export async function onSettingsChanged(
   handler: (settings: TauriSettings) => void
 ): Promise<() => void> {
   return listen<TauriSettings>("settings_changed", handler);
+}
+
+/**
+ * Send log event to Rust backend
+ */
+export async function logEvent(input: LogEventInput): Promise<void> {
+  await invoke("log_event", { input });
 }
 
 // Extend Window interface for Tauri

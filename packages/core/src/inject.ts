@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-import { parseMeetingCards } from "./parser/index.js";
+import { parseMeetingCards, getNextJoinableMeeting } from "./parser/index.js";
 import {
   setMicState,
   setCameraState,
@@ -37,6 +37,9 @@ import {
   onNavigateAndJoin,
   onSettingsChanged,
   reportJoined,
+  logEvent,
+  type LogLevel,
+  type CheckMeetingsPayload,
   type TauriSettings,
   type NavigateAndJoinCommand,
 } from "./tauri-bridge.js";
@@ -51,6 +54,7 @@ let lastMeetings: Meeting[] = [];
 let mediaApplied = false;
 let joinAttempted = false;
 let unsubscribers: Array<() => void> = [];
+let fallbackIntervalId: ReturnType<typeof setInterval> | null = null;
 
 // Icon URL for overlays
 const ICON_URL = "https://avatars.githubusercontent.com/u/1019875?s=128&v=4";
@@ -68,6 +72,73 @@ const DEFAULT_SETTINGS: TauriSettings = {
   showCountdownOverlay: SETTINGS_DEFAULTS.showCountdownOverlay,
 };
 
+const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+  trace: 4,
+};
+
+function getLogConfig(): { enabled: boolean; level: LogLevel } {
+  return {
+    enabled: settings?.tauri?.logCollectionEnabled ?? false,
+    level: settings?.tauri?.logLevel ?? "info",
+  };
+}
+
+function shouldSendLog(level: LogLevel): boolean {
+  const config = getLogConfig();
+  if (!settings?.tauri) return false;
+  if (!config.enabled) return false;
+  return LOG_LEVEL_ORDER[level] <= LOG_LEVEL_ORDER[config.level];
+}
+
+function shouldConsoleLog(level: LogLevel): boolean {
+  if (level === "error" || level === "warn") return true;
+  if (!settings?.tauri?.logCollectionEnabled) return false;
+  const threshold = settings?.tauri?.logLevel ?? "info";
+  return LOG_LEVEL_ORDER[level] <= LOG_LEVEL_ORDER[threshold];
+}
+
+function logToConsole(
+  level: LogLevel,
+  message: string,
+  context?: Record<string, unknown>
+): void {
+  if (!shouldConsoleLog(level)) return;
+  if (level === "error") {
+    console.error(message, context ?? "");
+  } else if (level === "warn") {
+    console.warn(message, context ?? "");
+  } else {
+    console.log(message, context ?? "");
+  }
+}
+
+function logToDisk(
+  level: LogLevel,
+  module: string,
+  event: string,
+  message: string,
+  context?: Record<string, unknown>
+): void {
+  if (!shouldSendLog(level)) return;
+  if (!isTauriEnvironment()) return;
+
+  logEvent({
+    level,
+    module,
+    event,
+    message,
+    context,
+    tsMs: Date.now(),
+    scope: "webview",
+  }).catch((error) => {
+    console.warn("[MeetCat] Failed to write log event:", error);
+  });
+}
+
 /**
  * Initialize the injectable script
  */
@@ -75,14 +146,21 @@ async function init(): Promise<void> {
   // Prevent duplicate initialization for the same path
   const currentPath = location.pathname;
   if (window.__meetcatInitialized === currentPath) {
-    console.log("[MeetCat] Already initialized for path:", currentPath);
+    logToConsole("info", "[MeetCat] Already initialized for path:", {
+      path: currentPath,
+    });
+    logToDisk("debug", "inject", "init.skipped", "Already initialized", {
+      path: currentPath,
+    });
     return;
   }
   window.__meetcatInitialized = currentPath;
 
-  console.log("[MeetCat] Initializing injectable script...");
-  console.log("[MeetCat] Tauri environment:", isTauriEnvironment());
-  console.log("[MeetCat] Current path:", currentPath);
+  logToConsole("info", "[MeetCat] Initializing injectable script...");
+  logToConsole("info", "[MeetCat] Tauri environment:", {
+    isTauri: isTauriEnvironment(),
+  });
+  logToConsole("info", "[MeetCat] Current path:", { path: currentPath });
 
   // Ensure styles are injected first (this doesn't need Tauri)
   ensureStyles(document);
@@ -91,14 +169,27 @@ async function init(): Promise<void> {
   try {
     if (isTauriEnvironment()) {
       settings = await getSettings();
-      console.log("[MeetCat] Settings loaded from Tauri:", settings);
+      logToConsole("info", "[MeetCat] Settings loaded from Tauri:", {
+        settings,
+      });
+      logToDisk("info", "settings", "settings.loaded", "Loaded settings", {
+        source: "tauri",
+        logCollectionEnabled: settings?.tauri?.logCollectionEnabled ?? false,
+        logLevel: settings?.tauri?.logLevel ?? "info",
+      });
     } else {
       settings = DEFAULT_SETTINGS;
-      console.log("[MeetCat] Using default settings (not in Tauri)");
+      logToConsole("info", "[MeetCat] Using default settings (not in Tauri)");
+      logToDisk("info", "settings", "settings.loaded", "Using defaults", {
+        source: "fallback",
+      });
     }
   } catch (error) {
     console.warn("[MeetCat] Failed to load settings, using defaults:", error);
     settings = DEFAULT_SETTINGS;
+    logToDisk("error", "settings", "settings.load_failed", "Failed to load settings", {
+      source: "tauri",
+    });
   }
 
   // Try to set up event listeners (non-blocking)
@@ -111,7 +202,15 @@ async function init(): Promise<void> {
   const isHomepage = pathname === "/" || pathname === "" || pathname === "/landing";
   const isMeetingPage = getMeetingCodeFromPath(pathname) !== null;
 
-  console.log("[MeetCat] Page type - homepage:", isHomepage, "meeting:", isMeetingPage);
+  logToConsole("info", "[MeetCat] Page type detected", {
+    homepage: isHomepage,
+    meeting: isMeetingPage,
+  });
+  logToDisk("info", "inject", "init.page_detected", "Detected page type", {
+    path: pathname,
+    homepage: isHomepage,
+    meeting: isMeetingPage,
+  });
 
   try {
     if (isHomepage) {
@@ -119,7 +218,7 @@ async function init(): Promise<void> {
     } else if (isMeetingPage) {
       await initMeetingPage();
     } else {
-      console.log("[MeetCat] Unknown page type, skipping initialization");
+      logToConsole("info", "[MeetCat] Unknown page type, skipping initialization");
     }
   } catch (error) {
     console.error("[MeetCat] Page init error:", error);
@@ -134,13 +233,21 @@ async function setupEventListeners(): Promise<void> {
 
   try {
     const unsubSettings = await onSettingsChanged((newSettings) => {
-      console.log("[MeetCat] Settings changed:", newSettings);
+      logToConsole("info", "[MeetCat] Settings changed:", {
+        settings: newSettings,
+      });
       settings = newSettings;
       updateOverlayVisibility();
+      logToDisk("info", "settings", "settings.changed", "Settings updated", {
+        logCollectionEnabled: settings?.tauri?.logCollectionEnabled ?? false,
+        logLevel: settings?.tauri?.logLevel ?? "info",
+      });
     });
     unsubscribers.push(unsubSettings);
+    logToDisk("debug", "inject", "listener.settings", "Settings listener attached");
   } catch (e) {
     console.warn("[MeetCat] Failed to listen for settings changes:", e);
+    logToDisk("warn", "inject", "listener.settings_failed", "Settings listener failed");
   }
 }
 
@@ -148,24 +255,37 @@ async function setupEventListeners(): Promise<void> {
  * Initialize homepage monitoring
  */
 async function initHomepage(): Promise<void> {
-  console.log("[MeetCat] Initializing homepage monitoring");
+  logToConsole("info", "[MeetCat] Initializing homepage monitoring");
+  const isTauri = isTauriEnvironment();
+  let hasCheckListener = false;
+  logToDisk("info", "homepage", "init.start", "Homepage monitoring init");
 
   // Create overlay if enabled
   if (settings?.showCountdownOverlay) {
-    console.log("[MeetCat] Creating homepage overlay");
+    logToConsole("info", "[MeetCat] Creating homepage overlay");
     createOverlay();
   }
 
   // Try to set up Tauri event listeners (non-blocking)
-  if (isTauriEnvironment()) {
+  if (isTauri) {
     try {
-      const unsubCheck = await onCheckMeetings(async () => {
-        console.log("[MeetCat] Check meetings triggered");
-        await checkAndReportMeetings();
+      const unsubCheck = await onCheckMeetings(async (payload: CheckMeetingsPayload) => {
+        logToConsole("info", "[MeetCat] Check meetings triggered", {
+          checkId: payload.checkId,
+        });
+        logToDisk("debug", "homepage", "check.received", "Check event received", {
+          checkId: payload.checkId,
+          intervalSeconds: payload.intervalSeconds,
+          emittedAtMs: payload.emittedAtMs,
+        });
+        await checkAndReportMeetings({ source: "check-meetings", checkId: payload.checkId });
       });
       unsubscribers.push(unsubCheck);
+      hasCheckListener = true;
+      logToDisk("debug", "homepage", "listener.check", "Check listener attached");
     } catch (e) {
       console.warn("[MeetCat] Failed to listen for check-meetings:", e);
+      logToDisk("warn", "homepage", "listener.check_failed", "Check listener failed");
     }
 
     try {
@@ -177,38 +297,70 @@ async function initHomepage(): Promise<void> {
   }
 
   // Initial check
-  await checkAndReportMeetings();
+  await checkAndReportMeetings({ source: "init" });
 
-  // Set up periodic check as fallback
-  setInterval(() => {
-    checkAndReportMeetings().catch((e) => {
-      console.warn("[MeetCat] Periodic check failed:", e);
-    });
-  }, (settings?.checkIntervalSeconds || SETTINGS_DEFAULTS.checkIntervalSeconds) * 1000);
+  if (!isTauri || !hasCheckListener) {
+    startFallbackInterval();
+  }
 }
 
 /**
  * Parse meetings from DOM and report to Rust backend
  */
-async function checkAndReportMeetings(): Promise<void> {
+async function checkAndReportMeetings(meta: {
+  source?: "init" | "check-meetings" | "fallback-interval";
+  checkId?: number;
+} = {}): Promise<void> {
   const result = parseMeetingCards(document);
   lastMeetings = result.meetings;
 
-  console.log(
-    `[MeetCat] Parsed ${result.meetings.length} meetings from ${result.cardsFound} cards`
-  );
+  logToConsole("info", "[MeetCat] Parsed meetings", {
+    meetingsCount: result.meetings.length,
+    cardsFound: result.cardsFound,
+  });
+  logToDisk("debug", "homepage", "parse.result", "Parsed meetings", {
+    source: meta.source ?? "unknown",
+    checkId: meta.checkId,
+    cardsFound: result.cardsFound,
+    meetingsCount: result.meetings.length,
+  });
 
   // Update overlay with next meeting
   if (overlay) {
-    const nextMeeting = result.meetings[0] || null;
+    const nextMeeting = getNextJoinableMeeting(result.meetings, {
+      gracePeriodMinutes:
+        settings?.maxMinutesAfterStart ?? SETTINGS_DEFAULTS.maxMinutesAfterStart,
+    });
     overlay.update(nextMeeting);
+    logToDisk("debug", "overlay", "overlay.update", "Overlay updated", {
+      source: meta.source ?? "unknown",
+      checkId: meta.checkId,
+      meeting: nextMeeting
+        ? {
+            callId: nextMeeting.callId,
+            title: nextMeeting.title,
+            startsInMinutes: nextMeeting.startsInMinutes,
+          }
+        : null,
+      graceMinutes:
+        settings?.maxMinutesAfterStart ?? SETTINGS_DEFAULTS.maxMinutesAfterStart,
+    });
   }
 
   // Report to Rust backend
   try {
     await reportMeetings(result.meetings);
+    logToDisk("debug", "homepage", "meetings.reported", "Meetings reported", {
+      source: meta.source ?? "unknown",
+      checkId: meta.checkId,
+      meetingsCount: result.meetings.length,
+    });
   } catch (error) {
     console.error("[MeetCat] Failed to report meetings:", error);
+    logToDisk("error", "homepage", "meetings.report_failed", "Report failed", {
+      source: meta.source ?? "unknown",
+      checkId: meta.checkId,
+    });
   }
 }
 
@@ -218,12 +370,51 @@ async function checkAndReportMeetings(): Promise<void> {
 function createOverlay(): void {
   if (overlay) return;
 
-  overlay = createHomepageOverlay(document.body, { iconUrl: ICON_URL });
+  overlay = createHomepageOverlay(document.body, {
+    iconUrl: ICON_URL,
+    onHide: () => {
+      logToDisk("info", "overlay", "overlay.hidden_by_user", "Overlay hidden by user", {
+        overlayType: "homepage",
+      });
+    },
+  });
+  logToDisk("info", "overlay", "overlay.created", "Homepage overlay created");
 
   // Update with current next meeting
   if (lastMeetings.length > 0) {
-    overlay.update(lastMeetings[0]);
+    const nextMeeting = getNextJoinableMeeting(lastMeetings, {
+      gracePeriodMinutes:
+        settings?.maxMinutesAfterStart ?? SETTINGS_DEFAULTS.maxMinutesAfterStart,
+    });
+    overlay.update(nextMeeting);
   }
+}
+
+function startFallbackInterval(): void {
+  if (fallbackIntervalId !== null) return;
+
+  const intervalSeconds = Math.max(
+    settings?.checkIntervalSeconds || SETTINGS_DEFAULTS.checkIntervalSeconds,
+    1
+  );
+  const intervalMs = intervalSeconds * 1000;
+
+  fallbackIntervalId = setInterval(() => {
+    checkAndReportMeetings({ source: "fallback-interval" }).catch((e) => {
+      console.warn("[MeetCat] Periodic check failed:", e);
+    });
+  }, intervalMs);
+
+  logToDisk("info", "homepage", "fallback.start", "Fallback interval started", {
+    intervalSeconds,
+  });
+}
+
+function stopFallbackInterval(): void {
+  if (fallbackIntervalId === null) return;
+  clearInterval(fallbackIntervalId);
+  fallbackIntervalId = null;
+  logToDisk("info", "homepage", "fallback.stop", "Fallback interval stopped");
 }
 
 /**
@@ -232,9 +423,11 @@ function createOverlay(): void {
 function updateOverlayVisibility(): void {
   if (settings?.showCountdownOverlay && !overlay) {
     createOverlay();
+    logToDisk("info", "overlay", "overlay.shown", "Overlay shown");
   } else if (!settings?.showCountdownOverlay && overlay) {
     overlay.destroy();
     overlay = null;
+    logToDisk("info", "overlay", "overlay.hidden", "Overlay hidden");
   }
 }
 
@@ -242,7 +435,10 @@ function updateOverlayVisibility(): void {
  * Handle navigate-and-join command from Rust
  */
 function handleNavigateAndJoin(cmd: NavigateAndJoinCommand): void {
-  console.log("[MeetCat] Navigate and join:", cmd.url);
+  logToConsole("info", "[MeetCat] Navigate and join:", { url: cmd.url });
+  logToDisk("info", "meeting", "navigate_and_join", "Navigate and join", {
+    url: cmd.url,
+  });
 
   // Update settings with the ones from the command
   settings = cmd.settings;
@@ -256,8 +452,14 @@ function handleNavigateAndJoin(cmd: NavigateAndJoinCommand): void {
  */
 async function initMeetingPage(): Promise<void> {
   const meetingCode = getMeetingCodeFromPath(location.pathname);
-  console.log("[MeetCat] Initializing meeting page:", meetingCode);
+  logToConsole("info", "[MeetCat] Initializing meeting page:", {
+    callId: meetingCode,
+  });
   const isAutoJoinRequested = hasAutoJoinParam(location.href);
+  logToDisk("info", "meeting", "meeting.init", "Meeting page init", {
+    callId: meetingCode,
+    autoJoinRequested: isAutoJoinRequested,
+  });
 
   // Wait for media buttons to appear
   await waitForMediaButtons();
@@ -266,7 +468,7 @@ async function initMeetingPage(): Promise<void> {
   applyMediaSettings();
 
   if (!isAutoJoinRequested) {
-    console.log("[MeetCat] Skip auto-join: meeting not opened by MeetCat");
+    logToConsole("info", "[MeetCat] Skip auto-join: meeting not opened by MeetCat");
     return;
   }
 
@@ -289,14 +491,22 @@ async function waitForMediaButtons(
     const check = (): void => {
       const buttons = findMediaButtons(document);
       if (buttons.micButton && buttons.cameraButton) {
-        console.log("[MeetCat] Media buttons found");
+        logToConsole("info", "[MeetCat] Media buttons found");
+        logToDisk("debug", "meeting", "media_buttons.found", "Media buttons found", {
+          attempts,
+        });
         resolve(true);
         return;
       }
 
       attempts++;
       if (attempts >= maxAttempts) {
-        console.log("[MeetCat] Media buttons not found after max attempts");
+        logToConsole("info", "[MeetCat] Media buttons not found after max attempts", {
+          attempts,
+        });
+        logToDisk("warn", "meeting", "media_buttons.not_found", "Media buttons not found", {
+          attempts,
+        });
         resolve(false);
         return;
       }
@@ -320,9 +530,17 @@ function applyMediaSettings(): void {
   const micResult = setMicState(document, micEnabled);
   const cameraResult = setCameraState(document, cameraEnabled);
 
-  console.log("[MeetCat] Media settings applied:", {
+  logToConsole("info", "[MeetCat] Media settings applied:", {
     mic: { desired: micEnabled, result: micResult },
     camera: { desired: cameraEnabled, result: cameraResult },
+  });
+  logToDisk("info", "meeting", "media_settings.applied", "Media settings applied", {
+    micDesired: micEnabled,
+    micChanged: micResult.changed,
+    micSuccess: micResult.success,
+    cameraDesired: cameraEnabled,
+    cameraChanged: cameraResult.changed,
+    cameraSuccess: cameraResult.success,
   });
 
   mediaApplied = true;
@@ -337,9 +555,14 @@ function startJoinCountdown(): void {
   const seconds = settings.joinCountdownSeconds ?? SETTINGS_DEFAULTS.joinCountdownSeconds;
 
   if (seconds <= 0) {
+    logToDisk("info", "meeting", "join.immediate", "Joining immediately");
     performJoin();
     return;
   }
+
+  logToDisk("info", "meeting", "join.countdown_start", "Join countdown started", {
+    seconds,
+  });
 
   countdown = createJoinCountdown(document.body, {
     seconds,
@@ -348,9 +571,19 @@ function startJoinCountdown(): void {
       performJoin();
       cleanupCountdown();
     },
-    onCancel: () => {
-      console.log("[MeetCat] Join cancelled by user");
+    onCancel: (state) => {
+      logToConsole("info", "[MeetCat] Join cancelled by user");
+      logToDisk("info", "meeting", "join.countdown_cancel", "Join cancelled by user", {
+        remainingSeconds: state?.remainingSeconds ?? null,
+        totalSeconds: state?.totalSeconds ?? null,
+      });
       cleanupCountdown();
+    },
+    onHide: (state) => {
+      logToDisk("info", "meeting", "join.countdown_hidden", "Join countdown hidden by user", {
+        remainingSeconds: state.remainingSeconds,
+        totalSeconds: state.totalSeconds,
+      });
     },
   });
 
@@ -365,7 +598,10 @@ function performJoin(): void {
   joinAttempted = true;
 
   const success = clickJoinButton(document);
-  console.log("[MeetCat] Join button clicked:", success);
+  logToConsole("info", "[MeetCat] Join button clicked:", { success });
+  logToDisk("info", "meeting", "join.attempt", "Join button clicked", {
+    success,
+  });
 
   if (success) {
     const meetingCode = getMeetingCodeFromPath(location.pathname);
@@ -373,6 +609,9 @@ function performJoin(): void {
       reportJoined(meetingCode).catch((e) =>
         console.error("[MeetCat] Failed to report join:", e)
       );
+      logToDisk("debug", "meeting", "join.reported", "Meeting reported joined", {
+        callId: meetingCode,
+      });
     }
 
   }
@@ -391,12 +630,15 @@ function cleanupCountdown(): void {
 /**
  * Cleanup all resources
  */
-function cleanup(): void {
-  console.log("[MeetCat] Cleaning up");
+function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): void {
+  logToConsole("info", "[MeetCat] Cleaning up", { reason });
+  logToDisk("info", "inject", "cleanup", "Cleanup", { reason });
 
   // Unsubscribe from events
   unsubscribers.forEach((unsub) => unsub());
   unsubscribers = [];
+
+  stopFallbackInterval();
 
   // Destroy overlays
   if (overlay) {
@@ -415,14 +657,17 @@ if (document.readyState === "loading") {
 }
 
 // Cleanup on page unload
-window.addEventListener("beforeunload", cleanup);
+window.addEventListener("beforeunload", () => cleanup("beforeunload"));
 
 // Re-initialize on navigation (for SPA-like behavior)
 let lastPathname = location.pathname;
 const observer = new MutationObserver(() => {
+  if (typeof location === "undefined") {
+    return;
+  }
   if (location.pathname !== lastPathname) {
     lastPathname = location.pathname;
-    cleanup();
+    cleanup("navigation");
     init();
   }
 });
