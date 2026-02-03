@@ -4,11 +4,15 @@
 //! and background daemon for meeting scheduling.
 
 mod daemon;
+mod logging;
 mod settings;
 mod tray;
 
 use daemon::{DaemonState, Meeting};
-use settings::Settings;
+use logging::{now_ms, LogEventInput, LogManager};
+use settings::{LogLevel, Settings, TAURI_DEFAULT_CHECK_INTERVAL_SECONDS};
+use serde::Serialize;
+use serde_json::json;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{
@@ -28,14 +32,18 @@ pub struct AppState {
     pub daemon: Mutex<DaemonState>,
     /// Handle to cancel the current join trigger timer
     pub join_trigger_handle: Mutex<Option<JoinHandle<()>>>,
+    pub logger: Mutex<LogManager>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
+        let settings = Settings::load().unwrap_or_default();
+        let logger = LogManager::new(&settings);
         Self {
-            settings: Mutex::new(Settings::load().unwrap_or_default()),
+            settings: Mutex::new(settings),
             daemon: Mutex::new(DaemonState::default()),
             join_trigger_handle: Mutex::new(None),
+            logger: Mutex::new(logger),
         }
     }
 }
@@ -76,6 +84,8 @@ fn save_settings(
     state: State<AppState>,
     settings: Settings,
 ) -> Result<(), String> {
+    let previous_settings = state.settings.lock().unwrap().clone();
+
     {
         let mut current = state.settings.lock().unwrap();
         *current = settings.clone();
@@ -85,6 +95,33 @@ fn save_settings(
     // Notify WebView of settings change
     app.emit("settings_changed", &settings)
         .map_err(|e| e.to_string())?;
+
+    {
+        let (changed_keys, changes) =
+            build_settings_change_summary(&previous_settings, &settings);
+        let mut logger = state.logger.lock().unwrap();
+        logger.configure(&settings);
+        logger.log_internal(
+            LogLevel::Info,
+            "settings",
+            "settings.saved",
+            None,
+            Some(json!({
+                "logCollectionEnabled": settings
+                    .tauri
+                    .as_ref()
+                    .map(|t| t.log_collection_enabled)
+                    .unwrap_or(false),
+                "logLevel": settings
+                    .tauri
+                    .as_ref()
+                    .map(|t| format!("{:?}", t.log_level).to_lowercase())
+                    .unwrap_or("info".to_string()),
+                "changedKeys": changed_keys,
+                "changes": changes,
+            })),
+        );
+    }
 
     // Refresh tray display with new settings
     let next_meeting = state.daemon.lock().unwrap().get_next_meeting();
@@ -98,6 +135,9 @@ fn save_settings(
 fn start_daemon(state: State<AppState>) {
     let mut daemon = state.daemon.lock().unwrap();
     daemon.start();
+
+    let mut logger = state.logger.lock().unwrap();
+    logger.log_internal(LogLevel::Info, "daemon", "daemon.start", None, None);
 }
 
 /// Stop the auto-join daemon
@@ -105,6 +145,17 @@ fn start_daemon(state: State<AppState>) {
 fn stop_daemon(state: State<AppState>) {
     let mut daemon = state.daemon.lock().unwrap();
     daemon.stop();
+
+    let mut logger = state.logger.lock().unwrap();
+    logger.log_internal(LogLevel::Info, "daemon", "daemon.stop", None, None);
+}
+
+/// Log event from WebView
+#[tauri::command]
+fn log_event(state: State<AppState>, input: LogEventInput) {
+    if let Ok(mut logger) = state.logger.lock() {
+        logger.log_from_input(input, "webview");
+    }
 }
 
 /// Schedule a precise join trigger for the next meeting
@@ -118,6 +169,14 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
         if let Some(h) = handle.take() {
             h.abort();
             println!("[MeetCat] Cancelled previous join trigger");
+            log_app_event(
+                app,
+                LogLevel::Debug,
+                "join",
+                "trigger.cancelled",
+                None,
+                Some(json!({ "reason": "reschedule" })),
+            );
         }
     }
 
@@ -135,6 +194,19 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
             delay_ms,
             delay_ms as f64 / 60000.0
         );
+        log_app_event(
+            app,
+            LogLevel::Info,
+            "join",
+            "trigger.scheduled",
+            None,
+            Some(json!({
+                "callId": meeting.call_id,
+                "title": meeting.title,
+                "delayMs": delay_ms,
+                "startsInMinutes": meeting.starts_in_minutes,
+            })),
+        );
 
         // Spawn a task to trigger the join at the exact time
         let join_handle = tauri::async_runtime::spawn(async move {
@@ -144,6 +216,17 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
             }
 
             println!("[MeetCat] Triggering join for: {}", meeting.title);
+            log_app_event(
+                &app_handle,
+                LogLevel::Info,
+                "join",
+                "trigger.fired",
+                None,
+                Some(json!({
+                    "callId": meeting.call_id,
+                    "title": meeting.title,
+                })),
+            );
 
             // Mark the meeting as "triggered" BEFORE navigating
             // This prevents re-triggering if user cancels and goes back to homepage
@@ -151,6 +234,14 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
                 let mut daemon = state.daemon.lock().unwrap();
                 daemon.mark_joined(&call_id);
                 println!("[MeetCat] Marked meeting as triggered: {}", call_id);
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Debug,
+                    "join",
+                    "meeting.marked_joined",
+                    None,
+                    Some(json!({ "callId": call_id })),
+                );
             }
 
             if let Some(window) = app_handle.get_webview_window("main") {
@@ -175,16 +266,44 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
         *handle = Some(join_handle);
     } else {
         println!("[MeetCat] No meeting to schedule trigger for");
+        log_app_event(
+            app,
+            LogLevel::Debug,
+            "join",
+            "trigger.none",
+            None,
+            None,
+        );
     }
 }
 
 /// Receive meetings from WebView
 #[tauri::command]
 fn meetings_updated(app: AppHandle, state: State<AppState>, meetings: Vec<Meeting>) {
+    let meeting_count = meetings.len();
+    let first_meeting = meetings.first().cloned();
     {
         let mut daemon = state.daemon.lock().unwrap();
         daemon.update_meetings(meetings);
     }
+
+    log_app_event(
+        &app,
+        LogLevel::Debug,
+        "meetings",
+        "meetings.updated",
+        None,
+        Some(json!({
+            "count": meeting_count,
+            "firstMeeting": first_meeting.as_ref().map(|m| {
+                json!({
+                    "callId": m.call_id,
+                    "title": m.title,
+                    "startsInMinutes": m.starts_in_minutes,
+                })
+            }),
+        })),
+    );
 
     // Schedule precise join trigger (this will cancel any existing trigger)
     schedule_join_trigger(&app, &state);
@@ -201,6 +320,15 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
         let mut daemon = state.daemon.lock().unwrap();
         daemon.mark_joined(&call_id);
     }
+
+    log_app_event(
+        &app,
+        LogLevel::Info,
+        "meetings",
+        "meeting.joined",
+        None,
+        Some(json!({ "callId": call_id })),
+    );
 
     // Re-schedule trigger for the next meeting
     schedule_join_trigger(&app, &state);
@@ -238,6 +366,166 @@ struct NavigateAndJoinCommand {
     settings: Settings,
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CheckMeetingsPayload {
+    check_id: u64,
+    interval_seconds: u32,
+    emitted_at_ms: u64,
+}
+
+fn log_app_event(
+    app: &AppHandle,
+    level: LogLevel,
+    module: &str,
+    event: &str,
+    message: Option<String>,
+    context: Option<serde_json::Value>,
+) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut logger) = state.logger.lock() {
+            logger.log_internal(level, module, event, message, context);
+        }
+    }
+}
+
+fn build_settings_change_summary(
+    before: &Settings,
+    after: &Settings,
+) -> (Vec<String>, serde_json::Value) {
+    let mut changed_keys = Vec::new();
+    let mut changes = serde_json::Map::new();
+
+    add_change(
+        "checkIntervalSeconds",
+        before.check_interval_seconds,
+        after.check_interval_seconds,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "joinBeforeMinutes",
+        before.join_before_minutes,
+        after.join_before_minutes,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "maxMinutesAfterStart",
+        before.max_minutes_after_start,
+        after.max_minutes_after_start,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "autoClickJoin",
+        before.auto_click_join,
+        after.auto_click_join,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "joinCountdownSeconds",
+        before.join_countdown_seconds,
+        after.join_countdown_seconds,
+        &mut changed_keys,
+        &mut changes,
+    );
+    if before.title_exclude_filters != after.title_exclude_filters {
+        changed_keys.push("titleExcludeFilters".to_string());
+        changes.insert(
+            "titleExcludeFilters".to_string(),
+            json!({
+                "fromCount": before.title_exclude_filters.len(),
+                "toCount": after.title_exclude_filters.len(),
+            }),
+        );
+    }
+    add_change(
+        "defaultMicState",
+        before.default_mic_state.clone(),
+        after.default_mic_state.clone(),
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "defaultCameraState",
+        before.default_camera_state.clone(),
+        after.default_camera_state.clone(),
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "showCountdownOverlay",
+        before.show_countdown_overlay,
+        after.show_countdown_overlay,
+        &mut changed_keys,
+        &mut changes,
+    );
+
+    let before_tauri = before.tauri.clone().unwrap_or_default();
+    let after_tauri = after.tauri.clone().unwrap_or_default();
+
+    add_change(
+        "tauri.startAtLogin",
+        before_tauri.start_at_login,
+        after_tauri.start_at_login,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "tauri.showTrayIcon",
+        before_tauri.show_tray_icon,
+        after_tauri.show_tray_icon,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "tauri.trayDisplayMode",
+        before_tauri.tray_display_mode,
+        after_tauri.tray_display_mode,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "tauri.trayShowMeetingTitle",
+        before_tauri.tray_show_meeting_title,
+        after_tauri.tray_show_meeting_title,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "tauri.logCollectionEnabled",
+        before_tauri.log_collection_enabled,
+        after_tauri.log_collection_enabled,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "tauri.logLevel",
+        before_tauri.log_level,
+        after_tauri.log_level,
+        &mut changed_keys,
+        &mut changes,
+    );
+
+    (changed_keys, serde_json::Value::Object(changes))
+}
+
+fn add_change<T: Serialize + PartialEq>(
+    key: &str,
+    before: T,
+    after: T,
+    changed_keys: &mut Vec<String>,
+    changes: &mut serde_json::Map<String, serde_json::Value>,
+) {
+    if before == after {
+        return;
+    }
+    changed_keys.push(key.to_string());
+    changes.insert(key.to_string(), json!({ "from": before, "to": after }));
+}
+
 // =============================================================================
 // Application setup
 // =============================================================================
@@ -253,6 +541,7 @@ fn setup_script_injection(app: &AppHandle) {
 
     // Listen for page load events to inject script
     app.listen("tauri://webview-created", move |event| {
+        let app_handle = app_handle.clone();
         let payload = event.payload();
         // Only inject into main window (Google Meet)
         if payload.contains("\"main\"") || payload.contains("main") {
@@ -264,6 +553,23 @@ fn setup_script_injection(app: &AppHandle) {
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                     if let Err(e) = window_clone.eval(script) {
                         eprintln!("Failed to inject script: {}", e);
+                        log_app_event(
+                            &app_handle,
+                            LogLevel::Error,
+                            "inject",
+                            "script.inject_failed",
+                            Some(e.to_string()),
+                            Some(json!({ "window": "main" })),
+                        );
+                    } else {
+                        log_app_event(
+                            &app_handle,
+                            LogLevel::Info,
+                            "inject",
+                            "script.injected",
+                            None,
+                            Some(json!({ "window": "main" })),
+                        );
                     }
                 });
             }
@@ -276,15 +582,57 @@ fn setup_daemon(app: &AppHandle) {
     let app_handle = app.clone();
 
     tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
-
+        let mut check_id: u64 = 0;
         loop {
-            interval.tick().await;
+            let interval_seconds = app_handle
+                .try_state::<AppState>()
+                .map(|state| {
+                    state
+                        .settings
+                        .lock()
+                        .unwrap()
+                        .check_interval_seconds
+                        .max(1)
+                })
+                .unwrap_or(TAURI_DEFAULT_CHECK_INTERVAL_SECONDS);
+
+            check_id += 1;
+            let payload = CheckMeetingsPayload {
+                check_id,
+                interval_seconds,
+                emitted_at_ms: now_ms(),
+            };
 
             // Emit check-meetings event to WebView
-            if let Err(e) = app_handle.emit("check-meetings", ()) {
+            if let Err(e) = app_handle.emit("check-meetings", payload.clone()) {
                 eprintln!("Failed to emit check-meetings: {}", e);
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Error,
+                    "daemon",
+                    "check.emit_failed",
+                    Some(e.to_string()),
+                    Some(json!({
+                        "checkId": payload.check_id,
+                        "intervalSeconds": payload.interval_seconds,
+                    })),
+                );
+            } else {
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Debug,
+                    "daemon",
+                    "check.emitted",
+                    None,
+                    Some(json!({
+                        "checkId": payload.check_id,
+                        "intervalSeconds": payload.interval_seconds,
+                        "emittedAtMs": payload.emitted_at_ms,
+                    })),
+                );
             }
+
+            tokio::time::sleep(Duration::from_secs(interval_seconds as u64)).await;
         }
     });
 }
@@ -339,6 +687,7 @@ fn setup_new_window_handler(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let window_clone = window.clone();
         let inject_script = get_inject_script();
+        let app_handle = app.clone();
         tauri::async_runtime::spawn(async move {
             // Wait for page to be ready
             tokio::time::sleep(Duration::from_millis(2000)).await;
@@ -346,18 +695,59 @@ fn setup_new_window_handler(app: &AppHandle) {
             // Request media permissions
             if let Err(e) = window_clone.eval(REQUEST_MEDIA_SCRIPT) {
                 eprintln!("Failed to request media permissions: {}", e);
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Warn,
+                    "inject",
+                    "media_permissions.failed",
+                    Some(e.to_string()),
+                    None,
+                );
             }
 
             // Inject intercept script
             if let Err(e) = window_clone.eval(INTERCEPT_SCRIPT) {
                 eprintln!("Failed to inject intercept script: {}", e);
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Error,
+                    "inject",
+                    "intercept.inject_failed",
+                    Some(e.to_string()),
+                    None,
+                );
+            } else {
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Debug,
+                    "inject",
+                    "intercept.injected",
+                    None,
+                    None,
+                );
             }
 
             // Inject MeetCat script
             if let Err(e) = window_clone.eval(inject_script) {
                 eprintln!("Failed to inject MeetCat script: {}", e);
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Error,
+                    "inject",
+                    "script.inject_failed",
+                    Some(e.to_string()),
+                    None,
+                );
             } else {
                 println!("MeetCat script injected successfully");
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Info,
+                    "inject",
+                    "script.injected",
+                    None,
+                    None,
+                );
             }
         });
     }
@@ -479,14 +869,47 @@ fn setup_navigation_injection(app: &AppHandle) {
                             // Inject intercept script
                             if let Err(e) = window_clone.eval(INTERCEPT_SCRIPT) {
                                 eprintln!("Failed to inject intercept script: {}", e);
+                                log_app_event(
+                                    &app_handle,
+                                    LogLevel::Warn,
+                                    "inject",
+                                    "intercept.inject_failed",
+                                    Some(e.to_string()),
+                                    Some(json!({ "url": url_str })),
+                                );
+                            } else {
+                                log_app_event(
+                                    &app_handle,
+                                    LogLevel::Debug,
+                                    "inject",
+                                    "intercept.injected",
+                                    None,
+                                    Some(json!({ "url": url_str })),
+                                );
                             }
 
                             // Inject MeetCat script
                             let script = get_inject_script();
                             if let Err(e) = window_clone.eval(script) {
                                 eprintln!("Failed to inject MeetCat script: {}", e);
+                                log_app_event(
+                                    &app_handle,
+                                    LogLevel::Warn,
+                                    "inject",
+                                    "script.inject_failed",
+                                    Some(e.to_string()),
+                                    Some(json!({ "url": url_str })),
+                                );
                             } else {
                                 println!("[MeetCat] Script injected for: {}", url_str);
+                                log_app_event(
+                                    &app_handle,
+                                    LogLevel::Debug,
+                                    "inject",
+                                    "script.injected",
+                                    None,
+                                    Some(json!({ "url": url_str })),
+                                );
                             }
                         }
                     }
@@ -787,6 +1210,8 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 let mut daemon = state.daemon.lock().unwrap();
                 daemon.start();
+                let mut logger = state.logger.lock().unwrap();
+                logger.log_internal(LogLevel::Info, "daemon", "daemon.start", Some("auto".to_string()), None);
             }
 
             Ok(())
@@ -800,6 +1225,7 @@ pub fn run() {
             meetings_updated,
             meeting_joined,
             open_settings_window,
+            log_event,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

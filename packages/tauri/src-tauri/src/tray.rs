@@ -1,8 +1,9 @@
 //! System tray functionality
 
 use crate::daemon::Meeting;
-use crate::settings::{TauriSettings, TrayDisplayMode};
+use crate::settings::{LogLevel, TauriSettings, TrayDisplayMode};
 use crate::{navigate_to_meet_home, AppState};
+use serde_json::json;
 use tauri::{
     menu::{MenuBuilder, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
@@ -50,22 +51,49 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("MeetCat - Auto-join Google Meet")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => {
+                log_tray_event(app, LogLevel::Info, "menu.quit", None);
                 app.exit(0);
             }
             "show" => {
+                let mut ok = false;
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    ok = window.show().is_ok() && window.set_focus().is_ok();
+                }
+                if ok {
+                    log_tray_event(app, LogLevel::Info, "menu.show", Some(json!({ "window": "main" })));
+                } else {
+                    log_tray_event(
+                        app,
+                        LogLevel::Warn,
+                        "menu.show_failed",
+                        Some(json!({ "window": "main" })),
+                    );
                 }
             }
             "go-home" => {
                 if let Err(e) = navigate_to_meet_home(app) {
                     eprintln!("Failed to navigate to Google Meet home: {}", e);
+                    log_tray_event(
+                        app,
+                        LogLevel::Error,
+                        "menu.go_home_failed",
+                        Some(json!({ "error": e })),
+                    );
+                } else {
+                    log_tray_event(app, LogLevel::Info, "menu.go_home", None);
                 }
             }
             "settings" => {
                 if let Err(e) = open_settings(app) {
                     eprintln!("Failed to open settings: {}", e);
+                    log_tray_event(
+                        app,
+                        LogLevel::Error,
+                        "menu.settings_failed",
+                        Some(json!({ "error": e })),
+                    );
+                } else {
+                    log_tray_event(app, LogLevel::Info, "menu.settings", None);
                 }
             }
             _ => {}
@@ -81,6 +109,12 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
+                log_tray_event(
+                    tray.app_handle(),
+                    LogLevel::Info,
+                    "icon.click",
+                    Some(json!({ "button": "left", "state": "up" })),
+                );
             }
         })
         .build(app)?;
@@ -209,6 +243,19 @@ fn truncate_title(title: &str, max_len: usize) -> String {
     let mut truncated: String = chars.into_iter().take(max_len - 3).collect();
     truncated.push_str("...");
     truncated
+}
+
+fn log_tray_event(
+    app: &AppHandle,
+    level: LogLevel,
+    event: &str,
+    context: Option<serde_json::Value>,
+) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut logger) = state.logger.lock() {
+            logger.log_internal(level, "tray", event, None, context);
+        }
+    }
 }
 
 fn format_countdown(starts_in_minutes: i64) -> String {

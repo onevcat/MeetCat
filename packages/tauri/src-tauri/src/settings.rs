@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use thiserror::Error;
 
+pub const TAURI_DEFAULT_CHECK_INTERVAL_SECONDS: u32 = 5;
+
 #[derive(Error, Debug)]
 pub enum SettingsError {
     #[error("Failed to read settings file: {0}")]
@@ -37,6 +39,18 @@ pub enum TrayDisplayMode {
     IconWithCountdown,
 }
 
+/// Log level options
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Error,
+    Warn,
+    #[default]
+    Info,
+    Debug,
+    Trace,
+}
+
 /// Tauri-specific settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +66,12 @@ pub struct TauriSettings {
 
     #[serde(default = "default_tray_show_meeting_title")]
     pub tray_show_meeting_title: bool,
+
+    #[serde(default = "default_log_collection_enabled")]
+    pub log_collection_enabled: bool,
+
+    #[serde(default = "default_log_level")]
+    pub log_level: LogLevel,
 }
 
 impl Default for TauriSettings {
@@ -62,6 +82,8 @@ impl Default for TauriSettings {
             show_tray_icon: defaults.tauri.show_tray_icon,
             tray_display_mode: defaults.tauri.tray_display_mode.clone(),
             tray_show_meeting_title: defaults.tauri.tray_show_meeting_title,
+            log_collection_enabled: defaults.tauri.log_collection_enabled,
+            log_level: defaults.tauri.log_level.clone(),
         }
     }
 }
@@ -113,12 +135,13 @@ struct DefaultsTauriSettings {
     show_tray_icon: bool,
     tray_display_mode: TrayDisplayMode,
     tray_show_meeting_title: bool,
+    log_collection_enabled: bool,
+    log_level: LogLevel,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DefaultsFile {
-    check_interval_seconds: u32,
     join_before_minutes: u32,
     max_minutes_after_start: u32,
     auto_click_join: bool,
@@ -139,7 +162,7 @@ fn defaults() -> &'static DefaultsFile {
 }
 
 fn default_check_interval() -> u32 {
-    defaults().check_interval_seconds
+    TAURI_DEFAULT_CHECK_INTERVAL_SECONDS
 }
 
 fn default_join_before() -> u32 {
@@ -190,11 +213,19 @@ fn default_tray_show_meeting_title() -> bool {
     defaults().tauri.tray_show_meeting_title
 }
 
+fn default_log_collection_enabled() -> bool {
+    defaults().tauri.log_collection_enabled
+}
+
+fn default_log_level() -> LogLevel {
+    defaults().tauri.log_level.clone()
+}
+
 impl Default for Settings {
     fn default() -> Self {
         let defaults = defaults();
         Self {
-            check_interval_seconds: defaults.check_interval_seconds,
+            check_interval_seconds: default_check_interval(),
             join_before_minutes: defaults.join_before_minutes,
             max_minutes_after_start: defaults.max_minutes_after_start,
             auto_click_join: defaults.auto_click_join,
@@ -246,7 +277,7 @@ mod tests {
     #[test]
     fn test_default_settings() {
         let settings = Settings::default();
-        assert_eq!(settings.check_interval_seconds, 30);
+        assert_eq!(settings.check_interval_seconds, 5);
         assert_eq!(settings.join_before_minutes, 1);
         assert_eq!(settings.max_minutes_after_start, 10);
         assert!(settings.auto_click_join);
@@ -271,6 +302,8 @@ mod tests {
         assert!(tauri_settings.show_tray_icon);
         assert_eq!(tauri_settings.tray_display_mode, TrayDisplayMode::IconOnly);
         assert!(!tauri_settings.tray_show_meeting_title);
+        assert!(!tauri_settings.log_collection_enabled);
+        assert_eq!(tauri_settings.log_level, LogLevel::Info);
     }
 
     #[test]
@@ -304,7 +337,7 @@ mod tests {
 
         assert_eq!(settings.join_before_minutes, 5);
         // Other fields should use defaults
-        assert_eq!(settings.check_interval_seconds, 30);
+        assert_eq!(settings.check_interval_seconds, 5);
         assert_eq!(settings.max_minutes_after_start, 10);
         assert!(settings.auto_click_join);
         assert_eq!(settings.default_mic_state, MediaState::Muted);
@@ -363,6 +396,8 @@ mod tests {
         assert!(json.contains("showTrayIcon"));
         assert!(json.contains("trayDisplayMode"));
         assert!(json.contains("trayShowMeetingTitle"));
+        assert!(json.contains("logCollectionEnabled"));
+        assert!(json.contains("logLevel"));
     }
 
     #[test]
@@ -382,6 +417,8 @@ mod tests {
                 show_tray_icon: false,
                 tray_display_mode: TrayDisplayMode::IconWithTime,
                 tray_show_meeting_title: true,
+                log_collection_enabled: true,
+                log_level: LogLevel::Debug,
             }),
         };
 
@@ -403,5 +440,7 @@ mod tests {
         assert!(!tauri.show_tray_icon);
         assert_eq!(tauri.tray_display_mode, TrayDisplayMode::IconWithTime);
         assert!(tauri.tray_show_meeting_title);
+        assert!(tauri.log_collection_enabled);
+        assert_eq!(tauri.log_level, LogLevel::Debug);
     }
 }
