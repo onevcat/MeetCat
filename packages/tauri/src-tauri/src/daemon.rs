@@ -3,7 +3,7 @@
 use crate::settings::Settings;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Represents a Google Meet meeting
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +34,7 @@ pub struct DaemonState {
     running: bool,
     meetings: Vec<Meeting>,
     joined_meetings: HashSet<String>,
+    suppressed_meetings: HashMap<String, i64>,
 }
 
 impl DaemonState {
@@ -57,6 +58,7 @@ impl DaemonState {
     /// Update meetings list
     pub fn update_meetings(&mut self, meetings: Vec<Meeting>) {
         self.meetings = meetings;
+        self.prune_state();
     }
 
     /// Get all meetings
@@ -65,12 +67,28 @@ impl DaemonState {
     }
 
     /// Get the next meeting to join
-    pub fn get_next_meeting(&self) -> Option<Meeting> {
+    pub fn get_next_meeting(&self, settings: &Settings) -> Option<Meeting> {
         let now = Utc::now();
+        let join_before_ms = (settings.join_before_minutes as i64) * 60 * 1000;
+        let now_ms = now.timestamp_millis();
 
         self.meetings
             .iter()
-            .filter(|m| !self.joined_meetings.contains(&m.call_id))
+            .filter(|m| m.end_time > now)
+            .filter(|m| {
+                let start_time_ms = m.begin_time.timestamp_millis();
+                let trigger_at_ms = start_time_ms - join_before_ms;
+
+                if self.suppressed_meetings.contains_key(&m.call_id) && now_ms >= trigger_at_ms {
+                    return false;
+                }
+
+                if self.joined_meetings.contains(&m.call_id) && m.begin_time <= now {
+                    return false;
+                }
+
+                true
+            })
             .filter(|m| m.begin_time > now - chrono::Duration::minutes(5))
             .min_by_key(|m| m.begin_time)
             .cloned()
@@ -81,19 +99,66 @@ impl DaemonState {
         self.joined_meetings.insert(call_id.to_string());
     }
 
+    /// Mark a meeting as suppressed
+    pub fn mark_suppressed(&mut self, call_id: &str, closed_at_ms: i64) {
+        self.suppressed_meetings
+            .insert(call_id.to_string(), closed_at_ms);
+    }
+
     /// Clear joined history
     pub fn clear_joined(&mut self) {
         self.joined_meetings.clear();
+    }
+
+    /// Get joined meeting call IDs
+    pub fn get_joined_meetings(&self) -> Vec<String> {
+        self.joined_meetings.iter().cloned().collect()
+    }
+
+    /// Get suppressed meeting call IDs
+    pub fn get_suppressed_meetings(&self) -> Vec<String> {
+        self.suppressed_meetings.keys().cloned().collect()
+    }
+
+    fn prune_state(&mut self) {
+        let now = Utc::now();
+        let active_ids: HashSet<String> = self
+            .meetings
+            .iter()
+            .filter(|m| m.end_time > now)
+            .map(|m| m.call_id.clone())
+            .collect();
+
+        self.joined_meetings.retain(|id| active_ids.contains(id));
+        self.suppressed_meetings
+            .retain(|id, _| active_ids.contains(id));
     }
 
     /// Check if any meeting should be joined now based on settings
     pub fn should_join_now(&self, settings: &Settings) -> Option<Meeting> {
         let join_threshold = settings.join_before_minutes as i64;
         let max_after_start = settings.max_minutes_after_start as i64;
+        let now = Utc::now();
+        let join_before_ms = join_threshold * 60 * 1000;
+        let now_ms = now.timestamp_millis();
 
         self.meetings
             .iter()
-            .filter(|m| !self.joined_meetings.contains(&m.call_id))
+            .filter(|m| m.end_time > now)
+            .filter(|m| {
+                let start_time_ms = m.begin_time.timestamp_millis();
+                let trigger_at_ms = start_time_ms - join_before_ms;
+
+                if self.suppressed_meetings.contains_key(&m.call_id) && now_ms >= trigger_at_ms {
+                    return false;
+                }
+
+                if self.joined_meetings.contains(&m.call_id) && m.begin_time <= now {
+                    return false;
+                }
+
+                true
+            })
             .filter(|m| {
                 // Filter by title exclude list
                 !settings
@@ -119,10 +184,25 @@ impl DaemonState {
         let join_before_ms = (settings.join_before_minutes as i64) * 60 * 1000;
         let max_after_start_ms = (settings.max_minutes_after_start as i64) * 60 * 1000;
         let now = Utc::now();
+        let now_ms = now.timestamp_millis();
 
         self.meetings
             .iter()
-            .filter(|m| !self.joined_meetings.contains(&m.call_id))
+            .filter(|m| m.end_time > now)
+            .filter(|m| {
+                let start_time_ms = m.begin_time.timestamp_millis();
+                let trigger_at_ms = start_time_ms - join_before_ms;
+
+                if self.suppressed_meetings.contains_key(&m.call_id) && now_ms >= trigger_at_ms {
+                    return false;
+                }
+
+                if self.joined_meetings.contains(&m.call_id) && m.begin_time <= now {
+                    return false;
+                }
+
+                true
+            })
             .filter(|m| {
                 // Filter by title exclude list
                 !settings
@@ -231,7 +311,7 @@ mod tests {
         ];
         state.update_meetings(meetings);
 
-        let next = state.get_next_meeting();
+        let next = state.get_next_meeting(&Settings::default());
         assert!(next.is_some());
         assert_eq!(next.unwrap().call_id, "soonest");
     }
@@ -240,15 +320,59 @@ mod tests {
     fn test_get_next_meeting_excludes_joined() {
         let mut state = DaemonState::default();
         let meetings = vec![
-            create_test_meeting("first", "First Meeting", 2),
+            create_test_meeting("first", "First Meeting", -2),
             create_test_meeting("second", "Second Meeting", 5),
         ];
         state.update_meetings(meetings);
         state.mark_joined("first");
 
-        let next = state.get_next_meeting();
+        let next = state.get_next_meeting(&Settings::default());
         assert!(next.is_some());
         assert_eq!(next.unwrap().call_id, "second");
+    }
+
+    #[test]
+    fn test_get_next_meeting_allows_joined_before_start() {
+        let mut state = DaemonState::default();
+        let meetings = vec![create_test_meeting("first", "First Meeting", 5)];
+        state.update_meetings(meetings);
+        state.mark_joined("first");
+
+        let next = state.get_next_meeting(&Settings::default());
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().call_id, "first");
+    }
+
+    #[test]
+    fn test_get_next_meeting_skips_suppressed_after_trigger() {
+        let mut state = DaemonState::default();
+        let meetings = vec![create_test_meeting("first", "First Meeting", 1)];
+        state.update_meetings(meetings);
+        state.mark_suppressed("first", Utc::now().timestamp_millis());
+
+        let settings = Settings {
+            join_before_minutes: 2,
+            ..Settings::default()
+        };
+
+        let next = state.get_next_meeting(&settings);
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn test_suppressed_meeting_does_not_trigger() {
+        let mut state = DaemonState::default();
+        let meetings = vec![create_test_meeting("first", "First Meeting", 1)];
+        state.update_meetings(meetings);
+        state.mark_suppressed("first", Utc::now().timestamp_millis());
+
+        let settings = Settings {
+            join_before_minutes: 2,
+            ..Settings::default()
+        };
+
+        let trigger = state.calculate_next_trigger(&settings);
+        assert!(trigger.is_none());
     }
 
     #[test]
@@ -258,7 +382,7 @@ mod tests {
         let meetings = vec![create_test_meeting("old", "Old Meeting", -10)];
         state.update_meetings(meetings);
 
-        let next = state.get_next_meeting();
+        let next = state.get_next_meeting(&Settings::default());
         assert!(next.is_none());
     }
 
@@ -412,7 +536,7 @@ mod tests {
 
         let trigger = state.calculate_next_trigger(&settings);
         assert!(trigger.is_some());
-        assert_eq!(trigger.unwrap().meeting.call_id, "pending");
+        assert_eq!(trigger.unwrap().meeting.call_id, "joined");
     }
 
     #[test]

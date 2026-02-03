@@ -64,11 +64,19 @@ pub struct AppStatus {
 #[tauri::command]
 fn get_status(state: State<AppState>) -> AppStatus {
     let daemon = state.daemon.lock().unwrap();
+    let settings = state.settings.lock().unwrap();
     AppStatus {
         enabled: daemon.is_running(),
-        next_meeting: daemon.get_next_meeting(),
+        next_meeting: daemon.get_next_meeting(&settings),
         meetings: daemon.get_meetings(),
     }
+}
+
+/// Get joined meeting call IDs
+#[tauri::command]
+fn get_joined_meetings(state: State<AppState>) -> Vec<String> {
+    let daemon = state.daemon.lock().unwrap();
+    daemon.get_joined_meetings()
 }
 
 /// Get current settings
@@ -124,7 +132,8 @@ fn save_settings(
     }
 
     // Refresh tray display with new settings
-    let next_meeting = state.daemon.lock().unwrap().get_next_meeting();
+    let settings = state.settings.lock().unwrap().clone();
+    let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
     tray::update_tray_status(&app, next_meeting.as_ref());
 
     Ok(())
@@ -309,7 +318,8 @@ fn meetings_updated(app: AppHandle, state: State<AppState>, meetings: Vec<Meetin
     schedule_join_trigger(&app, &state);
 
     // Update tray with next meeting info
-    let next_meeting = state.daemon.lock().unwrap().get_next_meeting();
+    let settings = state.settings.lock().unwrap().clone();
+    let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
     tray::update_tray_status(&app, next_meeting.as_ref());
 }
 
@@ -332,6 +342,39 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
 
     // Re-schedule trigger for the next meeting
     schedule_join_trigger(&app, &state);
+}
+
+/// Mark a meeting as closed
+#[tauri::command]
+fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, closed_at_ms: i64) {
+    let settings = state.settings.lock().unwrap().clone();
+    {
+        let mut daemon = state.daemon.lock().unwrap();
+        if let Some(meeting) = daemon
+            .get_meetings()
+            .iter()
+            .find(|m| m.call_id == call_id)
+        {
+            let trigger_at_ms =
+                meeting.begin_time.timestamp_millis() - (settings.join_before_minutes as i64) * 60 * 1000;
+            if closed_at_ms >= trigger_at_ms {
+                daemon.mark_suppressed(&call_id, closed_at_ms);
+            }
+        }
+    }
+
+    // Re-schedule trigger for the next meeting
+    schedule_join_trigger(&app, &state);
+
+    let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
+    tray::update_tray_status(&app, next_meeting.as_ref());
+}
+
+/// Get suppressed meeting call IDs
+#[tauri::command]
+fn get_suppressed_meetings(state: State<AppState>) -> Vec<String> {
+    let daemon = state.daemon.lock().unwrap();
+    daemon.get_suppressed_meetings()
 }
 
 /// Open the settings window
@@ -1218,12 +1261,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_joined_meetings,
+            get_suppressed_meetings,
             get_settings,
             save_settings,
             start_daemon,
             stop_daemon,
             meetings_updated,
             meeting_joined,
+            meeting_closed,
             open_settings_window,
             log_event,
         ])

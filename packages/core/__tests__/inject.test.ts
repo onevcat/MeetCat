@@ -13,6 +13,7 @@ const controllerMocks = vi.hoisted(() => ({
   setCameraState: vi.fn(),
   clickJoinButton: vi.fn(() => false),
   getMeetingCodeFromPath: vi.fn(() => null),
+  findJoinButton: vi.fn(() => ({ button: null, matchedText: null })),
   findMediaButtons: vi.fn(() => []),
 }));
 
@@ -26,10 +27,13 @@ const tauriMocks = vi.hoisted(() => ({
   isTauriEnvironment: vi.fn(),
   reportMeetings: vi.fn().mockResolvedValue(undefined),
   getSettings: vi.fn(),
+  getJoinedMeetings: vi.fn().mockResolvedValue([]),
+  getSuppressedMeetings: vi.fn().mockResolvedValue([]),
   onCheckMeetings: vi.fn(),
   onNavigateAndJoin: vi.fn(),
   onSettingsChanged: vi.fn(),
   reportJoined: vi.fn(),
+  reportMeetingClosed: vi.fn(),
   logEvent: vi.fn().mockResolvedValue(undefined),
 }));
 

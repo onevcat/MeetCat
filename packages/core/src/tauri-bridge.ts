@@ -129,6 +129,27 @@ export async function reportJoined(callId: string): Promise<void> {
 }
 
 /**
+ * Report that a meeting page was closed
+ */
+export async function reportMeetingClosed(callId: string, closedAtMs: number): Promise<void> {
+  await invoke("meeting_closed", { callId, closedAtMs });
+}
+
+/**
+ * Get joined meeting call IDs from Rust backend
+ */
+export async function getJoinedMeetings(): Promise<string[]> {
+  return invoke<string[]>("get_joined_meetings");
+}
+
+/**
+ * Get suppressed meeting call IDs from Rust backend
+ */
+export async function getSuppressedMeetings(): Promise<string[]> {
+  return invoke<string[]>("get_suppressed_meetings");
+}
+
+/**
  * Listen for check-meetings trigger from Rust daemon
  */
 export async function onCheckMeetings(

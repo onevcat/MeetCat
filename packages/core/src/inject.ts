@@ -19,6 +19,7 @@ import {
   setCameraState,
   clickJoinButton,
   getMeetingCodeFromPath,
+  findJoinButton,
   findMediaButtons,
 } from "./controller/index.js";
 import {
@@ -37,6 +38,9 @@ import {
   onNavigateAndJoin,
   onSettingsChanged,
   reportJoined,
+  reportMeetingClosed,
+  getJoinedMeetings,
+  getSuppressedMeetings,
   logEvent,
   type LogLevel,
   type CheckMeetingsPayload,
@@ -53,8 +57,11 @@ let countdown: JoinCountdown | null = null;
 let lastMeetings: Meeting[] = [];
 let mediaApplied = false;
 let joinAttempted = false;
+let joinedMeetings: Set<string> = new Set();
+let suppressedMeetings: Set<string> = new Set();
 let unsubscribers: Array<() => void> = [];
 let fallbackIntervalId: ReturnType<typeof setInterval> | null = null;
+let currentMeetingCallId: string | null = null;
 
 // Icon URL for overlays
 const ICON_URL = "https://avatars.githubusercontent.com/u/1019875?s=128&v=4";
@@ -99,6 +106,29 @@ function shouldConsoleLog(level: LogLevel): boolean {
   if (!settings?.tauri?.logCollectionEnabled) return false;
   const threshold = settings?.tauri?.logLevel ?? "info";
   return LOG_LEVEL_ORDER[level] <= LOG_LEVEL_ORDER[threshold];
+}
+
+async function syncJoinedMeetings(): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  try {
+    const joined = await getJoinedMeetings();
+    joinedMeetings = new Set([...joinedMeetings, ...joined]);
+    const suppressed = await getSuppressedMeetings();
+    suppressedMeetings = new Set([...suppressedMeetings, ...suppressed]);
+  } catch (e) {
+    logToConsole("warn", "[MeetCat] Failed to load joined meetings", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+function reportJoinedOnce(callId: string): void {
+  if (joinedMeetings.has(callId)) return;
+  joinedMeetings.add(callId);
+  reportJoined(callId).catch((e) => console.error("[MeetCat] Failed to report join:", e));
+  logToDisk("debug", "meeting", "join.reported", "Meeting reported joined", {
+    callId,
+  });
 }
 
 function logToConsole(
@@ -164,6 +194,25 @@ async function init(): Promise<void> {
 
   // Ensure styles are injected first (this doesn't need Tauri)
   ensureStyles(document);
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target as Element | null;
+      if (!target) return;
+      const clickedButton = target.closest("button");
+      if (!clickedButton) return;
+      const { button } = findJoinButton(document);
+      if (!button) return;
+      if (clickedButton === button || button.contains(clickedButton)) {
+        const meetingCode = getMeetingCodeFromPath(location.pathname);
+        if (meetingCode) {
+          reportJoinedOnce(meetingCode);
+        }
+      }
+    },
+    true
+  );
 
   // Try to load settings from Tauri, fall back to defaults
   try {
@@ -327,9 +376,13 @@ async function checkAndReportMeetings(meta: {
 
   // Update overlay with next meeting
   if (overlay) {
+    await syncJoinedMeetings();
     const nextMeeting = getNextJoinableMeeting(result.meetings, {
       gracePeriodMinutes:
         settings?.maxMinutesAfterStart ?? SETTINGS_DEFAULTS.maxMinutesAfterStart,
+      alreadyJoined: joinedMeetings,
+      suppressedMeetings,
+      joinBeforeMinutes: settings?.joinBeforeMinutes ?? SETTINGS_DEFAULTS.joinBeforeMinutes,
     });
     overlay.update(nextMeeting);
     logToDisk("debug", "overlay", "overlay.update", "Overlay updated", {
@@ -382,11 +435,16 @@ function createOverlay(): void {
 
   // Update with current next meeting
   if (lastMeetings.length > 0) {
-    const nextMeeting = getNextJoinableMeeting(lastMeetings, {
-      gracePeriodMinutes:
-        settings?.maxMinutesAfterStart ?? SETTINGS_DEFAULTS.maxMinutesAfterStart,
+    void syncJoinedMeetings().then(() => {
+      const nextMeeting = getNextJoinableMeeting(lastMeetings, {
+        gracePeriodMinutes:
+          settings?.maxMinutesAfterStart ?? SETTINGS_DEFAULTS.maxMinutesAfterStart,
+        alreadyJoined: joinedMeetings,
+        suppressedMeetings,
+        joinBeforeMinutes: settings?.joinBeforeMinutes ?? SETTINGS_DEFAULTS.joinBeforeMinutes,
+      });
+      overlay?.update(nextMeeting);
     });
-    overlay.update(nextMeeting);
   }
 }
 
@@ -455,6 +513,7 @@ async function initMeetingPage(): Promise<void> {
   logToConsole("info", "[MeetCat] Initializing meeting page:", {
     callId: meetingCode,
   });
+  currentMeetingCallId = meetingCode;
   const isAutoJoinRequested = hasAutoJoinParam(location.href);
   logToDisk("info", "meeting", "meeting.init", "Meeting page init", {
     callId: meetingCode,
@@ -606,12 +665,7 @@ function performJoin(): void {
   if (success) {
     const meetingCode = getMeetingCodeFromPath(location.pathname);
     if (meetingCode) {
-      reportJoined(meetingCode).catch((e) =>
-        console.error("[MeetCat] Failed to report join:", e)
-      );
-      logToDisk("debug", "meeting", "join.reported", "Meeting reported joined", {
-        callId: meetingCode,
-      });
+      reportJoinedOnce(meetingCode);
     }
 
   }
@@ -633,6 +687,13 @@ function cleanupCountdown(): void {
 function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): void {
   logToConsole("info", "[MeetCat] Cleaning up", { reason });
   logToDisk("info", "inject", "cleanup", "Cleanup", { reason });
+
+  if (currentMeetingCallId) {
+    reportMeetingClosed(currentMeetingCallId, Date.now()).catch((e) =>
+      console.error("[MeetCat] Failed to report meeting closed:", e)
+    );
+    currentMeetingCallId = null;
+  }
 
   // Unsubscribe from events
   unsubscribers.forEach((unsub) => unsub());
