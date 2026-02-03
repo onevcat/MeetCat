@@ -281,5 +281,23 @@ describe("Parser", () => {
       expect(next).not.toBeNull();
       expect(next!.callId).toBe("just-star-ted");
     });
+
+    it("should use default grace period when not provided", () => {
+      const startedWithinDefault: Meeting = {
+        callId: "started-7m-ago",
+        url: "https://meet.google.com/started-7m-ago",
+        title: "Started 7 Minutes Ago",
+        displayTime: "9:53 AM",
+        beginTime: new Date(now - 7 * 60 * 1000), // 7 minutes ago
+        endTime: new Date(now + 53 * 60 * 1000),
+        eventId: null,
+        startsInMinutes: -7,
+      };
+
+      const next = getNextJoinableMeeting([startedWithinDefault], { now });
+
+      expect(next).not.toBeNull();
+      expect(next!.callId).toBe("started-7m-ago");
+    });
   });
 });

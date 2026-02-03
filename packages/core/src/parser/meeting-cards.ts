@@ -110,7 +110,7 @@ export function getNextJoinableMeeting(
     titleFilter?: string;
     /** Current time */
     now?: number;
-    /** Grace period in minutes after start (default: 5) */
+    /** Grace period in minutes after start (default: 10) */
     gracePeriodMinutes?: number;
   } = {}
 ): Meeting | null {
@@ -118,7 +118,7 @@ export function getNextJoinableMeeting(
     alreadyJoined = new Set(),
     titleFilter,
     now = Date.now(),
-    gracePeriodMinutes = 5,
+    gracePeriodMinutes = 10,
   } = options;
 
   const graceMs = gracePeriodMinutes * 60 * 1000;
