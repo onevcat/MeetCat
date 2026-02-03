@@ -48,6 +48,8 @@ describe("Popup", () => {
       enabled: true,
       nextMeeting: null,
       lastCheck: null,
+      joinedCallIds: [],
+      suppressedCallIds: [],
     });
     (chrome.runtime.getManifest as ReturnType<typeof vi.fn>).mockReturnValue({
       version: "0.0.1",
@@ -223,7 +225,7 @@ describe("Popup", () => {
 
     await waitFor(() => {
       const footer = container.querySelector(".settings-footer");
-      expect(footer?.textContent).toMatch(/MeetCat v\d+\.\d+\.\d+/);
+      expect(footer?.textContent).toMatch(/MeetCat \d+\.\d+\.\d+/);
     });
   });
 

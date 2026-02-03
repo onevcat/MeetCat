@@ -20,6 +20,7 @@ interface ServiceWorkerState {
   settings: Settings;
   meetings: Meeting[];
   joinedMeetings: Set<string>;
+  suppressedMeetings: Map<string, number>;
   lastCheck: number | null;
   scheduler: ReturnType<typeof createSchedulerLogic>;
   /** The meeting scheduled to be joined by the precise trigger */
@@ -44,6 +45,7 @@ const state: ServiceWorkerState = {
   settings: DEFAULT_SETTINGS,
   meetings: [],
   joinedMeetings: new Set(),
+  suppressedMeetings: new Map(),
   lastCheck: null,
   scheduler: createSchedulerLogic(),
   scheduledJoinMeeting: null,
@@ -178,9 +180,6 @@ async function scheduleJoinTrigger(): Promise<void> {
   let nextTrigger: { meeting: Meeting; triggerTime: number } | null = null;
 
   for (const meeting of state.meetings) {
-    // Skip already joined
-    if (state.joinedMeetings.has(meeting.callId)) continue;
-
     // Skip if title matches any exclude filter
     if (
       state.settings.titleExcludeFilters.length > 0 &&
@@ -192,6 +191,19 @@ async function scheduleJoinTrigger(): Promise<void> {
     const startTime = meeting.beginTime.getTime();
     const triggerTime = startTime - joinBeforeMs;
     const timeSinceStart = now - startTime;
+
+    // Skip already ended
+    if (meeting.endTime.getTime() <= now) continue;
+
+    // Skip if suppressed after trigger time
+    if (state.suppressedMeetings.has(meeting.callId) && now >= triggerTime) {
+      continue;
+    }
+
+    // Skip already joined only after meeting starts
+    if (state.joinedMeetings.has(meeting.callId) && now >= startTime) {
+      continue;
+    }
 
     // Check if this meeting is valid for triggering
     if (triggerTime > now) {
@@ -236,6 +248,42 @@ async function scheduleJoinTrigger(): Promise<void> {
   }
 }
 
+function pruneMeetingState(): void {
+  const now = Date.now();
+  const activeCallIds = new Set(
+    state.meetings
+      .filter((meeting) => meeting.endTime.getTime() > now)
+      .map((meeting) => meeting.callId)
+  );
+
+  for (const callId of state.joinedMeetings) {
+    if (!activeCallIds.has(callId)) {
+      state.joinedMeetings.delete(callId);
+    }
+  }
+
+  for (const callId of state.suppressedMeetings.keys()) {
+    if (!activeCallIds.has(callId)) {
+      state.suppressedMeetings.delete(callId);
+    }
+  }
+}
+
+async function handleMeetingClosed(callId: string, closedAtMs: number): Promise<void> {
+  const meeting = state.meetings.find((m) => m.callId === callId);
+  if (!meeting) return;
+
+  const triggerAtMs =
+    meeting.beginTime.getTime() - state.settings.joinBeforeMinutes * 60 * 1000;
+
+  if (closedAtMs >= triggerAtMs) {
+    state.suppressedMeetings.set(callId, closedAtMs);
+  }
+
+  pruneMeetingState();
+  await scheduleJoinTrigger();
+}
+
 /**
  * Handle the join trigger alarm
  */
@@ -269,11 +317,18 @@ async function handleJoinTrigger(): Promise<void> {
  * Get current status
  */
 function getStatus(): ExtensionStatus {
-  const event = state.scheduler.check(state.meetings, state.joinedMeetings);
+  const event = state.scheduler.check(
+    state.meetings,
+    state.joinedMeetings,
+    state.suppressedMeetings,
+    Date.now()
+  );
   return {
     enabled: true,
     nextMeeting: event.meeting,
     lastCheck: state.lastCheck,
+    joinedCallIds: Array.from(state.joinedMeetings),
+    suppressedCallIds: Array.from(state.suppressedMeetings.keys()),
   };
 }
 
@@ -286,11 +341,24 @@ chrome.runtime.onMessage.addListener(
       case "MEETINGS_UPDATED":
         state.meetings = deserializeMeetings(message.meetings);
         console.log("[MeetCat SW] Meetings updated:", state.meetings.length, "meetings");
+        pruneMeetingState();
         // Schedule trigger asynchronously
         checkMeetings().then(() => {
           sendResponse({ success: true });
         });
         return true; // Keep channel open for async response
+
+      case "MEETING_JOINED":
+        state.joinedMeetings.add(message.callId);
+        scheduleJoinTrigger();
+        sendResponse({ success: true });
+        return true;
+
+      case "MEETING_CLOSED":
+        handleMeetingClosed(message.callId, message.closedAtMs).then(() => {
+          sendResponse({ success: true });
+        });
+        return true;
 
       case "GET_SETTINGS":
         sendResponse(state.settings);

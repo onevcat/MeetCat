@@ -24,6 +24,8 @@ interface HomepageState {
   overlay: ReturnType<typeof createHomepageOverlay> | null;
   checkInterval: ReturnType<typeof setInterval> | null;
   lastMeetings: Meeting[];
+  joinedCallIds: Set<string>;
+  suppressedCallIds: Set<string>;
 }
 
 const state: HomepageState = {
@@ -31,6 +33,8 @@ const state: HomepageState = {
   overlay: null,
   checkInterval: null,
   lastMeetings: [],
+  joinedCallIds: new Set(),
+  suppressedCallIds: new Set(),
 };
 
 /**
@@ -50,7 +54,21 @@ async function loadSettings(): Promise<void> {
 /**
  * Parse meetings and update state
  */
-function updateMeetings(): void {
+async function refreshJoinedMeetings(): Promise<void> {
+  try {
+    const status = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+    if (status?.joinedCallIds && Array.isArray(status.joinedCallIds)) {
+      state.joinedCallIds = new Set(status.joinedCallIds as string[]);
+    }
+    if (status?.suppressedCallIds && Array.isArray(status.suppressedCallIds)) {
+      state.suppressedCallIds = new Set(status.suppressedCallIds as string[]);
+    }
+  } catch {
+    // Service worker might not be ready
+  }
+}
+
+async function updateMeetings(): Promise<void> {
   const result = parseMeetingCards(document);
   state.lastMeetings = result.meetings;
 
@@ -65,8 +83,12 @@ function updateMeetings(): void {
 
   // Update overlay
   if (state.settings.showCountdownOverlay && state.overlay) {
+    await refreshJoinedMeetings();
     const next = getNextJoinableMeeting(result.meetings, {
       gracePeriodMinutes: state.settings.maxMinutesAfterStart,
+      alreadyJoined: state.joinedCallIds,
+      suppressedMeetings: state.suppressedCallIds,
+      joinBeforeMinutes: state.settings.joinBeforeMinutes,
     });
     state.overlay.update(next);
   }
@@ -80,10 +102,15 @@ function initOverlay(): void {
   if (state.overlay) return;
 
   state.overlay = createHomepageOverlay(document.body, { iconUrl: ICON_URL });
-  const next = getNextJoinableMeeting(state.lastMeetings, {
-    gracePeriodMinutes: state.settings.maxMinutesAfterStart,
+  void refreshJoinedMeetings().then(() => {
+    const next = getNextJoinableMeeting(state.lastMeetings, {
+      gracePeriodMinutes: state.settings.maxMinutesAfterStart,
+      alreadyJoined: state.joinedCallIds,
+      suppressedMeetings: state.suppressedCallIds,
+      joinBeforeMinutes: state.settings.joinBeforeMinutes,
+    });
+    state.overlay?.update(next);
   });
-  state.overlay.update(next);
 }
 
 /**
@@ -93,11 +120,13 @@ function startChecking(): void {
   if (state.checkInterval) return;
 
   // Initial check
-  updateMeetings();
+  void updateMeetings();
 
   // Periodic checks
   const intervalMs = state.settings.checkIntervalSeconds * 1000;
-  state.checkInterval = setInterval(updateMeetings, intervalMs);
+  state.checkInterval = setInterval(() => {
+    void updateMeetings();
+  }, intervalMs);
 }
 
 /**

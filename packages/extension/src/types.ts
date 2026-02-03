@@ -5,6 +5,8 @@ import type { Meeting } from "@meetcat/core";
  */
 export type MessageType =
   | "MEETINGS_UPDATED"
+  | "MEETING_JOINED"
+  | "MEETING_CLOSED"
   | "OPEN_MEETING"
   | "GET_SETTINGS"
   | "UPDATE_SETTINGS"
@@ -23,6 +25,23 @@ export interface BaseMessage {
 export interface MeetingsUpdatedMessage extends BaseMessage {
   type: "MEETINGS_UPDATED";
   meetings: Meeting[];
+}
+
+/**
+ * Meeting joined message (content script → service worker)
+ */
+export interface MeetingJoinedMessage extends BaseMessage {
+  type: "MEETING_JOINED";
+  callId: string;
+}
+
+/**
+ * Meeting closed message (content script → service worker)
+ */
+export interface MeetingClosedMessage extends BaseMessage {
+  type: "MEETING_CLOSED";
+  callId: string;
+  closedAtMs: number;
 }
 
 /**
@@ -60,6 +79,8 @@ export interface GetStatusMessage extends BaseMessage {
  */
 export type ExtensionMessage =
   | MeetingsUpdatedMessage
+  | MeetingJoinedMessage
+  | MeetingClosedMessage
   | OpenMeetingMessage
   | GetSettingsMessage
   | UpdateSettingsMessage
@@ -72,4 +93,6 @@ export interface ExtensionStatus {
   enabled: boolean;
   nextMeeting: Meeting | null;
   lastCheck: number | null;
+  joinedCallIds: string[];
+  suppressedCallIds: string[];
 }

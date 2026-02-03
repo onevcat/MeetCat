@@ -12,6 +12,7 @@ import {
   setMicState,
   setCameraState,
   clickJoinButton,
+  findJoinButton,
   getMeetingCodeFromPath,
   createJoinCountdown,
   type JoinCountdown,
@@ -27,6 +28,7 @@ interface MeetingState {
   countdown: JoinCountdown | null;
   mediaApplied: boolean;
   joinAttempted: boolean;
+  joinReported: boolean;
 }
 
 const state: MeetingState = {
@@ -34,6 +36,7 @@ const state: MeetingState = {
   countdown: null,
   mediaApplied: false,
   joinAttempted: false,
+  joinReported: false,
 };
 
 /**
@@ -139,9 +142,48 @@ function performJoin(): void {
   const success = clickJoinButton(document);
   if (success) {
     console.log("[MeetCat] Join button clicked");
+    reportJoined();
   } else {
     console.log("[MeetCat] Join button not found");
   }
+}
+
+function reportJoined(): void {
+  if (state.joinReported) return;
+  const meetingCode = getMeetingCodeFromPath(window.location.pathname);
+  if (!meetingCode) return;
+  state.joinReported = true;
+  chrome.runtime.sendMessage({ type: "MEETING_JOINED", callId: meetingCode }).catch(() => {
+    // Service worker might not be ready
+  });
+}
+
+function reportClosed(): void {
+  const meetingCode = getMeetingCodeFromPath(window.location.pathname);
+  if (!meetingCode) return;
+  chrome.runtime
+    .sendMessage({ type: "MEETING_CLOSED", callId: meetingCode, closedAtMs: Date.now() })
+    .catch(() => {
+      // Service worker might not be ready
+    });
+}
+
+function observeManualJoinClicks(): void {
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target as Element | null;
+      if (!target) return;
+      const clickedButton = target.closest("button");
+      if (!clickedButton) return;
+      const { button } = findJoinButton(document);
+      if (!button) return;
+      if (clickedButton === button || button.contains(clickedButton)) {
+        reportJoined();
+      }
+    },
+    true
+  );
 }
 
 /**
@@ -167,6 +209,7 @@ async function init(): Promise<void> {
   console.log("[MeetCat] Meeting page loaded:", meetingCode);
 
   await loadSettings();
+  observeManualJoinClicks();
 
   const isAutoJoinRequested = hasAutoJoinParam(window.location.href);
 
@@ -202,6 +245,11 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
  */
 window.addEventListener("beforeunload", () => {
   cleanupCountdown();
+  reportClosed();
+});
+
+window.addEventListener("pagehide", () => {
+  reportClosed();
 });
 
 // Run when DOM is ready
