@@ -40,3 +40,6 @@ packages/tauri/src-tauri/gen/
 
 # --- Tauri bundler outputs ---
 packages/tauri/src-tauri/.tauri/
+
+# --- Release artifacts ---
+release/
