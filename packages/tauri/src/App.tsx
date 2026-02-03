@@ -28,6 +28,7 @@ const adapter: SettingsAdapter = {
     startAtLogin: true,
     tray: true,
     showSavingIndicator: true,
+    developer: true,
   },
   getDefaultSettings: () => resolveSettings(null),
   resolveSettings,

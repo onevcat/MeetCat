@@ -23,6 +23,8 @@ function baseSettings(): Settings {
       showTrayIcon: true,
       trayDisplayMode: "iconOnly",
       trayShowMeetingTitle: false,
+      logCollectionEnabled: false,
+      logLevel: "info",
     },
   };
 }

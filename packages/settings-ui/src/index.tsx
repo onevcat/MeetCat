@@ -13,6 +13,7 @@ export type SettingsCapabilities = {
   startAtLogin?: boolean;
   tray?: boolean;
   showSavingIndicator?: boolean;
+  developer?: boolean;
 };
 
 export type SettingsAdapter = {
@@ -254,6 +255,9 @@ export function SettingsView({
   const trayDisplayMode = getTrayDisplayMode(settings);
   const trayShowMeetingTitle = getTrayShowMeetingTitle(settings);
   const allowTrayTitle = canShowTrayTitle(trayDisplayMode);
+  const logCollectionEnabled =
+    settings.tauri?.logCollectionEnabled ?? DEFAULT_TAURI_SETTINGS.logCollectionEnabled;
+  const logLevel = settings.tauri?.logLevel ?? DEFAULT_TAURI_SETTINGS.logLevel;
 
   const titleExcludeFilters = settings.titleExcludeFilters ?? [];
 
@@ -526,6 +530,50 @@ export function SettingsView({
             </>
           )}
         </section>
+
+        {capabilities.developer && (
+          <section className="settings-section">
+            <h2>Developer</h2>
+
+            <div className="form-group">
+              <div className="form-checkbox-group">
+                <input
+                  type="checkbox"
+                  id="logCollectionEnabled"
+                  className="form-checkbox"
+                  checked={logCollectionEnabled}
+                  onChange={(e) =>
+                    updateTauriSettings({ logCollectionEnabled: e.target.checked })
+                  }
+                />
+                <label htmlFor="logCollectionEnabled" className="form-checkbox-label">
+                  Collect logs to disk
+                </label>
+              </div>
+              <p className="form-hint">Stores logs locally for 3 days</p>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Log level</label>
+              <select
+                className="form-select"
+                value={logLevel}
+                onChange={(e) =>
+                  updateTauriSettings({
+                    logLevel: e.target.value as typeof logLevel,
+                  })
+                }
+              >
+                <option value="error">Error</option>
+                <option value="warn">Warn</option>
+                <option value="info">Info</option>
+                <option value="debug">Debug</option>
+                <option value="trace">Trace</option>
+              </select>
+              <p className="form-hint">Higher levels include more detail</p>
+            </div>
+          </section>
+        )}
       </main>
 
       {footerText && <footer className="settings-footer">{footerText}</footer>}
