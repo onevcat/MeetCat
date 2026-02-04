@@ -21,22 +21,23 @@ const packageJsonFiles = [
   "package.json",
   "packages/core/package.json",
   "packages/settings/package.json",
+  "packages/settings-ui/package.json",
   "packages/extension/package.json",
   "packages/tauri/package.json",
 ];
 
 for (const file of packageJsonFiles) {
   updateText(file, (content) =>
-    content.replace(/\"version\":\\s*\".*?\"/g, `"version": "${nextVersion}"`)
+    content.replace(/"version":\s*".*?"/g, `"version": "${nextVersion}"`)
   );
 }
 
 updateText("packages/extension/public/manifest.json", (content) =>
-  content.replace(/\"version\":\\s*\".*?\"/g, `"version": "${nextVersion}"`)
+  content.replace(/"version":\s*".*?"/g, `"version": "${nextVersion}"`)
 );
 
 updateText("packages/tauri/src-tauri/tauri.conf.json", (content) =>
-  content.replace(/\"version\":\\s*\".*?\"/g, `"version": "${nextVersion}"`)
+  content.replace(/"version":\s*".*?"/g, `"version": "${nextVersion}"`)
 );
 
 updateText("packages/tauri/src-tauri/Cargo.toml", (content) =>
