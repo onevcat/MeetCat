@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-02-05
+
+Improves homepage meeting parsing reliability and meeting close detection.
+
+### Changed
+- Homepage meeting parsing now derives display time from the meeting start time and uses aria-label text when titles are missing, making it more resilient to Meet UI changes.
+- Hidden or aria-hidden meeting cards are ignored so overlays only reflect visible meetings.
+
+### Fixed
+- Meeting close is reported on page hide so suppression state updates reliably when leaving a meeting.
+
 ## [0.0.2] - 2026-02-04
 
 First public release of MeetCat for Chrome and macOS.
