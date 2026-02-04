@@ -1,11 +1,12 @@
 # MeetCat Release Guide
 
-This document describes the macOS (Tauri) release flow for MeetCat. The Chrome extension release remains separate.
+This document describes the release flow for MeetCat (macOS app + Chrome extension).
 
 ## Goals
 
 - Produce a notarized DMG (Universal by default).
-- Publish a Git tag and GitHub release.
+- Publish a Git tag and GitHub release for the macOS app.
+- Package the Chrome extension as a zip bundle.
 - Upload stable-named artifacts so the download links never change.
 
 ## Prerequisites
@@ -18,10 +19,10 @@ This document describes the macOS (Tauri) release flow for MeetCat. The Chrome e
 
 1. Update `CHANGELOG.md` with user-facing changes.
 2. Ensure the working tree is clean.
-3. Run the release script:
+3. Run the combined release script:
 
 ```bash
-pnpm run release:tauri
+pnpm run release
 ```
 
 The script will:
@@ -29,9 +30,24 @@ The script will:
 - Build shared packages and the Tauri app (default target: `universal-apple-darwin`).
 - Notarize the DMG.
 - Copy artifacts into `release/` with stable names.
-- Create/push the version tag (e.g. `0.0.1`).
+- Create/push the version tag (e.g. `0.0.2`).
 - Create/edit the GitHub release and upload artifacts.
+- Build the Chrome extension and zip it into `release/`.
 - The GitHub UI always exposes a `latest` release endpoint, so stable links can use `/releases/latest/download/...`.
+
+## Split Releases
+
+- App only (build + tag + GitHub release):
+
+```bash
+pnpm run release:app
+```
+
+- Extension only (zip only, no tag):
+
+```bash
+pnpm run release:extension
+```
 
 ## Stable Download Links
 
