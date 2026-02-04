@@ -7,12 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Placeholder for upcoming user-facing improvements.
+## [0.0.2] - 2026-02-04
 
-## [0.0.1] - 2026-02-03
+First public release of MeetCat for Chrome and macOS.
 
 ### Added
-- Initial public release of MeetCat.
-- Chrome extension with auto-join scheduling and homepage overlays.
-- macOS Tauri desktop app with tray status and auto-join controls.
+- Chrome extension with homepage overlays, auto-join scheduling, and a settings popup.
+- macOS Tauri desktop app with tray controls, auto-join support, and a full settings window.
+- Join countdown overlay plus a separate homepage overlay with hide controls.
+- Meeting suppression handling and smarter joinable meeting selection.
+- Optional developer log collection controls.
+
+### Changed
+- Overlay icon now uses the MeetCat icon instead of the personal avatar.
+
+### Fixed
+- WebView script re-injection on page load to prevent missing overlays.
+- Meeting links now open correctly in the intended browser or webview.
+- Overlay z-index and settings window scrolling glitches.
