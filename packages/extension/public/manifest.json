@@ -42,7 +42,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/onevcat.png"],
+      "resources": ["icons/icon-color.png"],
       "matches": ["https://meet.google.com/*"]
     }
   ]

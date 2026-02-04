@@ -21,7 +21,7 @@ import {
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 
 const STORAGE_KEY = "meetcat_settings";
-const ICON_URL = chrome.runtime.getURL("icons/onevcat.png");
+const ICON_URL = chrome.runtime.getURL("icons/icon-color.png");
 
 interface MeetingState {
   settings: Settings;

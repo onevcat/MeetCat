@@ -17,7 +17,7 @@ import { DEFAULT_SETTINGS } from "@meetcat/settings";
 import type { MeetingsUpdatedMessage, ExtensionMessage } from "../types.js";
 
 const STORAGE_KEY = "meetcat_settings";
-const ICON_URL = chrome.runtime.getURL("icons/onevcat.png");
+const ICON_URL = chrome.runtime.getURL("icons/icon-color.png");
 
 interface HomepageState {
   settings: typeof DEFAULT_SETTINGS;
