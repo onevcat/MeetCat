@@ -8,16 +8,17 @@
     "dev:extension": "bash scripts/dev-extension.sh",
     "build": "pnpm run build:tauri",
     "build:shared": "pnpm --filter @meetcat/settings build && pnpm --filter @meetcat/settings-ui build && pnpm --filter @meetcat/core build",
-    "build:tauri": "pnpm run build:shared && pnpm --filter @meetcat/tauri build:tauri",
+    "build:tauri": "pnpm run check:tauri-version && pnpm run build:shared && pnpm --filter @meetcat/tauri build:tauri",
     "build:extension": "pnpm run build:shared && pnpm --filter @meetcat/extension build",
     "release:extension": "bash scripts/release-extension.sh",
     "release:app": "bash scripts/release-tauri-github.sh",
     "release:tauri": "pnpm run release:app",
     "release:tauri:build": "bash scripts/release-tauri-macos.sh",
     "release": "pnpm run release:extension && pnpm run release:app",
-    "test": "pnpm run build:shared && pnpm -r test && pnpm --filter @meetcat/tauri test:rust",
+    "test": "pnpm run check:tauri-version && pnpm run build:shared && pnpm -r test && pnpm --filter @meetcat/tauri test:rust",
     "test:cov": "pnpm run build:shared && pnpm -r test:coverage && pnpm --filter @meetcat/tauri test:rust",
     "version:set": "node scripts/set-version.mjs",
+    "check:tauri-version": "node scripts/check-tauri-version.mjs",
     "clean": "pnpm -r clean",
     "clean:all": "pnpm -r clean && rm -rf node_modules .turbo packages/tauri/src-tauri/target && find packages -name node_modules -type d -prune -exec rm -rf {} +"
   },
@@ -28,5 +29,11 @@
     "node": ">=20",
     "pnpm": ">=9"
   },
-  "packageManager": "pnpm@9.15.4"
+  "packageManager": "pnpm@9.15.4",
+  "pnpm": {
+    "overrides": {
+      "@tauri-apps/api": "2.10.1",
+      "@tauri-apps/cli": "2.10.0"
+    }
+  }
 }

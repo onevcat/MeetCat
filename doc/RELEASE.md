@@ -68,3 +68,19 @@ To build and notarize the DMG without publishing a GitHub release:
 ```bash
 pnpm run release:tauri:build
 ```
+
+## Tauri Version Upgrades
+
+Tauri requires the Rust crate and the NPM API package to stay on the same major/minor.
+To upgrade safely:
+
+1. Update `packages/tauri/package.json`:
+   - `@tauri-apps/api` and `@tauri-apps/cli` to the target version.
+2. Update root `package.json` overrides:
+   - `pnpm.overrides` for `@tauri-apps/api` and `@tauri-apps/cli`.
+3. Update `packages/tauri/src-tauri/Cargo.toml`:
+   - `tauri` and `tauri-build` to the same target version.
+4. Install and update locks:
+   - `pnpm install`
+   - (optional) `cargo update -p tauri -p tauri-build`
+5. Run `pnpm run check:tauri-version` (also runs before build/test).
