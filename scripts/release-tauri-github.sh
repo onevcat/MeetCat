@@ -60,14 +60,17 @@ if [[ ${#ASSET_PATHS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-awk -v version="$VERSION" '
-  $0 ~ "^## \\\\[" version "\\\\]" {found=1; next}
-  found && $0 ~ "^## \\" {exit}
-  found {print}
-' "$CHANGELOG_PATH" > "$NOTES_PATH"
+echo "[release] Extracting notes for version: $VERSION"
+node "$ROOT_DIR/scripts/extract-release-notes.mjs" "$VERSION" > "$NOTES_PATH"
+echo "[release] Notes path: $NOTES_PATH"
+echo "[release] Notes size: $(wc -c < "$NOTES_PATH" | tr -d " ") bytes"
 
 if [[ ! -s "$NOTES_PATH" ]]; then
   echo "[release] Release notes are empty for ${VERSION}." >&2
+  echo "[release] CHANGELOG headers:" >&2
+  rg -n "^## \\[" "$CHANGELOG_PATH" >&2 || true
+  echo "[release] First 120 lines of CHANGELOG.md:" >&2
+  sed -n '1,120p' "$CHANGELOG_PATH" >&2
   exit 1
 fi
 
