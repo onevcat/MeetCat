@@ -33,7 +33,7 @@ const tauriMocks = vi.hoisted(() => ({
   onNavigateAndJoin: vi.fn(),
   onSettingsChanged: vi.fn(),
   reportJoined: vi.fn(),
-  reportMeetingClosed: vi.fn(),
+  reportMeetingClosed: vi.fn().mockResolvedValue(undefined),
   logEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -254,5 +254,34 @@ describe("inject homepage checks", () => {
 
     module.cleanup();
     logSpy.mockRestore();
+  });
+
+  it("reports meeting closed on pagehide for meeting pages", async () => {
+    tauriMocks.isTauriEnvironment.mockReturnValue(true);
+    tauriMocks.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS });
+    tauriMocks.onCheckMeetings.mockResolvedValue(() => {});
+    tauriMocks.onNavigateAndJoin.mockResolvedValue(() => {});
+    tauriMocks.onSettingsChanged.mockResolvedValue(() => {});
+
+    controllerMocks.getMeetingCodeFromPath.mockReturnValue("abc-defg-hij");
+    controllerMocks.findMediaButtons.mockReturnValue({
+      micButton: document.createElement("button"),
+      cameraButton: document.createElement("button"),
+    });
+
+    window.history.pushState({}, "", "/abc-defg-hij");
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    window.dispatchEvent(new Event("pagehide"));
+    await flushPromises();
+
+    expect(tauriMocks.reportMeetingClosed).toHaveBeenCalledWith(
+      "abc-defg-hij",
+      expect.any(Number)
+    );
+
+    module.cleanup();
   });
 });

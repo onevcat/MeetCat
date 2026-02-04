@@ -636,6 +636,8 @@ function startJoinCountdown(): void {
       logToDisk("info", "meeting", "join.countdown_cancel", "Join cancelled by user", {
         remainingSeconds: state?.remainingSeconds ?? null,
         totalSeconds: state?.totalSeconds ?? null,
+        callId: currentMeetingCallId,
+        autoJoinRequested: hasAutoJoinParam(location.href),
       });
       cleanupCountdown();
     },
@@ -686,10 +688,21 @@ function cleanupCountdown(): void {
  * Cleanup all resources
  */
 function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): void {
-  logToConsole("info", "[MeetCat] Cleaning up", { reason });
-  logToDisk("info", "inject", "cleanup", "Cleanup", { reason });
+  logToConsole("info", "[MeetCat] Cleaning up", {
+    reason,
+    callId: currentMeetingCallId,
+  });
+  logToDisk("info", "inject", "cleanup", "Cleanup", {
+    reason,
+    callId: currentMeetingCallId,
+  });
 
   if (currentMeetingCallId) {
+    logToDisk("info", "meeting", "meeting.closed_report", "Reporting meeting closed", {
+      callId: currentMeetingCallId,
+      closedAtMs: Date.now(),
+      reason,
+    });
     reportMeetingClosed(currentMeetingCallId, Date.now()).catch((e) =>
       console.error("[MeetCat] Failed to report meeting closed:", e)
     );
@@ -720,6 +733,7 @@ if (document.readyState === "loading") {
 
 // Cleanup on page unload
 window.addEventListener("beforeunload", () => cleanup("beforeunload"));
+window.addEventListener("pagehide", () => cleanup("beforeunload"));
 
 // Re-initialize on navigation (for SPA-like behavior)
 let lastPathname = location.pathname;

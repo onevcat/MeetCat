@@ -171,6 +171,8 @@ fn log_event(state: State<AppState>, input: LogEventInput) {
 fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
     let settings = state.settings.lock().unwrap().clone();
     let daemon = state.daemon.lock().unwrap();
+    let joined_count = daemon.get_joined_meetings().len();
+    let suppressed_count = daemon.get_suppressed_meetings().len();
 
     // Cancel any existing trigger
     {
@@ -214,6 +216,8 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
                 "title": meeting.title,
                 "delayMs": delay_ms,
                 "startsInMinutes": meeting.starts_in_minutes,
+                "joinedCount": joined_count,
+                "suppressedCount": suppressed_count,
             })),
         );
 
@@ -348,6 +352,8 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
 #[tauri::command]
 fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, closed_at_ms: i64) {
     let settings = state.settings.lock().unwrap().clone();
+    let mut matched = false;
+    let mut trigger_at_ms: Option<i64> = None;
     {
         let mut daemon = state.daemon.lock().unwrap();
         if let Some(meeting) = daemon
@@ -355,13 +361,30 @@ fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, close
             .iter()
             .find(|m| m.call_id == call_id)
         {
-            let trigger_at_ms =
+            matched = true;
+            let computed_trigger_at_ms =
                 meeting.begin_time.timestamp_millis() - (settings.join_before_minutes as i64) * 60 * 1000;
-            if closed_at_ms >= trigger_at_ms {
+            trigger_at_ms = Some(computed_trigger_at_ms);
+            if closed_at_ms >= computed_trigger_at_ms {
                 daemon.mark_suppressed(&call_id, closed_at_ms);
             }
         }
     }
+
+    log_app_event(
+        &app,
+        LogLevel::Info,
+        "meetings",
+        "meeting.closed",
+        None,
+        Some(json!({
+            "callId": call_id,
+            "closedAtMs": closed_at_ms,
+            "matched": matched,
+            "triggerAtMs": trigger_at_ms,
+            "joinBeforeMinutes": settings.join_before_minutes,
+        })),
+    );
 
     // Re-schedule trigger for the next meeting
     schedule_join_trigger(&app, &state);
