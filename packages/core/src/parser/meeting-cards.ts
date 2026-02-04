@@ -5,15 +5,6 @@ import type { Meeting, ParseResult } from "../types.js";
  */
 export const MEETING_CARD_SELECTOR = "[data-call-id]";
 
-/**
- * Selector for meeting title element
- */
-export const MEETING_TITLE_SELECTOR = ".mobgod";
-
-/**
- * Selector for meeting time display
- */
-export const MEETING_TIME_SELECTOR = ".AKhouc";
 
 /**
  * Parse a single meeting card element
@@ -22,6 +13,8 @@ export function parseMeetingCard(
   card: Element,
   now: number = Date.now()
 ): Meeting | null {
+  if (getHiddenReason(card)) return null;
+
   const callId = card.getAttribute("data-call-id");
   if (!callId) return null;
 
@@ -34,18 +27,16 @@ export function parseMeetingCard(
   if (isNaN(beginTime) || isNaN(endTime)) return null;
 
   const eventId = card.getAttribute("data-event-id");
-  const ariaLabel = card.getAttribute("aria-label") || "";
+  const ariaLabel =
+    card.getAttribute("data-aria-label-static") ||
+    card.getAttribute("aria-label") ||
+    "";
 
-  // Extract title from DOM
-  const titleEl = card.querySelector(MEETING_TITLE_SELECTOR);
-  const title =
-    titleEl?.textContent?.trim() ||
-    ariaLabel.split("。")[1]?.trim() ||
-    "Unknown";
+  // Extract title from DOM + aria label
+  const title = extractMeetingTitle(card, ariaLabel) || "Unknown";
 
-  // Extract display time
-  const timeEl = card.querySelector(MEETING_TIME_SELECTOR);
-  const displayTime = timeEl?.textContent?.trim() || "";
+  // Format display time from beginTime (avoid relying on classnames)
+  const displayTime = formatDisplayTime(beginTime, card.ownerDocument);
 
   // Calculate time until meeting (use floor so "1.5 min" counts as "within 1 min")
   const startsIn = beginTime - now;
@@ -63,6 +54,105 @@ export function parseMeetingCard(
   };
 }
 
+function extractMeetingTitle(card: Element, ariaLabel: string): string {
+  const candidates = collectTextCandidates(card);
+  if (!candidates.length) return fallbackTitleFromAria(ariaLabel);
+  if (!ariaLabel.trim()) return pickLongest(candidates) || "";
+
+  const matches = candidates.filter((candidate) => ariaLabel.includes(candidate));
+  if (!matches.length) return pickLongest(candidates) || fallbackTitleFromAria(ariaLabel);
+
+  const nonPrefixMatches = matches.filter((candidate) => {
+    const index = ariaLabel.indexOf(candidate);
+    return index > 0;
+  });
+
+  const pickFrom = nonPrefixMatches.length ? nonPrefixMatches : matches;
+  return pickLongest(pickFrom) || fallbackTitleFromAria(ariaLabel);
+}
+
+function collectTextCandidates(card: Element): string[] {
+  const doc = card.ownerDocument;
+  const view = doc?.defaultView;
+  const NodeFilterCtor = view?.NodeFilter;
+  if (!view || !NodeFilterCtor) return [];
+
+  const walker = doc.createTreeWalker(card, NodeFilterCtor.SHOW_TEXT, null);
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+
+  let current = walker.nextNode();
+  while (current) {
+    const text = current.textContent?.trim() || "";
+    if (text && !seen.has(text)) {
+      seen.add(text);
+      candidates.push(text);
+    }
+    current = walker.nextNode();
+  }
+
+  return candidates;
+}
+
+function pickLongest(candidates: string[]): string | null {
+  let longest: string | null = null;
+  for (const candidate of candidates) {
+    if (!longest || candidate.length > longest.length) {
+      longest = candidate;
+    }
+  }
+  return longest;
+}
+
+function fallbackTitleFromAria(ariaLabel: string): string {
+  if (!ariaLabel) return "";
+  const parts = ariaLabel.split(/[。\.\u2022]/).map((part) => part.trim());
+  const nonEmpty = parts.filter((part) => part.length > 0);
+  if (nonEmpty.length <= 1) return nonEmpty[0] || "";
+  return nonEmpty[1] || nonEmpty[0] || "";
+}
+
+function formatDisplayTime(beginTimeMs: number, doc: Document | null): string {
+  const view = doc?.defaultView;
+  if (!view?.Intl?.DateTimeFormat) return "";
+  const formatter = new view.Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return formatter.format(new Date(beginTimeMs));
+}
+
+function getHiddenReason(card: Element): string | null {
+  if (card.closest("[hidden]")) return "ancestor-hidden";
+  if (card.closest("[aria-hidden='true']")) return "ancestor-aria-hidden";
+
+  const styleAttr = card.getAttribute("style") || "";
+  if (styleAttr.includes("display: none") || styleAttr.includes("visibility: hidden")) {
+    return "inline-style-hidden";
+  }
+
+  const view = card.ownerDocument?.defaultView;
+  const computed = view?.getComputedStyle?.(card as Element);
+  if (computed && (computed.display === "none" || computed.visibility === "hidden")) {
+    return "computed-style-hidden";
+  }
+
+  const HTMLElementCtor = view?.HTMLElement;
+  if (HTMLElementCtor && card instanceof HTMLElementCtor) {
+    const { display, visibility } = card.style;
+    if (display === "none" || visibility === "hidden") {
+      return "inline-style-hidden";
+    }
+
+    const isJsdom = view?.navigator?.userAgent?.includes("jsdom");
+    if (!isJsdom && card.getClientRects().length === 0) {
+      return "no-client-rects";
+    }
+  }
+
+  return null;
+}
+
 /**
  * Parse all meeting cards from a container element
  *
@@ -77,8 +167,16 @@ export function parseMeetingCards(
   const cards = container.querySelectorAll(MEETING_CARD_SELECTOR);
 
   const meetings: Meeting[] = [];
+  const hiddenReasons: Record<string, number> = {};
+  let hiddenCards = 0;
 
   for (const card of cards) {
+    const hiddenReason = getHiddenReason(card);
+    if (hiddenReason) {
+      hiddenCards += 1;
+      hiddenReasons[hiddenReason] = (hiddenReasons[hiddenReason] || 0) + 1;
+      continue;
+    }
     const meeting = parseMeetingCard(card, now);
     if (meeting) {
       meetings.push(meeting);
@@ -91,6 +189,8 @@ export function parseMeetingCards(
   return {
     meetings,
     cardsFound: cards.length,
+    hiddenCards,
+    hiddenReasons,
   };
 }
 

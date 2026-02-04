@@ -28,6 +28,10 @@ export interface ParseResult {
   meetings: Meeting[];
   /** Number of cards found */
   cardsFound: number;
+  /** Number of cards ignored because they are hidden */
+  hiddenCards?: number;
+  /** Hidden reason counts */
+  hiddenReasons?: Record<string, number>;
 }
 
 /**

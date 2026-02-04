@@ -367,12 +367,16 @@ async function checkAndReportMeetings(meta: {
   logToConsole("info", "[MeetCat] Parsed meetings", {
     meetingsCount: result.meetings.length,
     cardsFound: result.cardsFound,
+    hiddenCards: result.hiddenCards ?? 0,
+    hiddenReasons: result.hiddenReasons ?? {},
   });
   logToDisk("debug", "homepage", "parse.result", "Parsed meetings", {
     source: meta.source ?? "unknown",
     checkId: meta.checkId,
     cardsFound: result.cardsFound,
     meetingsCount: result.meetings.length,
+    hiddenCards: result.hiddenCards ?? 0,
+    hiddenReasons: result.hiddenReasons ?? {},
   });
 
   // Update overlay with next meeting

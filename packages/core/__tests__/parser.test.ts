@@ -59,6 +59,7 @@ describe("Parser", () => {
         displayTime: "10:00 AM",
         eventId: "event123",
       });
+      card.setAttribute("aria-label", "10:00 AM to 11:00 AM. Team Standup.");
 
       const meeting = parseMeetingCard(card, now);
 
@@ -66,7 +67,7 @@ describe("Parser", () => {
       expect(meeting!.callId).toBe("abc-defg-hij");
       expect(meeting!.url).toBe("https://meet.google.com/abc-defg-hij");
       expect(meeting!.title).toBe("Team Standup");
-      expect(meeting!.displayTime).toBe("10:00 AM");
+      expect(meeting!.displayTime).toBeDefined();
       expect(meeting!.eventId).toBe("event123");
       expect(meeting!.startsInMinutes).toBe(10);
     });
@@ -135,7 +136,55 @@ describe("Parser", () => {
       const meeting = parseMeetingCard(card, now);
 
       expect(meeting).not.toBeNull();
-      expect(meeting!.title).toBe("Unknown");
+      expect(meeting!.title).toBe("No separator");
+    });
+
+    it("should extract title from aria label when classnames change", () => {
+      const now = Date.now();
+      const card = createMeetingCard({
+        callId: "abc-defg-hij",
+        beginTime: now + 10 * 60 * 1000,
+        endTime: now + 70 * 60 * 1000,
+      });
+      card.querySelector(".mobgod")?.remove();
+      card.querySelector(".AKhouc")?.remove();
+      card.setAttribute("aria-label", "11:30 PM to 12:30 AM. 123123.");
+
+      const meeting = parseMeetingCard(card, now);
+
+      expect(meeting).not.toBeNull();
+      expect(meeting!.title).toBe("123123");
+    });
+
+    it("should return null for hidden cards", () => {
+      const now = Date.now();
+      const card = createMeetingCard({
+        callId: "abc-defg-hij",
+        beginTime: now + 10 * 60 * 1000,
+        endTime: now + 70 * 60 * 1000,
+      });
+      card.setAttribute("aria-hidden", "true");
+
+      const meeting = parseMeetingCard(card, now);
+
+      expect(meeting).toBeNull();
+    });
+
+    it("should return null when a parent is hidden", () => {
+      const now = Date.now();
+      const wrapper = document.createElement("div");
+      wrapper.setAttribute("hidden", "");
+      const card = createMeetingCard({
+        callId: "parent-hidden",
+        beginTime: now + 10 * 60 * 1000,
+        endTime: now + 70 * 60 * 1000,
+      });
+      wrapper.appendChild(card);
+      document.body.appendChild(wrapper);
+
+      const meeting = parseMeetingCard(card, now);
+
+      expect(meeting).toBeNull();
     });
   });
 
@@ -189,6 +238,34 @@ describe("Parser", () => {
 
       expect(result.cardsFound).toBe(1);
       expect(result.meetings).toHaveLength(1);
+    });
+
+    it("should ignore hidden cards", () => {
+      const now = Date.now();
+      const visible = createMeetingCard({
+        callId: "abc-defg-hij",
+        beginTime: now + 10 * 60 * 1000,
+        endTime: now + 70 * 60 * 1000,
+        title: "Visible Meeting",
+      });
+      const hidden = createMeetingCard({
+        callId: "klm-nopq-rst",
+        beginTime: now + 20 * 60 * 1000,
+        endTime: now + 80 * 60 * 1000,
+        title: "Hidden Meeting",
+      });
+      hidden.setAttribute("style", "display: none;");
+
+      document.body.appendChild(visible);
+      document.body.appendChild(hidden);
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.cardsFound).toBe(2);
+      expect(result.meetings).toHaveLength(1);
+      expect(result.meetings[0].title).toBe("Visible Meeting");
+      expect(result.hiddenCards).toBe(1);
+      expect(result.hiddenReasons?.["inline-style-hidden"]).toBe(1);
     });
   });
 
