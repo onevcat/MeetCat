@@ -1,6 +1,6 @@
 [package]
 name = "meetcat"
-version = "0.0.3"
+version = "0.0.4"
 description = "MeetCat Desktop App"
 authors = ["MeetCat"]
 edition = "2021"
