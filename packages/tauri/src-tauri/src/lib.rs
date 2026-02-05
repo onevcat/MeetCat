@@ -33,6 +33,8 @@ pub struct AppState {
     /// Handle to cancel the current join trigger timer
     pub join_trigger_handle: Mutex<Option<JoinHandle<()>>>,
     pub logger: Mutex<LogManager>,
+    #[cfg(target_os = "macos")]
+    pub homepage_active: Mutex<Option<bool>>,
 }
 
 impl Default for AppState {
@@ -44,6 +46,8 @@ impl Default for AppState {
             daemon: Mutex::new(DaemonState::default()),
             join_trigger_handle: Mutex::new(None),
             logger: Mutex::new(logger),
+            #[cfg(target_os = "macos")]
+            homepage_active: Mutex::new(None),
         }
     }
 }
@@ -161,9 +165,26 @@ fn stop_daemon(state: State<AppState>) {
 
 /// Log event from WebView
 #[tauri::command]
-fn log_event(state: State<AppState>, input: LogEventInput) {
+fn log_event(app: AppHandle, state: State<AppState>, input: LogEventInput) {
+    #[cfg(target_os = "macos")]
+    let input_context = input.context.clone();
+    #[cfg(target_os = "macos")]
+    let is_page_detected =
+        input.module == "inject" && input.event == "init.page_detected";
+
     if let Ok(mut logger) = state.logger.lock() {
         logger.log_from_input(input, "webview");
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if is_page_detected {
+            if let Some(context) = input_context.as_ref() {
+                if let Some(is_homepage) = context.get("homepage").and_then(|v| v.as_bool()) {
+                    update_refresh_menu_state(&app, &state, is_homepage);
+                }
+            }
+        }
     }
 }
 
@@ -729,6 +750,112 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String> {
+    let app_name = "MeetCat";
+    let about_icon_bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/icons/icon.png"
+    ));
+    let about_icon =
+        tauri::image::Image::from_bytes(about_icon_bytes).map_err(|e| e.to_string())?;
+    let mut about_metadata = AboutMetadata::default();
+    about_metadata.name = Some(app_name.to_string());
+    about_metadata.icon = Some(about_icon);
+
+    let quit_item = MenuItem::with_id(
+        app,
+        "app-quit",
+        format!("Quit {}", app_name),
+        true,
+        Some("Cmd+Q"),
+    )
+    .map_err(|e| e.to_string())?;
+    let go_home_item = MenuItem::with_id(
+        app,
+        "app-go-home",
+        "Back to Google Meet Home",
+        true,
+        Some("Cmd+Shift+H"),
+    )
+    .map_err(|e| e.to_string())?;
+    let refresh_item = MenuItem::with_id(
+        app,
+        "app-refresh-home",
+        "Refresh Home",
+        refresh_enabled,
+        Some("Cmd+R"),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let app_menu = SubmenuBuilder::with_id(app, "app", app_name)
+        .about(Some(about_metadata))
+        .item(&go_home_item)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .item(&quit_item)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .separator()
+        .select_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&refresh_item)
+        .separator()
+        .fullscreen()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .close_window()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&app_menu)
+        .item(&edit_menu)
+        .item(&view_menu)
+        .item(&window_menu)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    app.set_menu(menu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn update_refresh_menu_state(app: &AppHandle, state: &State<AppState>, is_homepage: bool) {
+    let mut current = match state.homepage_active.lock() {
+        Ok(value) => value,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if current.as_ref() == Some(&is_homepage) {
+        return;
+    }
+    *current = Some(is_homepage);
+    if let Err(e) = apply_macos_menu(app, is_homepage) {
+        eprintln!("Failed to update macOS menu: {}", e);
+    }
+}
+
 /// Script to request media permissions early
 const REQUEST_MEDIA_SCRIPT: &str = r#"
 (function() {
@@ -1133,74 +1260,12 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
-                let app_name = "MeetCat";
-                let about_icon_bytes = include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/icons/icon.png"
-                ));
-                let about_icon = tauri::image::Image::from_bytes(about_icon_bytes)?;
-                let mut about_metadata = AboutMetadata::default();
-                about_metadata.name = Some(app_name.to_string());
-                about_metadata.icon = Some(about_icon);
-
-                let quit_item = MenuItem::with_id(
-                    app,
-                    "app-quit",
-                    format!("Quit {}", app_name),
-                    true,
-                    Some("Cmd+Q"),
-                )?;
-                let go_home_item = MenuItem::with_id(
-                    app,
-                    "app-go-home",
-                    "Back to Google Meet Home",
-                    true,
-                    Some("Cmd+Shift+H"),
-                )?;
-
-                let app_menu = SubmenuBuilder::with_id(app, "app", app_name)
-                    .about(Some(about_metadata))
-                    .item(&go_home_item)
-                    .separator()
-                    .services()
-                    .separator()
-                    .hide()
-                    .hide_others()
-                    .show_all()
-                    .separator()
-                    .item(&quit_item)
-                    .build()?;
-
-                let edit_menu = SubmenuBuilder::new(app, "Edit")
-                    .undo()
-                    .redo()
-                    .separator()
-                    .cut()
-                    .copy()
-                    .paste()
-                    .separator()
-                    .select_all()
-                    .build()?;
-
-                let view_menu = SubmenuBuilder::new(app, "View")
-                    .fullscreen()
-                    .build()?;
-
-                let window_menu = SubmenuBuilder::new(app, "Window")
-                    .minimize()
-                    .maximize()
-                    .separator()
-                    .close_window()
-                    .build()?;
-
-                let menu = MenuBuilder::new(app)
-                    .item(&app_menu)
-                    .item(&edit_menu)
-                    .item(&view_menu)
-                    .item(&window_menu)
-                    .build()?;
-
-                app.set_menu(menu)?;
+                apply_macos_menu(&app.handle(), false)?;
+                if let Some(state) = app.try_state::<AppState>() {
+                    if let Ok(mut homepage) = state.homepage_active.lock() {
+                        *homepage = Some(false);
+                    }
+                }
                 app.on_menu_event(|app, event| {
                     match event.id().as_ref() {
                         "app-quit" => app.exit(0),
@@ -1210,6 +1275,21 @@ pub fn run() {
                                     "Failed to navigate to Google Meet home: {}",
                                     e
                                 );
+                            }
+                        }
+                        "app-refresh-home" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let script = r#"
+                                    document.dispatchEvent(new KeyboardEvent("keydown", {
+                                      key: "r",
+                                      metaKey: true,
+                                      bubbles: true,
+                                      cancelable: true
+                                    }));
+                                "#;
+                                if let Err(e) = window.eval(script) {
+                                    eprintln!("Failed to dispatch refresh shortcut: {}", e);
+                                }
                             }
                         }
                         _ => {}

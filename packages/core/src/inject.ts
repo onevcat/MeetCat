@@ -62,6 +62,7 @@ let suppressedMeetings: Set<string> = new Set();
 let unsubscribers: Array<() => void> = [];
 let fallbackIntervalId: ReturnType<typeof setInterval> | null = null;
 let currentMeetingCallId: string | null = null;
+let homepageKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 
 // Icon URL for overlays
 const ICON_URL =
@@ -316,6 +317,8 @@ async function initHomepage(): Promise<void> {
     createOverlay();
   }
 
+  attachHomepageShortcuts();
+
   // Try to set up Tauri event listeners (non-blocking)
   if (isTauri) {
     try {
@@ -451,6 +454,23 @@ function createOverlay(): void {
       overlay?.update(nextMeeting);
     });
   }
+}
+
+function attachHomepageShortcuts(): void {
+  if (homepageKeydownHandler) return;
+
+  homepageKeydownHandler = (event: KeyboardEvent) => {
+    if (!event.metaKey) return;
+    if (event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.key.toLowerCase() !== "r") return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    logToDisk("info", "homepage", "shortcut.reload", "Homepage reload triggered");
+    location.reload();
+  };
+
+  document.addEventListener("keydown", homepageKeydownHandler, true);
 }
 
 function startFallbackInterval(): void {
@@ -726,6 +746,11 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
   }
 
   cleanupCountdown();
+
+  if (homepageKeydownHandler) {
+    document.removeEventListener("keydown", homepageKeydownHandler, true);
+    homepageKeydownHandler = null;
+  }
 }
 
 // Initialize on DOMContentLoaded or immediately if already loaded
