@@ -19,6 +19,25 @@ export const JOIN_BUTTON_PATTERNS = [
   "参加",
 ];
 
+/**
+ * Leave button text patterns for multiple languages
+ */
+export const LEAVE_BUTTON_PATTERNS = [
+  // Chinese
+  "退出通话",
+  "离开通话",
+  "退出会议",
+  "结束通话",
+  "挂断",
+  // English
+  "Leave call",
+  "End call",
+  "Hang up",
+  // Japanese
+  "通話を終了",
+  "通話を退出",
+];
+
 const PROMO_ANCHOR_ID = "w5gBed";
 
 function getButtonText(button: Element): string {
@@ -44,6 +63,38 @@ function isDisabledButton(button: Element): boolean {
   return element.disabled || element.getAttribute("aria-disabled") === "true";
 }
 
+function findLeavePattern(text: string): string | null {
+  for (const pattern of LEAVE_BUTTON_PATTERNS) {
+    if (text.includes(pattern)) return pattern;
+  }
+  return null;
+}
+
+function hasCallEndIcon(button: Element): boolean {
+  const iconTextElements = button.querySelectorAll(
+    "[data-google-symbols-override='true'], [data-icon='call_end']"
+  );
+  for (const el of iconTextElements) {
+    if ((el.textContent || "").trim() === "call_end") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getLeaveMatchText(button: Element): string | null {
+  if (hasCallEndIcon(button)) return "call_end";
+  const accessibleText = getAccessibleButtonText(button);
+  const match = findLeavePattern(accessibleText);
+  if (match) return match;
+  const rawText = getButtonText(button);
+  return findLeavePattern(rawText);
+}
+
+function isLeaveButton(button: Element): boolean {
+  return getLeaveMatchText(button) !== null;
+}
+
 function isElementVisible(button: Element, rect?: DOMRect): boolean {
   const element = button as HTMLElement;
   const box = rect ?? element.getBoundingClientRect();
@@ -63,6 +114,7 @@ function isElementVisible(button: Element, rect?: DOMRect): boolean {
 
 function findJoinButtonByTextPatterns(buttons: Element[]): JoinButtonResult | null {
   for (const btn of buttons) {
+    if (isLeaveButton(btn)) continue;
     const text = getButtonText(btn);
 
     for (const pattern of JOIN_BUTTON_PATTERNS) {
@@ -91,6 +143,7 @@ function findJoinButtonByHeuristics(
         index,
         isMenu: isMenuButton(button),
         isDisabled: isDisabledButton(button),
+        isLeave: isLeaveButton(button),
         hasPromoAnchor: (button as HTMLElement).getAttribute("data-promo-anchor-id") ===
           PROMO_ANCHOR_ID,
       };
@@ -99,6 +152,7 @@ function findJoinButtonByHeuristics(
       candidate.text.length > 0 &&
       candidate.area > 0 &&
       !candidate.isDisabled &&
+      !candidate.isLeave &&
       isElementVisible(candidate.button, candidate.rect)
     );
 
@@ -135,6 +189,20 @@ export function findJoinButton(container: Document | Element): JoinButtonResult 
     if (result?.button) return result;
   }
 
+  return { button: null, matchedText: null };
+}
+
+/**
+ * Find the leave button in the meeting page (indicates already in meeting)
+ */
+export function findLeaveButton(container: Document | Element): JoinButtonResult {
+  const buttons = Array.from(container.querySelectorAll("button"));
+  for (const btn of buttons) {
+    const matchedText = getLeaveMatchText(btn);
+    if (matchedText) {
+      return { button: btn, matchedText };
+    }
+  }
   return { button: null, matchedText: null };
 }
 

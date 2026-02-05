@@ -20,6 +20,7 @@ import {
   clickJoinButton,
   getMeetingCodeFromPath,
   findJoinButton,
+  findLeaveButton,
   findMediaButtons,
 } from "./controller/index.js";
 import {
@@ -57,12 +58,14 @@ let countdown: JoinCountdown | null = null;
 let lastMeetings: Meeting[] = [];
 let mediaApplied = false;
 let joinAttempted = false;
+let autoJoinBlocked = false;
 let joinedMeetings: Set<string> = new Set();
 let suppressedMeetings: Set<string> = new Set();
 let unsubscribers: Array<() => void> = [];
 let fallbackIntervalId: ReturnType<typeof setInterval> | null = null;
 let currentMeetingCallId: string | null = null;
 let homepageKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
+let meetingEntryObserver: MutationObserver | null = null;
 
 // Icon URL for overlays
 const ICON_URL =
@@ -169,6 +172,55 @@ function logToDisk(
   }).catch((error) => {
     console.warn("[MeetCat] Failed to write log event:", error);
   });
+}
+
+function detectEnteredMeeting(stage: string): boolean {
+  const { button, matchedText } = findLeaveButton(document);
+  if (!button) return false;
+
+  if (!autoJoinBlocked) {
+    autoJoinBlocked = true;
+    cleanupCountdown();
+    logToConsole("info", "[MeetCat] Detected in-meeting state, blocking auto-join", {
+      stage,
+      matchedText,
+      callId: currentMeetingCallId,
+    });
+    logToDisk(
+      "info",
+      "meeting",
+      "join.blocked_in_meeting",
+      "Detected in-meeting state, blocking auto-join",
+      {
+        stage,
+        matchedText,
+        callId: currentMeetingCallId,
+      }
+    );
+  }
+
+  if (currentMeetingCallId) {
+    reportJoinedOnce(currentMeetingCallId);
+  }
+
+  return true;
+}
+
+function startMeetingEntryObserver(): void {
+  if (meetingEntryObserver) return;
+  meetingEntryObserver = new MutationObserver(() => {
+    if (detectEnteredMeeting("observer")) {
+      stopMeetingEntryObserver();
+    }
+  });
+  meetingEntryObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function stopMeetingEntryObserver(): void {
+  if (meetingEntryObserver) {
+    meetingEntryObserver.disconnect();
+    meetingEntryObserver = null;
+  }
 }
 
 /**
@@ -534,6 +586,7 @@ function handleNavigateAndJoin(cmd: NavigateAndJoinCommand): void {
  * Initialize meeting page handling
  */
 async function initMeetingPage(): Promise<void> {
+  autoJoinBlocked = false;
   const meetingCode = getMeetingCodeFromPath(location.pathname);
   logToConsole("info", "[MeetCat] Initializing meeting page:", {
     callId: meetingCode,
@@ -635,6 +688,11 @@ function applyMediaSettings(): void {
  */
 function startJoinCountdown(): void {
   if (countdown || !settings) return;
+  if (autoJoinBlocked) return;
+
+  if (detectEnteredMeeting("countdown.precheck")) {
+    return;
+  }
 
   const seconds = settings.joinCountdownSeconds ?? SETTINGS_DEFAULTS.joinCountdownSeconds;
 
@@ -673,6 +731,7 @@ function startJoinCountdown(): void {
     },
   });
 
+  startMeetingEntryObserver();
   countdown.start();
 }
 
@@ -681,6 +740,8 @@ function startJoinCountdown(): void {
  */
 function performJoin(): void {
   if (joinAttempted) return;
+  if (autoJoinBlocked) return;
+  if (detectEnteredMeeting("join.precheck")) return;
   joinAttempted = true;
 
   const success = clickJoinButton(document);
@@ -706,6 +767,7 @@ function cleanupCountdown(): void {
     countdown.destroy();
     countdown = null;
   }
+  stopMeetingEntryObserver();
 }
 
 /**
@@ -738,6 +800,7 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
   unsubscribers = [];
 
   stopFallbackInterval();
+  stopMeetingEntryObserver();
 
   // Destroy overlays
   if (overlay) {

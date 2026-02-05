@@ -12,7 +12,7 @@ import {
   setMicState,
   setCameraState,
   clickJoinButton,
-  findJoinButton,
+  findLeaveButton,
   getMeetingCodeFromPath,
   createJoinCountdown,
   type JoinCountdown,
@@ -29,6 +29,7 @@ interface MeetingState {
   mediaApplied: boolean;
   joinAttempted: boolean;
   joinReported: boolean;
+  autoJoinBlocked: boolean;
 }
 
 const state: MeetingState = {
@@ -37,7 +38,44 @@ const state: MeetingState = {
   mediaApplied: false,
   joinAttempted: false,
   joinReported: false,
+  autoJoinBlocked: false,
 };
+
+let meetingEntryObserver: MutationObserver | null = null;
+
+function detectEnteredMeeting(stage: string): boolean {
+  const { button, matchedText } = findLeaveButton(document);
+  if (!button) return false;
+
+  if (!state.autoJoinBlocked) {
+    state.autoJoinBlocked = true;
+    cleanupCountdown();
+    console.log("[MeetCat] Detected in-meeting state, blocking auto-join:", {
+      stage,
+      matchedText,
+    });
+  }
+
+  reportJoined();
+  return true;
+}
+
+function startMeetingEntryObserver(): void {
+  if (meetingEntryObserver) return;
+  meetingEntryObserver = new MutationObserver(() => {
+    if (detectEnteredMeeting("observer")) {
+      stopMeetingEntryObserver();
+    }
+  });
+  meetingEntryObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function stopMeetingEntryObserver(): void {
+  if (meetingEntryObserver) {
+    meetingEntryObserver.disconnect();
+    meetingEntryObserver = null;
+  }
+}
 
 /**
  * Load settings from storage
@@ -108,6 +146,11 @@ function waitForMediaButtons(callback: () => void, maxAttempts = 20): void {
 function startJoinCountdown(): void {
   if (state.countdown || state.joinAttempted) return;
   if (!state.settings.autoClickJoin) return;
+  if (state.autoJoinBlocked) return;
+
+  if (detectEnteredMeeting("countdown.precheck")) {
+    return;
+  }
 
   const seconds = state.settings.joinCountdownSeconds;
 
@@ -129,6 +172,7 @@ function startJoinCountdown(): void {
     },
   });
 
+  startMeetingEntryObserver();
   state.countdown.start();
 }
 
@@ -136,6 +180,8 @@ function startJoinCountdown(): void {
  * Perform the actual join
  */
 function performJoin(): void {
+  if (state.autoJoinBlocked) return;
+  if (detectEnteredMeeting("join.precheck")) return;
   state.joinAttempted = true;
   cleanupCountdown();
 
@@ -194,6 +240,7 @@ function cleanupCountdown(): void {
     state.countdown.destroy();
     state.countdown = null;
   }
+  stopMeetingEntryObserver();
 }
 
 /**

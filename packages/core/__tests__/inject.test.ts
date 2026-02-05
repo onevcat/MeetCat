@@ -14,6 +14,7 @@ const controllerMocks = vi.hoisted(() => ({
   clickJoinButton: vi.fn(() => false),
   getMeetingCodeFromPath: vi.fn(() => null),
   findJoinButton: vi.fn(() => ({ button: null, matchedText: null })),
+  findLeaveButton: vi.fn(() => ({ button: null, matchedText: null })),
   findMediaButtons: vi.fn(() => []),
 }));
 

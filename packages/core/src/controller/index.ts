@@ -8,7 +8,9 @@ export {
 
 export {
   findJoinButton,
+  findLeaveButton,
   clickJoinButton,
   getMeetingCodeFromPath,
   JOIN_BUTTON_PATTERNS,
+  LEAVE_BUTTON_PATTERNS,
 } from "./join-button.js";

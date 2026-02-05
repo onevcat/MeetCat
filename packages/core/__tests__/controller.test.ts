@@ -9,9 +9,9 @@ import {
 } from "../src/controller/media-buttons.js";
 import {
   findJoinButton,
+  findLeaveButton,
   clickJoinButton,
   getMeetingCodeFromPath,
-  JOIN_BUTTON_PATTERNS,
 } from "../src/controller/join-button.js";
 
 describe("Controller - Media Buttons", () => {
@@ -306,6 +306,44 @@ describe("Controller - Join Button", () => {
 
       expect(result.button).toBe(promoButton);
       expect(result.matchedText).toBe("Primary action");
+    });
+
+    it("should not select leave button candidates", () => {
+      const leaveButton = createJoinButton("Leave call");
+      leaveButton.getBoundingClientRect = () =>
+        ({ width: 300, height: 60 } as DOMRect);
+      document.body.appendChild(leaveButton);
+
+      const result = findJoinButton(document);
+
+      expect(result.button).toBeNull();
+      expect(result.matchedText).toBeNull();
+    });
+  });
+
+  describe("findLeaveButton", () => {
+    it("should detect leave button via call_end icon", () => {
+      const button = document.createElement("button");
+      const icon = document.createElement("i");
+      icon.setAttribute("data-google-symbols-override", "true");
+      icon.textContent = "call_end";
+      button.appendChild(icon);
+      document.body.appendChild(button);
+
+      const result = findLeaveButton(document);
+
+      expect(result.button).toBe(button);
+      expect(result.matchedText).toBe("call_end");
+    });
+
+    it("should detect leave button via text patterns", () => {
+      const button = createJoinButton("退出通话");
+      document.body.appendChild(button);
+
+      const result = findLeaveButton(document);
+
+      expect(result.button).toBe(button);
+      expect(result.matchedText).toBe("退出通话");
     });
   });
 

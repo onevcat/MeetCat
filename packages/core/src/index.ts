@@ -26,9 +26,11 @@ export {
   setCameraState,
   MEDIA_BUTTON_SELECTOR,
   findJoinButton,
+  findLeaveButton,
   clickJoinButton,
   getMeetingCodeFromPath,
   JOIN_BUTTON_PATTERNS,
+  LEAVE_BUTTON_PATTERNS,
 } from "./controller/index.js";
 
 // Re-export scheduler
