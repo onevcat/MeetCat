@@ -8,13 +8,21 @@
  * - Coordinate between content scripts and popup
  */
 
-import { appendAutoJoinParam, createSchedulerLogic, type Meeting } from "@meetcat/core";
+import {
+  appendAutoJoinParam,
+  createSchedulerLogic,
+  isMeetHomepageUrl,
+  type Meeting,
+} from "@meetcat/core";
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 import type { ExtensionMessage, ExtensionStatus } from "../types.js";
 
 const STORAGE_KEY = "meetcat_settings";
 const ALARM_NAME = "meetcat_check";
 const JOIN_TRIGGER_ALARM = "meetcat_join_trigger";
+const PARSE_REQUEST_ALARM = "meetcat_parse_request";
+const PARSE_RESPONSE_TIMEOUT_MS = 15000;
+const PARSE_FAILURE_THRESHOLD = 3;
 
 interface ServiceWorkerState {
   settings: Settings;
@@ -25,6 +33,9 @@ interface ServiceWorkerState {
   scheduler: ReturnType<typeof createSchedulerLogic>;
   /** The meeting scheduled to be joined by the precise trigger */
   scheduledJoinMeeting: Meeting | null;
+  parseFailures: number;
+  pendingParseRequest: boolean;
+  parseRequestTimeoutId: ReturnType<typeof setTimeout> | null;
 }
 
 /**
@@ -49,6 +60,9 @@ const state: ServiceWorkerState = {
   lastCheck: null,
   scheduler: createSchedulerLogic(),
   scheduledJoinMeeting: null,
+  parseFailures: 0,
+  pendingParseRequest: false,
+  parseRequestTimeoutId: null,
 };
 
 /**
@@ -154,11 +168,106 @@ async function checkMeetings(): Promise<void> {
 async function setupAlarm(): Promise<void> {
   // Clear existing alarm
   await chrome.alarms.clear(ALARM_NAME);
+  await chrome.alarms.clear(PARSE_REQUEST_ALARM);
 
   // Create new alarm
   await chrome.alarms.create(ALARM_NAME, {
     periodInMinutes: state.settings.checkIntervalSeconds / 60,
   });
+
+  await chrome.alarms.create(PARSE_REQUEST_ALARM, {
+    periodInMinutes: 0.5,
+  });
+}
+
+function clearParseRequestTimeout(): void {
+  if (state.parseRequestTimeoutId) {
+    clearTimeout(state.parseRequestTimeoutId);
+    state.parseRequestTimeoutId = null;
+  }
+}
+
+function isHomepageTab(tab: chrome.tabs.Tab): boolean {
+  if (!tab.url) return false;
+  return isMeetHomepageUrl(tab.url);
+}
+
+async function requestHomepageParse(): Promise<void> {
+  if (state.pendingParseRequest) return;
+  console.log("[MeetCat SW] Requesting homepage parse");
+  state.pendingParseRequest = true;
+  clearParseRequestTimeout();
+  state.parseRequestTimeoutId = setTimeout(() => {
+    state.pendingParseRequest = false;
+    state.parseFailures += 1;
+    state.parseRequestTimeoutId = null;
+    console.warn("[MeetCat SW] Homepage parse request timed out");
+    maybeReloadHomepageTab();
+  }, PARSE_RESPONSE_TIMEOUT_MS);
+
+  const tabs = await chrome.tabs.query({
+    url: "https://meet.google.com/*",
+  });
+
+  const homepageTabs = tabs.filter((tab) => isHomepageTab(tab));
+
+  if (homepageTabs.length === 0) {
+    console.log("[MeetCat SW] No homepage tab available for parse request");
+    resetParseFailures();
+    clearParseRequestTimeout();
+    state.pendingParseRequest = false;
+    return;
+  }
+
+  const targetTab = homepageTabs.find((tab) => typeof tab.id === "number");
+  if (!targetTab?.id) {
+    console.warn("[MeetCat SW] No valid homepage tab id for parse request");
+    resetParseFailures();
+    clearParseRequestTimeout();
+    state.pendingParseRequest = false;
+    return;
+  }
+
+  try {
+    const response = await chrome.tabs.sendMessage(targetTab.id, {
+      type: "REQUEST_MEETINGS_PARSE",
+    });
+    clearParseRequestTimeout();
+    state.pendingParseRequest = false;
+    if (!response?.success) {
+      state.parseFailures += 1;
+      maybeReloadHomepageTab();
+      return;
+    }
+    console.log("[MeetCat SW] Homepage parse acknowledged");
+    resetParseFailures();
+  } catch (error) {
+    console.warn("[MeetCat SW] Failed to request homepage parse", error);
+    clearParseRequestTimeout();
+    state.pendingParseRequest = false;
+    state.parseFailures += 1;
+    maybeReloadHomepageTab();
+    return;
+  }
+}
+
+function resetParseFailures(): void {
+  state.parseFailures = 0;
+}
+
+async function maybeReloadHomepageTab(): Promise<void> {
+  if (state.parseFailures < PARSE_FAILURE_THRESHOLD) return;
+
+  const tabs = await chrome.tabs.query({
+    url: "https://meet.google.com/*",
+  });
+
+  const targetTab = tabs.find((tab) => isHomepageTab(tab) && typeof tab.id === "number");
+  if (!targetTab?.id) return;
+
+  console.warn("[MeetCat SW] Reloading Meet homepage after parse failures");
+  await chrome.tabs.reload(targetTab.id);
+  resetParseFailures();
 }
 
 /**
@@ -341,6 +450,9 @@ chrome.runtime.onMessage.addListener(
       case "MEETINGS_UPDATED":
         state.meetings = deserializeMeetings(message.meetings);
         console.log("[MeetCat SW] Meetings updated:", state.meetings.length, "meetings");
+        clearParseRequestTimeout();
+        state.pendingParseRequest = false;
+        resetParseFailures();
         pruneMeetingState();
         // Schedule trigger asynchronously
         checkMeetings().then(() => {
@@ -392,6 +504,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAME) {
     // Periodic check alarm - update meetings and reschedule trigger
     await checkMeetings();
+  } else if (alarm.name === PARSE_REQUEST_ALARM) {
+    await requestHomepageParse();
   } else if (alarm.name === JOIN_TRIGGER_ALARM) {
     // Precise join trigger alarm - open the meeting
     await handleJoinTrigger();
