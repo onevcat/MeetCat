@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-02-05
+
+### Added
+- macOS app menu now includes a Refresh Home command with Cmd+R, and the Meet homepage listens for the shortcut.
+
+### Fixed
+- Auto-join now stops once the meeting is entered, preventing countdowns from persisting or triggering an unintended leave click.
+
 ## [0.0.3] - 2026-02-05
 
 Improves homepage meeting parsing reliability and meeting close detection.
