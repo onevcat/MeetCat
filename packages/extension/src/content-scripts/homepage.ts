@@ -17,7 +17,9 @@ import { DEFAULT_SETTINGS } from "@meetcat/settings";
 import type { MeetingsUpdatedMessage, ExtensionMessage } from "../types.js";
 
 const STORAGE_KEY = "meetcat_settings";
-const ICON_URL = chrome.runtime.getURL("icons/icon-color.png");
+const ICON_URL = chrome?.runtime?.getURL
+  ? chrome.runtime.getURL("icons/icon-color.png")
+  : "";
 
 interface HomepageState {
   settings: typeof DEFAULT_SETTINGS;
@@ -36,6 +38,15 @@ const state: HomepageState = {
   joinedCallIds: new Set(),
   suppressedCallIds: new Set(),
 };
+
+async function safeRuntimeSendMessage<T = unknown>(message: unknown): Promise<T | null> {
+  if (!chrome?.runtime?.sendMessage) return null;
+  try {
+    return (await chrome.runtime.sendMessage(message)) as T;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Load settings from storage
@@ -56,7 +67,8 @@ async function loadSettings(): Promise<void> {
  */
 async function refreshJoinedMeetings(): Promise<void> {
   try {
-    const status = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
+    const status = await safeRuntimeSendMessage({ type: "GET_STATUS" });
+    if (!status) return;
     if (status?.joinedCallIds && Array.isArray(status.joinedCallIds)) {
       state.joinedCallIds = new Set(status.joinedCallIds as string[]);
     }
@@ -77,9 +89,7 @@ async function updateMeetings(): Promise<void> {
     type: "MEETINGS_UPDATED",
     meetings: result.meetings,
   };
-  chrome.runtime.sendMessage(message).catch(() => {
-    // Service worker might not be ready
-  });
+  void safeRuntimeSendMessage(message);
 
   // Update overlay
   if (state.settings.showCountdownOverlay && state.overlay) {
@@ -92,6 +102,10 @@ async function updateMeetings(): Promise<void> {
     });
     state.overlay.update(next);
   }
+}
+
+async function parseMeetingsNow(): Promise<void> {
+  await updateMeetings();
 }
 
 /**
@@ -123,7 +137,7 @@ function startChecking(): void {
   void updateMeetings();
 
   // Periodic checks
-  const intervalMs = state.settings.checkIntervalSeconds * 1000;
+  const intervalMs = 5000;
   state.checkInterval = setInterval(() => {
     void updateMeetings();
   }, intervalMs);
@@ -143,6 +157,18 @@ function stopChecking(): void {
  * Handle messages from service worker
  */
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+  if (message.type === "REQUEST_MEETINGS_PARSE") {
+    console.log("[MeetCat] Homepage parse requested");
+    parseMeetingsNow()
+      .then(() => {
+        console.log("[MeetCat] Homepage parse completed");
+        sendResponse({ success: true });
+      })
+      .catch(() => {
+        sendResponse({ success: false });
+      });
+    return true;
+  }
   if (message.type === "GET_STATUS") {
     sendResponse({
       meetings: state.lastMeetings,

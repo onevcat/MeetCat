@@ -21,7 +21,9 @@ import {
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 
 const STORAGE_KEY = "meetcat_settings";
-const ICON_URL = chrome.runtime.getURL("icons/icon-color.png");
+const ICON_URL = chrome?.runtime?.getURL
+  ? chrome.runtime.getURL("icons/icon-color.png")
+  : "";
 
 interface MeetingState {
   settings: Settings;
@@ -40,6 +42,15 @@ const state: MeetingState = {
   joinReported: false,
   autoJoinBlocked: false,
 };
+
+async function safeRuntimeSendMessage<T = unknown>(message: unknown): Promise<T | null> {
+  if (!chrome?.runtime?.sendMessage) return null;
+  try {
+    return (await chrome.runtime.sendMessage(message)) as T;
+  } catch {
+    return null;
+  }
+}
 
 let meetingEntryObserver: MutationObserver | null = null;
 
@@ -199,19 +210,17 @@ function reportJoined(): void {
   const meetingCode = getMeetingCodeFromPath(window.location.pathname);
   if (!meetingCode) return;
   state.joinReported = true;
-  chrome.runtime.sendMessage({ type: "MEETING_JOINED", callId: meetingCode }).catch(() => {
-    // Service worker might not be ready
-  });
+  void safeRuntimeSendMessage({ type: "MEETING_JOINED", callId: meetingCode });
 }
 
 function reportClosed(): void {
   const meetingCode = getMeetingCodeFromPath(window.location.pathname);
   if (!meetingCode) return;
-  chrome.runtime
-    .sendMessage({ type: "MEETING_CLOSED", callId: meetingCode, closedAtMs: Date.now() })
-    .catch(() => {
-      // Service worker might not be ready
-    });
+  void safeRuntimeSendMessage({
+    type: "MEETING_CLOSED",
+    callId: meetingCode,
+    closedAtMs: Date.now(),
+  });
 }
 
 function observeManualJoinClicks(): void {

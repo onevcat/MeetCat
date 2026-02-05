@@ -7,6 +7,7 @@ export type MessageType =
   | "MEETINGS_UPDATED"
   | "MEETING_JOINED"
   | "MEETING_CLOSED"
+  | "REQUEST_MEETINGS_PARSE"
   | "OPEN_MEETING"
   | "GET_SETTINGS"
   | "UPDATE_SETTINGS"
@@ -25,6 +26,13 @@ export interface BaseMessage {
 export interface MeetingsUpdatedMessage extends BaseMessage {
   type: "MEETINGS_UPDATED";
   meetings: Meeting[];
+}
+
+/**
+ * Request meetings parse (service worker → content script)
+ */
+export interface RequestMeetingsParseMessage extends BaseMessage {
+  type: "REQUEST_MEETINGS_PARSE";
 }
 
 /**
@@ -81,6 +89,7 @@ export type ExtensionMessage =
   | MeetingsUpdatedMessage
   | MeetingJoinedMessage
   | MeetingClosedMessage
+  | RequestMeetingsParseMessage
   | OpenMeetingMessage
   | GetSettingsMessage
   | UpdateSettingsMessage
