@@ -53,3 +53,6 @@ export {
 
 // Re-export auto-join helpers
 export { appendAutoJoinParam, hasAutoJoinParam } from "./auto-join.js";
+
+// Re-export utils
+export { isMeetHomepageUrl } from "./utils/index.js";
