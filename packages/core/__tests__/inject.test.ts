@@ -61,6 +61,7 @@ describe("inject homepage checks", () => {
       });
     }
     document.body.innerHTML = "<div></div>";
+    window.history.pushState({}, "", "/");
   });
 
   afterEach(() => {
@@ -285,4 +286,5 @@ describe("inject homepage checks", () => {
 
     module.cleanup();
   });
+
 });

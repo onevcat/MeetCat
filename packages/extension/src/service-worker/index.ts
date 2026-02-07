@@ -16,6 +16,7 @@ import {
 } from "@meetcat/core";
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 import type { ExtensionMessage, ExtensionStatus } from "../types.js";
+import { HomepageRecoveryController } from "./homepage-recovery.js";
 
 const STORAGE_KEY = "meetcat_settings";
 const ALARM_NAME = "meetcat_check";
@@ -36,6 +37,8 @@ interface ServiceWorkerState {
   parseFailures: number;
   pendingParseRequest: boolean;
   parseRequestTimeoutId: ReturnType<typeof setTimeout> | null;
+  homepageRecovery: HomepageRecoveryController;
+  lastRecoveryLogKey: string | null;
 }
 
 /**
@@ -63,6 +66,8 @@ const state: ServiceWorkerState = {
   parseFailures: 0,
   pendingParseRequest: false,
   parseRequestTimeoutId: null,
+  homepageRecovery: new HomepageRecoveryController(),
+  lastRecoveryLogKey: null,
 };
 
 /**
@@ -192,6 +197,120 @@ function isHomepageTab(tab: chrome.tabs.Tab): boolean {
   return isMeetHomepageUrl(tab.url);
 }
 
+async function getHomepageTab(
+  preferredTabId?: number
+): Promise<chrome.tabs.Tab | null> {
+  if (typeof preferredTabId === "number") {
+    try {
+      const preferredTab = await chrome.tabs.get(preferredTabId);
+      if (isHomepageTab(preferredTab) && typeof preferredTab.id === "number") {
+        return preferredTab;
+      }
+    } catch {
+      // Tab may be gone; fall through to generic lookup.
+    }
+  }
+
+  const tabs = await chrome.tabs.query({
+    url: "https://meet.google.com/*",
+  });
+  const targetTab = tabs.find((tab) => isHomepageTab(tab) && typeof tab.id === "number");
+  return targetTab ?? null;
+}
+
+async function isTabForeground(tab: chrome.tabs.Tab): Promise<boolean> {
+  if (!tab.active) return false;
+  if (typeof tab.windowId !== "number") return false;
+  try {
+    const win = await chrome.windows.get(tab.windowId);
+    return Boolean(win.focused);
+  } catch {
+    return false;
+  }
+}
+
+function logRecoveryDecision(
+  source: string,
+  fingerprint: string,
+  decision: ReturnType<HomepageRecoveryController["evaluate"]>
+): void {
+  const { evaluation } = decision;
+
+  if (evaluation.reason === "fingerprint_changed") {
+    console.log(
+      `[MeetCat SW] Homepage fingerprint changed (${source}): ${fingerprint}`
+    );
+    state.lastRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.action === "defer" && evaluation.stateChanged) {
+    console.log(
+      `[MeetCat SW] Homepage reload deferred in foreground (${source}), stale=${Math.round(
+        evaluation.staleForMs / 1000
+      )}s`
+    );
+    state.lastRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.action === "reload") {
+    console.warn(
+      `[MeetCat SW] Reloading stale homepage (${source}), stale=${Math.round(
+        evaluation.staleForMs / 1000
+      )}s, backoff=${Math.round(evaluation.backoffMs / 1000)}s, countToday=${evaluation.reloadCountToday}`
+    );
+    state.lastRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.reason === "cooldown" || evaluation.reason === "daily_limit") {
+    const logKey = evaluation.reason;
+    if (state.lastRecoveryLogKey !== logKey) {
+      if (evaluation.reason === "cooldown") {
+        console.log(
+          `[MeetCat SW] Homepage stale reload cooling down (${source}), remaining=${Math.round(
+            evaluation.cooldownRemainingMs / 1000
+          )}s`
+        );
+      } else {
+        console.warn(
+          `[MeetCat SW] Homepage stale reload skipped (${source}), daily limit reached`
+        );
+      }
+      state.lastRecoveryLogKey = logKey;
+    }
+    return;
+  }
+
+  state.lastRecoveryLogKey = null;
+}
+
+async function evaluateHomepageRecovery(
+  source: string,
+  preferredTabId?: number
+): Promise<void> {
+  const targetTab = await getHomepageTab(preferredTabId);
+  if (!targetTab?.id) return;
+
+  const nowMs = Date.now();
+  const decision = state.homepageRecovery.evaluate({
+    meetings: state.meetings,
+    nowMs,
+    isHomepage: isHomepageTab(targetTab),
+    isForeground: await isTabForeground(targetTab),
+  });
+  logRecoveryDecision(source, decision.fingerprint, decision);
+
+  if (decision.evaluation.action !== "reload") return;
+  await chrome.tabs.reload(targetTab.id);
+}
+
+async function flushPendingHomepageRecovery(source: string): Promise<void> {
+  if (!state.homepageRecovery.hasPendingReload()) return;
+  await evaluateHomepageRecovery(source);
+}
+
 async function requestHomepageParse(): Promise<void> {
   if (state.pendingParseRequest) return;
   console.log("[MeetCat SW] Requesting homepage parse");
@@ -205,23 +324,9 @@ async function requestHomepageParse(): Promise<void> {
     maybeReloadHomepageTab();
   }, PARSE_RESPONSE_TIMEOUT_MS);
 
-  const tabs = await chrome.tabs.query({
-    url: "https://meet.google.com/*",
-  });
-
-  const homepageTabs = tabs.filter((tab) => isHomepageTab(tab));
-
-  if (homepageTabs.length === 0) {
-    console.log("[MeetCat SW] No homepage tab available for parse request");
-    resetParseFailures();
-    clearParseRequestTimeout();
-    state.pendingParseRequest = false;
-    return;
-  }
-
-  const targetTab = homepageTabs.find((tab) => typeof tab.id === "number");
+  const targetTab = await getHomepageTab();
   if (!targetTab?.id) {
-    console.warn("[MeetCat SW] No valid homepage tab id for parse request");
+    console.log("[MeetCat SW] No homepage tab available for parse request");
     resetParseFailures();
     clearParseRequestTimeout();
     state.pendingParseRequest = false;
@@ -257,12 +362,7 @@ function resetParseFailures(): void {
 
 async function maybeReloadHomepageTab(): Promise<void> {
   if (state.parseFailures < PARSE_FAILURE_THRESHOLD) return;
-
-  const tabs = await chrome.tabs.query({
-    url: "https://meet.google.com/*",
-  });
-
-  const targetTab = tabs.find((tab) => isHomepageTab(tab) && typeof tab.id === "number");
+  const targetTab = await getHomepageTab();
   if (!targetTab?.id) return;
 
   console.warn("[MeetCat SW] Reloading Meet homepage after parse failures");
@@ -445,7 +545,7 @@ function getStatus(): ExtensionStatus {
  * Handle messages from content scripts and popup
  */
 chrome.runtime.onMessage.addListener(
-  (message: ExtensionMessage, _sender, sendResponse) => {
+  (message: ExtensionMessage, sender, sendResponse) => {
     switch (message.type) {
       case "MEETINGS_UPDATED":
         state.meetings = deserializeMeetings(message.meetings);
@@ -455,9 +555,17 @@ chrome.runtime.onMessage.addListener(
         resetParseFailures();
         pruneMeetingState();
         // Schedule trigger asynchronously
-        checkMeetings().then(() => {
-          sendResponse({ success: true });
-        });
+        checkMeetings()
+          .then(async () => {
+            const senderTabId =
+              typeof sender.tab?.id === "number" ? sender.tab.id : undefined;
+            await evaluateHomepageRecovery("meetings-updated", senderTabId);
+            sendResponse({ success: true });
+          })
+          .catch((error) => {
+            console.warn("[MeetCat SW] Failed to process meetings update", error);
+            sendResponse({ success: false });
+          });
         return true; // Keep channel open for async response
 
       case "MEETING_JOINED":
@@ -504,8 +612,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAME) {
     // Periodic check alarm - update meetings and reschedule trigger
     await checkMeetings();
+    await flushPendingHomepageRecovery("periodic-check");
   } else if (alarm.name === PARSE_REQUEST_ALARM) {
     await requestHomepageParse();
+    await flushPendingHomepageRecovery("parse-alarm");
   } else if (alarm.name === JOIN_TRIGGER_ALARM) {
     // Precise join trigger alarm - open the meeting
     await handleJoinTrigger();
@@ -525,6 +635,14 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     });
     setupAlarm();
   }
+});
+
+chrome.tabs.onActivated.addListener(() => {
+  void flushPendingHomepageRecovery("tab-activated");
+});
+
+chrome.windows.onFocusChanged.addListener(() => {
+  void flushPendingHomepageRecovery("window-focus-changed");
 });
 
 /**

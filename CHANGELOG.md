@@ -9,11 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.4] - 2026-02-05
 
+A reliability-focused release for homepage freshness and long-running stability across both the Chrome extension and the macOS app.
+
 ### Added
+
 - macOS app menu now includes a Refresh Home command with Cmd+R, and the Meet homepage listens for the shortcut.
 
+### Changed
+
+- Homepage stale recovery now uses a fingerprint-based watchdog with foreground-aware behavior: while the homepage is focused, reloads are deferred until the tab or window loses focus.
+- Repeated stale states now use exponential backoff (30 → 60 → 120 minutes) with a daily reload cap, improving stability without causing refresh loops.
+
 ### Fixed
+
 - Auto-join now stops once the meeting is entered, preventing countdowns from persisting or triggering an unintended leave click.
+- Homepage meeting list refreshes are more reliable, with background-triggered updates and automatic recovery after repeated parse failures.
+- Long-idle and cross-day homepage sessions now recover automatically when meeting data remains unchanged for too long, reducing cases where stale meeting lists persist.
 
 ## [0.0.3] - 2026-02-05
 

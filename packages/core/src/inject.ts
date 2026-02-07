@@ -50,6 +50,10 @@ import {
 } from "./tauri-bridge.js";
 import type { Meeting } from "./types.js";
 import { DEFAULT_SETTINGS as SETTINGS_DEFAULTS } from "@meetcat/settings";
+import {
+  createHomepageReloadWatchdog,
+  createMeetingsFingerprint,
+} from "./utils/homepage-reload-watchdog.js";
 
 // Module state
 let settings: TauriSettings | null = null;
@@ -66,6 +70,10 @@ let fallbackIntervalId: ReturnType<typeof setInterval> | null = null;
 let currentMeetingCallId: string | null = null;
 let homepageKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 let meetingEntryObserver: MutationObserver | null = null;
+let homepageVisibilityHandler: (() => void) | null = null;
+let homepageBlurHandler: (() => void) | null = null;
+let lastHomepageRecoveryLogKey: string | null = null;
+let homepageReloadWatchdog = createHomepageReloadWatchdog();
 
 // Icon URL for overlays
 const ICON_URL =
@@ -302,7 +310,7 @@ async function init(): Promise<void> {
 
   // Detect page type and initialize accordingly
   const pathname = location.pathname;
-  const isHomepage = pathname === "/" || pathname === "" || pathname === "/landing";
+  const isHomepage = isMeetHomepagePath(pathname);
   const isMeetingPage = getMeetingCodeFromPath(pathname) !== null;
 
   logToConsole("info", "[MeetCat] Page type detected", {
@@ -370,6 +378,7 @@ async function initHomepage(): Promise<void> {
   }
 
   attachHomepageShortcuts();
+  attachHomepageRecoveryListeners();
 
   // Try to set up Tauri event listeners (non-blocking)
   if (isTauri) {
@@ -433,6 +442,10 @@ async function checkAndReportMeetings(meta: {
     hiddenCards: result.hiddenCards ?? 0,
     hiddenReasons: result.hiddenReasons ?? {},
   });
+
+  if (evaluateHomepageRecovery(meta.source ?? "unknown", result.meetings)) {
+    return;
+  }
 
   // Update overlay with next meeting
   if (overlay) {
@@ -506,6 +519,132 @@ function createOverlay(): void {
       overlay?.update(nextMeeting);
     });
   }
+}
+
+function isMeetHomepagePath(pathname: string = location.pathname): boolean {
+  return pathname === "/" || pathname === "" || pathname === "/landing";
+}
+
+function isHomepageForeground(): boolean {
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+function logHomepageRecovery(
+  source: string,
+  fingerprint: string,
+  evaluation: ReturnType<typeof homepageReloadWatchdog.evaluate>
+): void {
+  if (evaluation.reason === "fingerprint_changed") {
+    logToDisk("info", "homepage", "homepage.fingerprint.changed", "Homepage fingerprint changed", {
+      source,
+      fingerprint,
+    });
+    lastHomepageRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.action === "defer" && evaluation.stateChanged) {
+    logToDisk("info", "homepage", "homepage.reload.deferred", "Homepage reload deferred in foreground", {
+      source,
+      staleForMs: evaluation.staleForMs,
+      backoffMs: evaluation.backoffMs,
+    });
+    lastHomepageRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.action === "reload") {
+    logToDisk("warn", "homepage", "homepage.reload.triggered", "Reloading stale homepage", {
+      source,
+      staleForMs: evaluation.staleForMs,
+      backoffMs: evaluation.backoffMs,
+      reloadCountToday: evaluation.reloadCountToday,
+      consecutiveReloadsWithoutChange: evaluation.consecutiveReloadsWithoutChange,
+    });
+    lastHomepageRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.reason === "cooldown" || evaluation.reason === "daily_limit") {
+    const logKey = evaluation.reason;
+    if (lastHomepageRecoveryLogKey === logKey) return;
+    lastHomepageRecoveryLogKey = logKey;
+
+    if (evaluation.reason === "cooldown") {
+      logToDisk(
+        "debug",
+        "homepage",
+        "homepage.reload.cooldown",
+        "Stale homepage reload waiting for cooldown",
+        {
+          source,
+          cooldownRemainingMs: evaluation.cooldownRemainingMs,
+          backoffMs: evaluation.backoffMs,
+        }
+      );
+      return;
+    }
+
+    logToDisk(
+      "warn",
+      "homepage",
+      "homepage.reload.daily_limit",
+      "Stale homepage reload skipped due to daily limit",
+      {
+        source,
+        reloadCountToday: evaluation.reloadCountToday,
+      }
+    );
+    return;
+  }
+
+  lastHomepageRecoveryLogKey = null;
+}
+
+/**
+ * Detect stale homepage snapshots and recover with controlled reloads.
+ * We defer reload while the page is foreground to avoid visible flicker.
+ */
+function evaluateHomepageRecovery(
+  source: string,
+  meetings: Meeting[],
+  nowMs: number = Date.now()
+): boolean {
+  if (!isMeetHomepagePath()) return false;
+
+  const fingerprint = createMeetingsFingerprint(meetings);
+  const evaluation = homepageReloadWatchdog.evaluate({
+    fingerprint,
+    nowMs,
+    isHomepage: true,
+    isForeground: isHomepageForeground(),
+  });
+
+  logHomepageRecovery(source, fingerprint, evaluation);
+  if (evaluation.action !== "reload") return false;
+
+  location.reload();
+  return true;
+}
+
+function flushPendingHomepageReload(source: string): boolean {
+  if (!homepageReloadWatchdog.hasPendingReload()) return false;
+  return evaluateHomepageRecovery(source, lastMeetings);
+}
+
+function attachHomepageRecoveryListeners(): void {
+  if (homepageVisibilityHandler || homepageBlurHandler) return;
+
+  homepageVisibilityHandler = () => {
+    if (document.visibilityState === "visible") return;
+    flushPendingHomepageReload("visibilitychange");
+  };
+  homepageBlurHandler = () => {
+    flushPendingHomepageReload("window-blur");
+  };
+
+  document.addEventListener("visibilitychange", homepageVisibilityHandler, true);
+  window.addEventListener("blur", homepageBlurHandler, true);
 }
 
 function attachHomepageShortcuts(): void {
@@ -814,6 +953,18 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
     document.removeEventListener("keydown", homepageKeydownHandler, true);
     homepageKeydownHandler = null;
   }
+
+  if (homepageVisibilityHandler) {
+    document.removeEventListener("visibilitychange", homepageVisibilityHandler, true);
+    homepageVisibilityHandler = null;
+  }
+
+  if (homepageBlurHandler) {
+    window.removeEventListener("blur", homepageBlurHandler, true);
+    homepageBlurHandler = null;
+  }
+
+  lastHomepageRecoveryLogKey = null;
 }
 
 // Initialize on DOMContentLoaded or immediately if already loaded

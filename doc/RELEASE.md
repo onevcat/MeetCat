@@ -14,6 +14,7 @@ This document describes the release flow for MeetCat (macOS app + Chrome extensi
 - macOS with Xcode Command Line Tools installed.
 - `pnpm`, `gh`, `git`, and Rust toolchain available.
 - Apple notarization credentials configured (either a keychain profile or Apple ID/password).
+- Repository secret `NETLIFY_BUILD_HOOK_URL` configured for the MeetCat website build hook.
 
 ## Workflow
 
@@ -34,6 +35,7 @@ The script will:
 - Create/edit the GitHub release and upload artifacts.
 - Build the Chrome extension and zip it into `release/`.
 - The GitHub UI always exposes a `latest` release endpoint, so stable links can use `/releases/latest/download/...`.
+- After the GitHub release is published, `.github/workflows/trigger-meetcat-site-deploy.yml` automatically triggers the MeetCat site rebuild via Netlify Build Hook.
 
 ## Split Releases
 

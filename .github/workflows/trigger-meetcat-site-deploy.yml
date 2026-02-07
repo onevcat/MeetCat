@@ -1,0 +1,29 @@
+name: Trigger MeetCat Site Deploy
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  trigger-netlify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Trigger Netlify build hook
+        env:
+          NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          if [ -z "$NETLIFY_BUILD_HOOK_URL" ]; then
+            echo "NETLIFY_BUILD_HOOK_URL is not configured."
+            exit 1
+          fi
+
+          curl --fail --show-error --silent \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"tag\":\"${RELEASE_TAG}\",\"releaseUrl\":\"${RELEASE_URL}\"}" \
+            "$NETLIFY_BUILD_HOOK_URL"
