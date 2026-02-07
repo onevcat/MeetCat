@@ -229,6 +229,37 @@ describe("inject homepage checks", () => {
     module.cleanup();
   });
 
+  it("reports page detection even when tauri log collection is disabled", async () => {
+    tauriMocks.isTauriEnvironment.mockReturnValue(true);
+    tauriMocks.getSettings.mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      tauri: {
+        ...DEFAULT_TAURI_SETTINGS,
+        logCollectionEnabled: false,
+        logLevel: "info",
+      },
+    });
+    tauriMocks.onCheckMeetings.mockResolvedValue(() => {});
+    tauriMocks.onNavigateAndJoin.mockResolvedValue(() => {});
+    tauriMocks.onSettingsChanged.mockResolvedValue(() => {});
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        module: "inject",
+        event: "init.page_detected",
+        context: expect.objectContaining({
+          homepage: true,
+          meeting: false,
+        }),
+      })
+    );
+
+    module.cleanup();
+  });
+
   it("suppresses info console logs when log collection is disabled", async () => {
     tauriMocks.isTauriEnvironment.mockReturnValue(true);
     tauriMocks.getSettings.mockResolvedValue({

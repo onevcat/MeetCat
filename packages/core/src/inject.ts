@@ -182,6 +182,32 @@ function logToDisk(
   });
 }
 
+function reportPageDetectedForNativeState(
+  path: string,
+  homepage: boolean,
+  meeting: boolean
+): void {
+  if (!isTauriEnvironment()) return;
+  if (!settings?.tauri) return;
+  if (settings.tauri.logCollectionEnabled) return;
+
+  logEvent({
+    level: "info",
+    module: "inject",
+    event: "init.page_detected",
+    message: "Detected page type",
+    context: {
+      path,
+      homepage,
+      meeting,
+    },
+    tsMs: Date.now(),
+    scope: "webview",
+  }).catch((error) => {
+    console.warn("[MeetCat] Failed to report page detection:", error);
+  });
+}
+
 function detectEnteredMeeting(stage: string): boolean {
   const { button, matchedText } = findLeaveButton(document);
   if (!button) return false;
@@ -322,6 +348,7 @@ async function init(): Promise<void> {
     homepage: isHomepage,
     meeting: isMeetingPage,
   });
+  reportPageDetectedForNativeState(pathname, isHomepage, isMeetingPage);
 
   try {
     if (isHomepage) {

@@ -12,6 +12,7 @@ import {
   setMicState,
   setCameraState,
   clickJoinButton,
+  findJoinButton,
   findLeaveButton,
   getMeetingCodeFromPath,
   createJoinCountdown,
