@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.4] - 2026-02-05
+## [0.0.4] - 2026-02-09
 
 A reliability-focused release for homepage freshness and long-running stability across both the Chrome extension and the macOS app.
 
