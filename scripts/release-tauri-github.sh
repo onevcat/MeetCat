@@ -43,6 +43,9 @@ if [[ -n "$(git status --porcelain)" && "$ALLOW_DIRTY" -ne 1 ]]; then
   exit 1
 fi
 
+echo "[release] Syncing changelog date for version: $VERSION"
+node "$ROOT_DIR/scripts/update-changelog-release-date.mjs" "$VERSION"
+
 mkdir -p "$ROOT_DIR/release"
 
 if [[ "$SKIP_BUILD" -ne 1 ]]; then
