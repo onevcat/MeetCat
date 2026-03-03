@@ -9,9 +9,11 @@ TAG="${VERSION}"
 CHANGELOG_PATH="$ROOT_DIR/CHANGELOG.md"
 NOTES_PATH="$ROOT_DIR/release/notes-${VERSION}.md"
 ASSET_LIST_PATH="$ROOT_DIR/release/tauri-assets.txt"
+VERSION_JSON_PATH="$ROOT_DIR/release/version.json"
 
 ALLOW_DIRTY="${ALLOW_DIRTY:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
+BUILD_TARGETS="${BUILD_TARGETS:-universal-apple-darwin}"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "[release] gh CLI is required." >&2
@@ -76,6 +78,42 @@ if [[ ! -s "$NOTES_PATH" ]]; then
   sed -n '1,120p' "$CHANGELOG_PATH" >&2
   exit 1
 fi
+
+IFS=" " read -r -a targets <<< "$BUILD_TARGETS"
+PLATFORM_ARGS=()
+for target in "${targets[@]}"; do
+  case "$target" in
+    universal-apple-darwin)
+      updater_name="MeetCat_macos_universal.app.tar.gz"
+      ;;
+    *)
+      updater_name="MeetCat_macos_${target}.app.tar.gz"
+      ;;
+  esac
+
+  updater_path="$ROOT_DIR/release/$updater_name"
+  updater_sig_path="${updater_path}.sig"
+  if [[ ! -f "$updater_path" ]]; then
+    echo "[release] Missing updater artifact: $updater_path" >&2
+    exit 1
+  fi
+  if [[ ! -f "$updater_sig_path" ]]; then
+    echo "[release] Missing updater signature: $updater_sig_path" >&2
+    exit 1
+  fi
+
+  updater_url="https://github.com/onevcat/MeetCat/releases/download/${TAG}/${updater_name}"
+  PLATFORM_ARGS+=(--platform "${target}|${updater_url}|${updater_sig_path}")
+done
+
+echo "[release] Generating updater metadata: $VERSION_JSON_PATH"
+node "$ROOT_DIR/scripts/make-latest-json.mjs" \
+  --version "$VERSION" \
+  --notes-file "$NOTES_PATH" \
+  --out "$VERSION_JSON_PATH" \
+  "${PLATFORM_ARGS[@]}"
+
+ASSET_PATHS+=("$VERSION_JSON_PATH")
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
   tag_commit="$(git rev-parse "$TAG")"

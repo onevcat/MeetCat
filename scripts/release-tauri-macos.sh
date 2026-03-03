@@ -11,6 +11,10 @@ APPLE_PASSWORD_INPUT="${APPLE_PASSWORD:-}"
 BUILD_TARGETS="${BUILD_TARGETS:-universal-apple-darwin}"
 RELEASE_DIR="${RELEASE_DIR:-$ROOT_DIR/release}"
 ASSET_LIST_PATH="${ASSET_LIST_PATH:-$RELEASE_DIR/tauri-assets.txt}"
+DEFAULT_SIGNING_KEY_PATH="${HOME}/.tauri/meetcat-updater.key"
+SIGNING_KEY_PATH="${TAURI_SIGNING_PRIVATE_KEY_PATH:-${TAURI_PRIVATE_KEY_PATH:-$DEFAULT_SIGNING_KEY_PATH}}"
+SIGNING_KEY_CONTENT="${TAURI_SIGNING_PRIVATE_KEY:-${TAURI_PRIVATE_KEY:-}}"
+SIGNING_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-${TAURI_PRIVATE_KEY_PASSWORD:-}}"
 
 submit_with_keychain_profile() {
   local dmg_path="$1"
@@ -98,6 +102,18 @@ stable_name_for_target() {
   esac
 }
 
+stable_updater_name_for_target() {
+  local target="$1"
+  case "$target" in
+    universal-apple-darwin)
+      echo "MeetCat_macos_universal.app.tar.gz"
+      ;;
+    *)
+      echo "MeetCat_macos_${target}.app.tar.gz"
+      ;;
+  esac
+}
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "[release] This script only supports macOS."
   exit 1
@@ -112,6 +128,29 @@ if ! command -v xcrun >/dev/null 2>&1; then
   echo "[release] xcrun is required (Xcode Command Line Tools)."
   exit 1
 fi
+
+if [[ -z "$SIGNING_KEY_CONTENT" ]]; then
+  if [[ ! -f "$SIGNING_KEY_PATH" ]]; then
+    echo "[release] Updater signing key not found: $SIGNING_KEY_PATH"
+    exit 1
+  fi
+  SIGNING_KEY_CONTENT="$(cat "$SIGNING_KEY_PATH")"
+fi
+
+if [[ -z "$SIGNING_KEY_PASSWORD" ]]; then
+  if [[ -t 0 ]]; then
+    read -r -s -p "Updater signing key password (input hidden): " SIGNING_KEY_PASSWORD
+    echo
+  else
+    echo "[release] TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required in non-interactive mode."
+    exit 1
+  fi
+fi
+
+export TAURI_SIGNING_PRIVATE_KEY="$SIGNING_KEY_CONTENT"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$SIGNING_KEY_PASSWORD"
+export TAURI_PRIVATE_KEY="$SIGNING_KEY_CONTENT"
+export TAURI_PRIVATE_KEY_PASSWORD="$SIGNING_KEY_PASSWORD"
 
 echo "[release] Building shared packages..."
 (
@@ -161,6 +200,40 @@ for target in "${targets[@]}"; do
   cp -f "$DMG_PATH" "$stable_path"
   echo "$stable_path" >> "$ASSET_LIST_PATH"
   echo "[release] Copied artifact: $stable_path"
+
+  UPDATER_DIR="$ROOT_DIR/packages/tauri/src-tauri/target/$target/release/bundle/macos"
+  if [[ ! -d "$UPDATER_DIR" ]]; then
+    echo "[release] Updater output directory not found: $UPDATER_DIR"
+    exit 1
+  fi
+
+  shopt -s nullglob
+  UPDATER_CANDIDATES=("$UPDATER_DIR"/*.app.tar.gz)
+  shopt -u nullglob
+
+  if [[ ${#UPDATER_CANDIDATES[@]} -eq 0 ]]; then
+    echo "[release] No updater tarball found in: $UPDATER_DIR"
+    exit 1
+  fi
+
+  UPDATER_PATH="$(ls -t "${UPDATER_CANDIDATES[@]}" | head -n 1)"
+  UPDATER_SIG_PATH="${UPDATER_PATH}.sig"
+  if [[ ! -f "$UPDATER_SIG_PATH" ]]; then
+    echo "[release] Updater signature not found: $UPDATER_SIG_PATH"
+    exit 1
+  fi
+
+  updater_stable_name="$(stable_updater_name_for_target "$target")"
+  updater_stable_path="$RELEASE_DIR/$updater_stable_name"
+  updater_sig_stable_path="$RELEASE_DIR/${updater_stable_name}.sig"
+
+  cp -f "$UPDATER_PATH" "$updater_stable_path"
+  cp -f "$UPDATER_SIG_PATH" "$updater_sig_stable_path"
+
+  echo "$updater_stable_path" >> "$ASSET_LIST_PATH"
+  echo "$updater_sig_stable_path" >> "$ASSET_LIST_PATH"
+  echo "[release] Copied artifact: $updater_stable_path"
+  echo "[release] Copied artifact: $updater_sig_stable_path"
 done
 
 echo "[release] Done."
