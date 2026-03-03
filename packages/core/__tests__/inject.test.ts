@@ -86,7 +86,8 @@ describe("inject homepage checks", () => {
     await flushPromises();
 
     expect(tauriMocks.onCheckMeetings).toHaveBeenCalledTimes(1);
-    expect(setIntervalSpy).not.toHaveBeenCalled();
+    // Only the wake detector interval should be started (no fallback interval in Tauri)
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
 
     module.cleanup();
     setIntervalSpy.mockRestore();
@@ -111,10 +112,11 @@ describe("inject homepage checks", () => {
     await flushPromises();
 
     expect(tauriMocks.onCheckMeetings).not.toHaveBeenCalled();
-    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    // Fallback interval + wake detector = 2 intervals
+    expect(setIntervalSpy).toHaveBeenCalledTimes(2);
 
     module.cleanup();
-    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(2);
 
     setIntervalSpy.mockRestore();
     clearIntervalSpy.mockRestore();

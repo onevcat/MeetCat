@@ -9,6 +9,7 @@ export const DEFAULT_HOMEPAGE_BACKOFF_SCHEDULE_MS = [
   120 * MINUTE_MS,
 ];
 export const DEFAULT_HOMEPAGE_DAILY_RELOAD_LIMIT = 8;
+export const DEFAULT_HOMEPAGE_FORCE_STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000;
 
 export type HomepageReloadAction = "none" | "defer" | "reload";
 export type HomepageReloadReason =
@@ -19,10 +20,12 @@ export type HomepageReloadReason =
   | "foreground"
   | "cooldown"
   | "daily_limit"
+  | "force_stale"
   | "reload";
 
 export interface HomepageReloadWatchdogConfig {
   staleThresholdMs?: number;
+  forceStaleThresholdMs?: number;
   backoffScheduleMs?: number[];
   dailyReloadLimit?: number;
   getDayKey?: (nowMs: number) => string;
@@ -110,6 +113,7 @@ export function createMeetingsFingerprint(meetings: Meeting[]): string {
 
 export class HomepageReloadWatchdog {
   private readonly staleThresholdMs: number;
+  private readonly forceStaleThresholdMs: number;
   private readonly backoffScheduleMs: number[];
   private readonly dailyReloadLimit: number;
   private readonly getDayKey: (nowMs: number) => string;
@@ -119,6 +123,10 @@ export class HomepageReloadWatchdog {
     this.staleThresholdMs = Math.max(
       1,
       config.staleThresholdMs ?? DEFAULT_HOMEPAGE_STALE_THRESHOLD_MS
+    );
+    this.forceStaleThresholdMs = Math.max(
+      this.staleThresholdMs,
+      config.forceStaleThresholdMs ?? DEFAULT_HOMEPAGE_FORCE_STALE_THRESHOLD_MS
     );
     this.backoffScheduleMs = this.normalizeBackoffSchedule(config.backoffScheduleMs);
     this.dailyReloadLimit = Math.max(
@@ -230,7 +238,7 @@ export class HomepageReloadWatchdog {
       });
     }
 
-    if (input.isForeground) {
+    if (input.isForeground && staleForMs < this.forceStaleThresholdMs) {
       const stateChanged = !this.state.pendingReload;
       this.state.pendingReload = true;
       return this.createEvaluation({
@@ -241,6 +249,22 @@ export class HomepageReloadWatchdog {
         cooldownRemainingMs: 0,
         fingerprintChanged: false,
         stateChanged,
+      });
+    }
+
+    if (input.isForeground && staleForMs >= this.forceStaleThresholdMs) {
+      this.state.pendingReload = false;
+      this.state.lastReloadAtMs = input.nowMs;
+      this.state.reloadCountToday += 1;
+      this.state.consecutiveReloadsWithoutChange += 1;
+      return this.createEvaluation({
+        action: "reload",
+        reason: "force_stale",
+        staleForMs,
+        backoffMs,
+        cooldownRemainingMs: 0,
+        fingerprintChanged: false,
+        stateChanged: true,
       });
     }
 

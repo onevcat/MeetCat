@@ -251,4 +251,41 @@ describe("HomepageReloadWatchdog", () => {
     expect(result.action).toBe("none");
     expect(result.reason).toBe("not_homepage");
   });
+
+  it("force reloads in foreground when stale exceeds force threshold", () => {
+    const forceConfig = {
+      ...config,
+      forceStaleThresholdMs: 5_000,
+    };
+    const watchdog = createHomepageReloadWatchdog(forceConfig);
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    watchdog.evaluate({
+      fingerprint,
+      nowMs: 0,
+      isHomepage: true,
+      isForeground: true,
+    });
+
+    // Under force threshold: should defer
+    const deferred = watchdog.evaluate({
+      fingerprint,
+      nowMs: 2_000,
+      isHomepage: true,
+      isForeground: true,
+    });
+    expect(deferred.action).toBe("defer");
+    expect(deferred.reason).toBe("foreground");
+
+    // Over force threshold: should force reload even in foreground
+    const forced = watchdog.evaluate({
+      fingerprint,
+      nowMs: 6_000,
+      isHomepage: true,
+      isForeground: true,
+    });
+    expect(forced.action).toBe("reload");
+    expect(forced.reason).toBe("force_stale");
+    expect(forced.reloadCountToday).toBe(1);
+  });
 });

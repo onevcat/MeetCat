@@ -74,6 +74,8 @@ let homepageVisibilityHandler: (() => void) | null = null;
 let homepageBlurHandler: (() => void) | null = null;
 let lastHomepageRecoveryLogKey: string | null = null;
 let homepageReloadWatchdog = createHomepageReloadWatchdog();
+let wakeDetectorIntervalId: ReturnType<typeof setInterval> | null = null;
+let wakeDetectorLastTickMs: number = Date.now();
 
 // Icon URL for overlays
 const ICON_URL =
@@ -406,6 +408,7 @@ async function initHomepage(): Promise<void> {
 
   attachHomepageShortcuts();
   attachHomepageRecoveryListeners();
+  startWakeDetector();
 
   // Try to set up Tauri event listeners (non-blocking)
   if (isTauri) {
@@ -718,6 +721,46 @@ function stopFallbackInterval(): void {
   logToDisk("info", "homepage", "fallback.stop", "Fallback interval stopped");
 }
 
+const WAKE_DETECT_INTERVAL_MS = 10_000;
+const WAKE_DETECT_THRESHOLD_MS = 60_000;
+const WAKE_RELOAD_DELAY_MS = 3_000;
+
+function startWakeDetector(): void {
+  if (wakeDetectorIntervalId !== null) return;
+
+  wakeDetectorLastTickMs = Date.now();
+  wakeDetectorIntervalId = setInterval(() => {
+    const now = Date.now();
+    const elapsed = now - wakeDetectorLastTickMs;
+    wakeDetectorLastTickMs = now;
+
+    if (elapsed > WAKE_DETECT_THRESHOLD_MS) {
+      logToDisk("info", "homepage", "wake.detected", "System wake detected, scheduling reload", {
+        elapsedMs: elapsed,
+        thresholdMs: WAKE_DETECT_THRESHOLD_MS,
+        delayMs: WAKE_RELOAD_DELAY_MS,
+      });
+      stopWakeDetector();
+      setTimeout(() => {
+        logToDisk("info", "homepage", "wake.reload", "Reloading after system wake");
+        location.reload();
+      }, WAKE_RELOAD_DELAY_MS);
+    }
+  }, WAKE_DETECT_INTERVAL_MS);
+
+  logToDisk("info", "homepage", "wake.start", "Wake detector started", {
+    intervalMs: WAKE_DETECT_INTERVAL_MS,
+    thresholdMs: WAKE_DETECT_THRESHOLD_MS,
+  });
+}
+
+function stopWakeDetector(): void {
+  if (wakeDetectorIntervalId === null) return;
+  clearInterval(wakeDetectorIntervalId);
+  wakeDetectorIntervalId = null;
+  logToDisk("info", "homepage", "wake.stop", "Wake detector stopped");
+}
+
 /**
  * Update overlay visibility based on settings
  */
@@ -966,6 +1009,7 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
   unsubscribers = [];
 
   stopFallbackInterval();
+  stopWakeDetector();
   stopMeetingEntryObserver();
 
   // Destroy overlays
