@@ -54,13 +54,32 @@ ENV
 }
 
 ensure_worktree() {
-  if [[ -d "$E2E_WORKTREE/.git" || -d "$E2E_WORKTREE" ]]; then
+  if [[ -d "$E2E_WORKTREE/.git" ]]; then
     echo "[e2e] Worktree already exists: $E2E_WORKTREE"
     return
   fi
 
+  if [[ -e "$E2E_WORKTREE" ]]; then
+    echo "[e2e] Path exists but is not a git worktree: $E2E_WORKTREE" >&2
+    echo "[e2e] Remove it first, then retry." >&2
+    exit 1
+  fi
+
   git -C "$ROOT_DIR" fetch origin "$E2E_BRANCH" >/dev/null 2>&1 || true
-  git -C "$ROOT_DIR" worktree add "$E2E_WORKTREE" "$E2E_BRANCH"
+  if git -C "$ROOT_DIR" worktree add "$E2E_WORKTREE" "$E2E_BRANCH"; then
+    return
+  fi
+
+  # When the branch is already checked out in another worktree (for example current repo),
+  # create a detached worktree at that branch HEAD.
+  local branch_ref="$E2E_BRANCH"
+  if ! git -C "$ROOT_DIR" rev-parse --verify "$branch_ref" >/dev/null 2>&1; then
+    branch_ref="origin/$E2E_BRANCH"
+  fi
+  local branch_head
+  branch_head="$(git -C "$ROOT_DIR" rev-parse "$branch_ref")"
+  echo "[e2e] Branch is busy in another worktree, using detached HEAD: $branch_head"
+  git -C "$ROOT_DIR" worktree add --detach "$E2E_WORKTREE" "$branch_head"
 }
 
 update_endpoint() {
