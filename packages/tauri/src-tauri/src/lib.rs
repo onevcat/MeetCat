@@ -13,6 +13,7 @@ use logging::{now_ms, LogEventInput, LogManager};
 use settings::{LogLevel, Settings, TAURI_DEFAULT_CHECK_INTERVAL_SECONDS};
 use serde::Serialize;
 use serde_json::json;
+use std::error::Error as StdError;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{
@@ -22,9 +23,11 @@ use tauri::{
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 use tauri::async_runtime::JoinHandle;
 
 const MEET_HOME_URL: &str = "https://meet.google.com/";
+const UPDATE_CHECK_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
 
 /// Application state shared across commands
 pub struct AppState {
@@ -32,6 +35,10 @@ pub struct AppState {
     pub daemon: Mutex<DaemonState>,
     /// Handle to cancel the current join trigger timer
     pub join_trigger_handle: Mutex<Option<JoinHandle<()>>>,
+    pub update_checking: Mutex<bool>,
+    pub update_info: Mutex<Option<UpdateInfo>>,
+    pub update_dialog_requested: Mutex<bool>,
+    pub update_manual_check_requested: Mutex<bool>,
     pub logger: Mutex<LogManager>,
     #[cfg(target_os = "macos")]
     pub homepage_active: Mutex<Option<bool>>,
@@ -45,6 +52,10 @@ impl Default for AppState {
             settings: Mutex::new(settings),
             daemon: Mutex::new(DaemonState::default()),
             join_trigger_handle: Mutex::new(None),
+            update_checking: Mutex::new(false),
+            update_info: Mutex::new(None),
+            update_dialog_requested: Mutex::new(false),
+            update_manual_check_requested: Mutex::new(false),
             logger: Mutex::new(logger),
             #[cfg(target_os = "macos")]
             homepage_active: Mutex::new(None),
@@ -58,6 +69,21 @@ pub struct AppStatus {
     enabled: bool,
     next_meeting: Option<Meeting>,
     meetings: Vec<Meeting>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDownloadProgress {
+    downloaded: u64,
+    total: Option<u64>,
+    percent: Option<f64>,
 }
 
 // =============================================================================
@@ -421,9 +447,240 @@ fn get_suppressed_meetings(state: State<AppState>) -> Vec<String> {
     daemon.get_suppressed_meetings()
 }
 
+#[tauri::command]
+fn get_update_info(state: State<AppState>) -> Option<UpdateInfo> {
+    state.update_info.lock().unwrap().clone()
+}
+
+#[tauri::command]
+async fn check_for_update_manual(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    check_for_update_with_source(app, "manual").await
+}
+
+#[tauri::command]
+async fn download_and_install_update(
+    app: AppHandle,
+    auto_restart: bool,
+) -> Result<bool, String> {
+    let updater = app
+        .updater_builder()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+    if let Some(update) = update {
+        log_app_event(
+            &app,
+            LogLevel::Info,
+            "update",
+            "install.start",
+            None,
+            Some(json!({
+                "version": update.version,
+                "target": update.target,
+                "url": update.download_url,
+            })),
+        );
+
+        let mut downloaded: u64 = 0;
+        let app_progress = app.clone();
+        let app_finish = app.clone();
+        let result = update
+            .download_and_install(
+                move |chunk_len, total| {
+                    downloaded = downloaded.saturating_add(chunk_len as u64);
+                    let percent = total.and_then(|total| {
+                        if total == 0 {
+                            None
+                        } else {
+                            Some((downloaded as f64 / total as f64) * 100.0)
+                        }
+                    });
+                    let _ = app_progress.emit(
+                        "update:download-progress",
+                        UpdateDownloadProgress {
+                            downloaded,
+                            total: total.map(|value| value as u64),
+                            percent,
+                        },
+                    );
+                },
+                move || {
+                    let _ = app_finish.emit("update:download-finish", ());
+                },
+            )
+            .await;
+
+        if let Err(err) = result {
+            log_update_error(&err);
+            return Err(err.to_string());
+        }
+
+        {
+            let state = app.state::<AppState>();
+            *state.update_info.lock().unwrap() = None;
+        }
+        let _ = app.emit("update:available", Option::<UpdateInfo>::None);
+        refresh_tray_status(&app);
+
+        log_app_event(
+            &app,
+            LogLevel::Info,
+            "update",
+            "install.done",
+            None,
+            Some(json!({ "version": update.version })),
+        );
+
+        if auto_restart {
+            app.request_restart();
+        }
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn open_update_dialog(app: AppHandle) -> Result<(), String> {
+    ensure_settings_window(&app)?;
+    request_open_update_dialog(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn consume_open_update_dialog_request(state: State<AppState>) -> bool {
+    let mut requested = state.update_dialog_requested.lock().unwrap();
+    let value = *requested;
+    *requested = false;
+    value
+}
+
+#[tauri::command]
+fn consume_manual_update_check_request(state: State<AppState>) -> bool {
+    let mut requested = state.update_manual_check_requested.lock().unwrap();
+    let value = *requested;
+    *requested = false;
+    value
+}
+
+pub(crate) fn request_open_update_dialog(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.update_dialog_requested.lock().unwrap() = true;
+    }
+    let _ = app.emit("update:open-dialog", ());
+}
+
+pub(crate) fn request_manual_update_check(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.update_manual_check_requested.lock().unwrap() = true;
+    }
+    let _ = app.emit("update:manual-check", ());
+}
+
+async fn check_for_update_with_source(
+    app: AppHandle,
+    source: &'static str,
+) -> Result<Option<UpdateInfo>, String> {
+    let state = app.state::<AppState>();
+    {
+        let mut checking = state.update_checking.lock().unwrap();
+        if *checking {
+            return Ok(state.update_info.lock().unwrap().clone());
+        }
+        *checking = true;
+    }
+
+    let result = async {
+        let updater = app
+            .updater_builder()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let update = updater.check().await.map_err(|e| e.to_string())?;
+
+        let info = update.map(|item| UpdateInfo {
+            version: item.version,
+            notes: item.body,
+        });
+
+        {
+            let state = app.state::<AppState>();
+            *state.update_info.lock().unwrap() = info.clone();
+        }
+        let _ = app.emit("update:available", info.clone());
+        refresh_tray_status(&app);
+
+        let context = match info.as_ref() {
+            Some(update) => json!({
+                "source": source,
+                "available": true,
+                "version": update.version,
+            }),
+            None => json!({
+                "source": source,
+                "available": false,
+            }),
+        };
+        log_app_event(
+            &app,
+            LogLevel::Info,
+            "update",
+            "check.done",
+            None,
+            Some(context),
+        );
+
+        Ok(info)
+    }
+    .await;
+
+    {
+        let state = app.state::<AppState>();
+        *state.update_checking.lock().unwrap() = false;
+    }
+
+    result
+}
+
+fn log_update_error(err: &impl StdError) {
+    eprintln!("[MeetCat] update install failed: {}", err);
+    let mut source = err.source();
+    let mut index = 0;
+    while let Some(cause) = source {
+        eprintln!("[MeetCat] caused by({}): {}", index, cause);
+        source = cause.source();
+        index += 1;
+    }
+}
+
+fn setup_update_checker(app: &AppHandle) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let _ = check_for_update_with_source(app_handle.clone(), "startup").await;
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(UPDATE_CHECK_INTERVAL_SECONDS)).await;
+            let _ = check_for_update_with_source(app_handle.clone(), "polling").await;
+        }
+    });
+}
+
+fn refresh_tray_status(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        let settings = state.settings.lock().unwrap().clone();
+        let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
+        tray::update_tray_status(app, next_meeting.as_ref());
+    }
+}
+
 /// Open the settings window
 #[tauri::command]
 fn open_settings_window(app: AppHandle) -> Result<(), String> {
+    ensure_settings_window(&app)
+}
+
+pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
     // Check if settings window already exists
     if let Some(window) = app.get_webview_window("settings") {
         window.show().map_err(|e| e.to_string())?;
@@ -432,7 +689,7 @@ fn open_settings_window(app: AppHandle) -> Result<(), String> {
     }
 
     // Create new settings window
-    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("index.html".into()))
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
         .title("MeetCat Settings")
         .inner_size(420.0, 640.0)
         .resizable(false)
@@ -1215,6 +1472,7 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
@@ -1360,6 +1618,8 @@ pub fn run() {
                 logger.log_internal(LogLevel::Info, "daemon", "daemon.start", Some("auto".to_string()), None);
             }
 
+            setup_update_checker(app.handle());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1374,6 +1634,12 @@ pub fn run() {
             meeting_joined,
             meeting_closed,
             open_settings_window,
+            get_update_info,
+            check_for_update_manual,
+            download_and_install_update,
+            open_update_dialog,
+            consume_open_update_dialog_request,
+            consume_manual_update_check_request,
             log_event,
         ])
         .build(tauri::generate_context!())

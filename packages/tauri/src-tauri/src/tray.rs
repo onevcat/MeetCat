@@ -2,7 +2,10 @@
 
 use crate::daemon::Meeting;
 use crate::settings::{LogLevel, TauriSettings, TrayDisplayMode};
-use crate::{navigate_to_meet_home, AppState};
+use crate::{
+    ensure_settings_window, navigate_to_meet_home, request_manual_update_check,
+    request_open_update_dialog, AppState,
+};
 use serde_json::json;
 use tauri::{
     menu::{MenuBuilder, MenuItem, PredefinedMenuItem},
@@ -25,16 +28,35 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         None::<&str>,
     )?;
     let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
+    let check_update =
+        MenuItem::with_id(app, "check-update", "Check for updates...", true, None::<&str>)?;
+    let update_item = available_update_version(app.handle())
+        .map(|version| {
+            MenuItem::with_id(
+                app,
+                "install-update",
+                format!("Update available: {}", version),
+                true,
+                None::<&str>,
+            )
+        })
+        .transpose()?;
+    let separator_top = PredefinedMenuItem::separator(app)?;
+    let separator_bottom = PredefinedMenuItem::separator(app)?;
     let status = MenuItem::with_id(app, "status", "No upcoming meetings", false, None::<&str>)?;
 
-    let menu = MenuBuilder::new(app)
+    let mut menu_builder = MenuBuilder::new(app)
         .item(&status)
-        .item(&separator)
+        .item(&separator_top)
         .item(&show)
         .item(&go_home)
         .item(&settings)
-        .item(&separator)
+        .item(&check_update);
+    if let Some(update_item) = update_item.as_ref() {
+        menu_builder = menu_builder.item(update_item);
+    }
+    let menu = menu_builder
+        .item(&separator_bottom)
         .item(&quit)
         .build()?;
 
@@ -96,6 +118,35 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                     log_tray_event(app, LogLevel::Info, "menu.settings", None);
                 }
             }
+            "check-update" => {
+                if let Err(e) = open_settings(app) {
+                    eprintln!("Failed to open settings: {}", e);
+                    log_tray_event(
+                        app,
+                        LogLevel::Error,
+                        "menu.check_update_failed",
+                        Some(json!({ "error": e })),
+                    );
+                } else {
+                    request_manual_update_check(app);
+                    request_open_update_dialog(app);
+                    log_tray_event(app, LogLevel::Info, "menu.check_update", None);
+                }
+            }
+            "install-update" => {
+                if let Err(e) = open_settings(app) {
+                    eprintln!("Failed to open settings: {}", e);
+                    log_tray_event(
+                        app,
+                        LogLevel::Error,
+                        "menu.install_update_failed",
+                        Some(json!({ "error": e })),
+                    );
+                } else {
+                    request_open_update_dialog(app);
+                    log_tray_event(app, LogLevel::Info, "menu.install_update", None);
+                }
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -124,22 +175,7 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Open settings window
 fn open_settings(app: &AppHandle) -> Result<(), String> {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-
-    if let Some(window) = app.get_webview_window("settings") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
-        .title("MeetCat Settings")
-        .inner_size(420.0, 640.0)
-        .resizable(false)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    ensure_settings_window(app)
 }
 
 /// Update tray status with next meeting info
@@ -202,19 +238,43 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
                     if let Ok(settings) =
                         MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)
                     {
-                        if let Ok(sep1) = PredefinedMenuItem::separator(app) {
-                            if let Ok(sep2) = PredefinedMenuItem::separator(app) {
-                                if let Ok(new_menu) = MenuBuilder::new(app)
-                                    .item(&status_item)
-                                    .item(&sep1)
-                                    .item(&show)
-                                    .item(&go_home)
-                                    .item(&settings)
-                                    .item(&sep2)
-                                    .item(&quit)
-                                    .build()
-                                {
-                                    let _ = tray.set_menu(Some(new_menu));
+                        if let Ok(check_update) = MenuItem::with_id(
+                            app,
+                            "check-update",
+                            "Check for updates...",
+                            true,
+                            None::<&str>,
+                        ) {
+                            let update_item = available_update_version(app).and_then(|version| {
+                                MenuItem::with_id(
+                                    app,
+                                    "install-update",
+                                    format!("Update available: {}", version),
+                                    true,
+                                    None::<&str>,
+                                )
+                                .ok()
+                            });
+
+                            if let Ok(sep1) = PredefinedMenuItem::separator(app) {
+                                if let Ok(sep2) = PredefinedMenuItem::separator(app) {
+                                    let mut menu_builder = MenuBuilder::new(app)
+                                        .item(&status_item)
+                                        .item(&sep1)
+                                        .item(&show)
+                                        .item(&go_home)
+                                        .item(&settings)
+                                        .item(&check_update);
+
+                                    if let Some(update_item) = update_item.as_ref() {
+                                        menu_builder = menu_builder.item(update_item);
+                                    }
+
+                                    if let Ok(new_menu) =
+                                        menu_builder.item(&sep2).item(&quit).build()
+                                    {
+                                        let _ = tray.set_menu(Some(new_menu));
+                                    }
                                 }
                             }
                         }
@@ -223,6 +283,16 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
             }
         }
     }
+}
+
+fn available_update_version(app: &AppHandle) -> Option<String> {
+    app.try_state::<AppState>().and_then(|state| {
+        state
+            .update_info
+            .lock()
+            .ok()
+            .and_then(|info| info.as_ref().map(|item| item.version.clone()))
+    })
 }
 
 /// Truncate title if too long
