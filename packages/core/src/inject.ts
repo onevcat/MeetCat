@@ -35,9 +35,12 @@ import {
   isTauriEnvironment,
   reportMeetings,
   getSettings,
+  getUpdateInfo,
   onCheckMeetings,
   onNavigateAndJoin,
   onSettingsChanged,
+  onUpdateAvailable,
+  openUpdateDialog,
   reportJoined,
   reportMeetingClosed,
   getJoinedMeetings,
@@ -47,6 +50,7 @@ import {
   type CheckMeetingsPayload,
   type TauriSettings,
   type NavigateAndJoinCommand,
+  type UpdateInfo,
 } from "./tauri-bridge.js";
 import type { Meeting } from "./types.js";
 import { DEFAULT_SETTINGS as SETTINGS_DEFAULTS } from "@meetcat/settings";
@@ -60,6 +64,7 @@ import { createWakeDetector, type WakeDetector } from "./utils/wake-detector.js"
 let settings: TauriSettings | null = null;
 let overlay: HomepageOverlay | null = null;
 let countdown: JoinCountdown | null = null;
+let availableUpdate: UpdateInfo | null = null;
 let lastMeetings: Meeting[] = [];
 let mediaApplied = false;
 let joinAttempted = false;
@@ -389,6 +394,22 @@ async function setupEventListeners(): Promise<void> {
     console.warn("[MeetCat] Failed to listen for settings changes:", e);
     logToDisk("warn", "inject", "listener.settings_failed", "Settings listener failed");
   }
+
+  try {
+    const unsubUpdate = await onUpdateAvailable((update) => {
+      availableUpdate = update;
+      overlay?.setUpdateInfo(update ? { version: update.version } : null);
+      logToDisk("info", "update", "update.available_changed", "Update availability changed", {
+        hasUpdate: Boolean(update),
+        version: update?.version ?? null,
+      });
+    });
+    unsubscribers.push(unsubUpdate);
+    logToDisk("debug", "inject", "listener.update", "Update listener attached");
+  } catch (e) {
+    console.warn("[MeetCat] Failed to listen for update availability:", e);
+    logToDisk("warn", "inject", "listener.update_failed", "Update listener failed");
+  }
 }
 
 /**
@@ -437,6 +458,15 @@ async function initHomepage(): Promise<void> {
       unsubscribers.push(unsubNav);
     } catch (e) {
       console.warn("[MeetCat] Failed to listen for navigate-and-join:", e);
+    }
+
+    try {
+      availableUpdate = await getUpdateInfo();
+      overlay?.setUpdateInfo(
+        availableUpdate ? { version: availableUpdate.version } : null
+      );
+    } catch (e) {
+      console.warn("[MeetCat] Failed to load update info:", e);
     }
   }
 
@@ -533,7 +563,16 @@ function createOverlay(): void {
         overlayType: "homepage",
       });
     },
+    onUpdateClick: () => {
+      if (!isTauriEnvironment()) return;
+      openUpdateDialog().catch((error) => {
+        console.warn("[MeetCat] Failed to open update dialog:", error);
+      });
+    },
   });
+  if (availableUpdate) {
+    overlay.setUpdateInfo({ version: availableUpdate.version });
+  }
   logToDisk("info", "overlay", "overlay.created", "Homepage overlay created");
 
   // Update with current next meeting

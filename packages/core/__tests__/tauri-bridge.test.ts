@@ -9,6 +9,9 @@ import {
   onCheckMeetings,
   onNavigateAndJoin,
   onSettingsChanged,
+  getUpdateInfo,
+  onUpdateAvailable,
+  openUpdateDialog,
 } from "../src/tauri-bridge.js";
 import type { Meeting } from "../src/types.js";
 
@@ -228,6 +231,44 @@ describe("Tauri Bridge", () => {
         expect.any(Function)
       );
       expect(result).toBe(unlisten);
+    });
+  });
+
+  describe("getUpdateInfo", () => {
+    it("should call invoke with get_update_info command", async () => {
+      const payload = { version: "0.0.5", notes: "update notes" };
+      mockInvoke.mockResolvedValue(payload);
+
+      const result = await getUpdateInfo();
+
+      expect(mockInvoke).toHaveBeenCalledWith("get_update_info", undefined);
+      expect(result).toEqual(payload);
+    });
+  });
+
+  describe("onUpdateAvailable", () => {
+    it("should listen for update:available event", async () => {
+      const unlisten = vi.fn();
+      mockListen.mockResolvedValue(unlisten);
+      const handler = vi.fn();
+
+      const result = await onUpdateAvailable(handler);
+
+      expect(mockListen).toHaveBeenCalledWith(
+        "update:available",
+        expect.any(Function)
+      );
+      expect(result).toBe(unlisten);
+    });
+  });
+
+  describe("openUpdateDialog", () => {
+    it("should call invoke with open_update_dialog command", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await openUpdateDialog();
+
+      expect(mockInvoke).toHaveBeenCalledWith("open_update_dialog", undefined);
     });
   });
 });

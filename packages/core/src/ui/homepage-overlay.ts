@@ -7,11 +7,19 @@ export interface HomepageOverlayOptions {
   iconUrl?: string;
   /** Callback when user hides the overlay */
   onHide?: () => void;
+  /** Callback when user clicks update notice */
+  onUpdateClick?: () => void;
+}
+
+export interface UpdateNotice {
+  version: string;
 }
 
 export interface HomepageOverlay {
   /** Update the overlay with meeting info */
   update(meeting: Meeting | null): void;
+  /** Update or clear update notice */
+  setUpdateInfo(update: UpdateNotice | null): void;
   /** Remove the overlay from DOM */
   destroy(): void;
 }
@@ -59,7 +67,7 @@ export function createHomepageOverlay(
   container: Element,
   options: HomepageOverlayOptions = {}
 ): HomepageOverlay {
-  const { iconUrl, onHide } = options;
+  const { iconUrl, onHide, onUpdateClick } = options;
   const doc = container.ownerDocument;
   ensureStyles(doc);
 
@@ -84,6 +92,18 @@ export function createHomepageOverlay(
   subtitleEl.className = "meetcat-subtitle";
   textDiv.appendChild(subtitleEl);
 
+  const updateRow = doc.createElement("div");
+  updateRow.className = "meetcat-update-row";
+  updateRow.style.display = "none";
+
+  const updateButton = doc.createElement("button");
+  updateButton.type = "button";
+  updateButton.className = "meetcat-update-btn";
+  updateButton.textContent = "Update available";
+  updateButton.addEventListener("click", () => onUpdateClick?.());
+  updateRow.appendChild(updateButton);
+  textDiv.appendChild(updateRow);
+
   overlay.appendChild(textDiv);
 
   attachOverlayHideButton(overlay, { onHide });
@@ -92,6 +112,7 @@ export function createHomepageOverlay(
   let countdownSpan: HTMLSpanElement | null = null;
 
   let currentMeeting: Meeting | null = null;
+  let currentUpdate: UpdateNotice | null = null;
   let updateInterval: ReturnType<typeof setInterval> | null = null;
 
   function updateDisplay(): void {
@@ -139,6 +160,17 @@ export function createHomepageOverlay(
     update(meeting: Meeting | null): void {
       currentMeeting = meeting;
       updateDisplay();
+    },
+
+    setUpdateInfo(update: UpdateNotice | null): void {
+      currentUpdate = update;
+      if (!currentUpdate) {
+        updateRow.style.display = "none";
+        updateButton.textContent = "Update available";
+        return;
+      }
+      updateButton.textContent = `New version ${currentUpdate.version} available`;
+      updateRow.style.display = "block";
     },
 
     destroy(): void {

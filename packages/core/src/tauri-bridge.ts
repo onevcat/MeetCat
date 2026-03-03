@@ -48,6 +48,11 @@ export type CheckMeetingsPayload = {
   emittedAtMs: number;
 };
 
+export interface UpdateInfo {
+  version: string;
+  notes?: string | null;
+}
+
 /**
  * Navigation command from Rust
  */
@@ -174,6 +179,20 @@ export async function onSettingsChanged(
   handler: (settings: TauriSettings) => void
 ): Promise<() => void> {
   return listen<TauriSettings>("settings_changed", handler);
+}
+
+export async function getUpdateInfo(): Promise<UpdateInfo | null> {
+  return invoke<UpdateInfo | null>("get_update_info");
+}
+
+export async function onUpdateAvailable(
+  handler: (update: UpdateInfo | null) => void
+): Promise<() => void> {
+  return listen<UpdateInfo | null>("update:available", handler);
+}
+
+export async function openUpdateDialog(): Promise<void> {
+  await invoke("open_update_dialog");
 }
 
 /**

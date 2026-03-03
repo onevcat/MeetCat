@@ -65,6 +65,26 @@ export function createOverlayStyles(): HTMLStyleElement {
       margin-top: 2px;
     }
 
+    .meetcat-update-row {
+      margin-top: 6px;
+    }
+
+    .meetcat-update-btn {
+      background: transparent;
+      border: none;
+      color: #1a73e8;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 0;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .meetcat-update-btn:hover {
+      color: #1557b0;
+    }
+
     .meetcat-countdown {
       font-variant-numeric: tabular-nums;
       font-weight: 500;
