@@ -119,6 +119,33 @@ ensure_worktree_dependencies() {
   )
 }
 
+find_latest_artifact() {
+  local -a candidates=()
+  local pattern=""
+  local match=""
+  for pattern in "$@"; do
+    while IFS= read -r match; do
+      candidates+=("$match")
+    done < <(compgen -G "$pattern" || true)
+  done
+
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    return 1
+  fi
+
+  ls -t "${candidates[@]}" | head -n1
+}
+
+build_tauri_for_target() {
+  (
+    cd "$E2E_WORKTREE"
+    pnpm run version:set "$1"
+    pnpm run check:tauri-version
+    pnpm run build:shared
+    pnpm --filter @meetcat/tauri tauri build --target "$E2E_TARGET"
+  )
+}
+
 setup_signing_env() {
   local key_path
   local key_content
@@ -177,14 +204,15 @@ prepare() {
   update_endpoint "$E2E_ENDPOINT"
   ensure_worktree_dependencies
 
-  (
-    cd "$E2E_WORKTREE"
-    pnpm run version:set "$E2E_V1"
-    pnpm run build:tauri
-  )
+  build_tauri_for_target "$E2E_V1"
 
   local dmg_path
-  dmg_path="$(ls -t "$E2E_WORKTREE"/packages/tauri/src-tauri/target/"$E2E_TARGET"/release/bundle/dmg/*.dmg | head -n1)"
+  dmg_path="$(
+    find_latest_artifact \
+      "$E2E_WORKTREE/packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle/dmg/*.dmg" \
+      "$E2E_WORKTREE/packages/tauri/src-tauri/target/*/release/bundle/dmg/*.dmg" \
+      "$E2E_WORKTREE/packages/tauri/src-tauri/target/release/bundle/dmg/*.dmg"
+  )" || true
   if [[ -z "$dmg_path" ]]; then
     echo "[e2e] Failed to find V1 DMG" >&2
     exit 1
@@ -217,13 +245,17 @@ publish() {
 
   (
     cd "$E2E_WORKTREE"
-    pnpm run version:set "$E2E_V2"
-    pnpm run build:tauri
+    build_tauri_for_target "$E2E_V2"
 
     mkdir -p release
 
     local tar_path
-    tar_path="$(ls -t packages/tauri/src-tauri/target/"$E2E_TARGET"/release/bundle/macos/*.app.tar.gz | head -n1)"
+    tar_path="$(
+      find_latest_artifact \
+        "packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle/macos/*.app.tar.gz" \
+        "packages/tauri/src-tauri/target/*/release/bundle/macos/*.app.tar.gz" \
+        "packages/tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz"
+    )" || true
     local sig_path="${tar_path}.sig"
 
     if [[ ! -f "$tar_path" || ! -f "$sig_path" ]]; then
