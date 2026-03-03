@@ -15,6 +15,48 @@ DEFAULT_SIGNING_KEY_PATH="${HOME}/.tauri/meetcat-updater.key"
 SIGNING_KEY_PATH="${TAURI_SIGNING_PRIVATE_KEY_PATH:-${TAURI_PRIVATE_KEY_PATH:-$DEFAULT_SIGNING_KEY_PATH}}"
 SIGNING_KEY_CONTENT="${TAURI_SIGNING_PRIVATE_KEY:-${TAURI_PRIVATE_KEY:-}}"
 SIGNING_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-${TAURI_PRIVATE_KEY_PASSWORD:-}}"
+IFS=" " read -r -a targets <<< "$BUILD_TARGETS"
+
+validate_targets_selection() {
+  local has_universal=0
+  local target=""
+  for target in "${targets[@]}"; do
+    if [[ "$target" == "universal-apple-darwin" ]]; then
+      has_universal=1
+      break
+    fi
+  done
+
+  if [[ $has_universal -eq 1 && ${#targets[@]} -gt 1 ]]; then
+    echo "[release] BUILD_TARGETS cannot mix universal-apple-darwin with single-arch targets."
+    echo "[release] Current BUILD_TARGETS: $BUILD_TARGETS"
+    exit 1
+  fi
+}
+
+ensure_rust_target_installed() {
+  local rust_target="$1"
+  if ! rustup target list --installed | rg -q "^${rust_target}$"; then
+    echo "[release] Missing Rust target: $rust_target"
+    echo "[release] Run: rustup target add $rust_target"
+    exit 1
+  fi
+}
+
+validate_rust_targets() {
+  local target=""
+  for target in "${targets[@]}"; do
+    case "$target" in
+      universal-apple-darwin)
+        ensure_rust_target_installed "aarch64-apple-darwin"
+        ensure_rust_target_installed "x86_64-apple-darwin"
+        ;;
+      aarch64-apple-darwin|x86_64-apple-darwin)
+        ensure_rust_target_installed "$target"
+        ;;
+    esac
+  done
+}
 
 submit_with_keychain_profile() {
   local dmg_path="$1"
@@ -129,6 +171,14 @@ if ! command -v xcrun >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "[release] rustup is required."
+  exit 1
+fi
+
+validate_targets_selection
+validate_rust_targets
+
 if [[ -z "$SIGNING_KEY_CONTENT" ]]; then
   if [[ ! -f "$SIGNING_KEY_PATH" ]]; then
     echo "[release] Updater signing key not found: $SIGNING_KEY_PATH"
@@ -165,7 +215,6 @@ echo "[release] Building signed Tauri app..."
   export APPLE_TEAM_ID="$TEAM_ID"
   unset APPLE_ID
   unset APPLE_PASSWORD
-  IFS=" " read -r -a targets <<< "$BUILD_TARGETS"
   for target in "${targets[@]}"; do
     echo "[release] Building target: $target"
     pnpm --filter @meetcat/tauri tauri build --target "$target"
@@ -175,7 +224,6 @@ echo "[release] Building signed Tauri app..."
 mkdir -p "$RELEASE_DIR"
 rm -f "$ASSET_LIST_PATH"
 
-IFS=" " read -r -a targets <<< "$BUILD_TARGETS"
 for target in "${targets[@]}"; do
   DMG_DIR="$ROOT_DIR/packages/tauri/src-tauri/target/$target/release/bundle/dmg"
   if [[ ! -d "$DMG_DIR" ]]; then
