@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.updater-e2e.env"
 DEFAULT_WORKTREE="$(cd "$ROOT_DIR/.." && pwd)/MeetCat-updater-e2e"
+DEFAULT_SIGNING_KEY_PATH="${HOME}/.tauri/meetcat-updater.key"
 
 usage() {
   cat <<'USAGE'
@@ -118,10 +119,45 @@ ensure_worktree_dependencies() {
   )
 }
 
+setup_signing_env() {
+  local key_path
+  local key_content
+  local key_password
+
+  key_path="${TAURI_SIGNING_PRIVATE_KEY_PATH:-${TAURI_PRIVATE_KEY_PATH:-$DEFAULT_SIGNING_KEY_PATH}}"
+  key_content="${TAURI_SIGNING_PRIVATE_KEY:-${TAURI_PRIVATE_KEY:-}}"
+
+  if [[ -z "$key_content" ]]; then
+    if [[ ! -f "$key_path" ]]; then
+      echo "[e2e] Updater signing key not found: $key_path" >&2
+      echo "[e2e] Set TAURI_SIGNING_PRIVATE_KEY or TAURI_SIGNING_PRIVATE_KEY_PATH." >&2
+      exit 1
+    fi
+    key_content="$(cat "$key_path")"
+  fi
+
+  key_password="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-${TAURI_PRIVATE_KEY_PASSWORD:-}}"
+  if [[ -z "$key_password" ]]; then
+    if [[ -t 0 ]]; then
+      read -r -s -p "Updater signing key password (input hidden): " key_password
+      echo
+    else
+      echo "[e2e] Missing TAURI_SIGNING_PRIVATE_KEY_PASSWORD in non-interactive mode." >&2
+      exit 1
+    fi
+  fi
+
+  export TAURI_SIGNING_PRIVATE_KEY="$key_content"
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$key_password"
+  export TAURI_PRIVATE_KEY="$key_content"
+  export TAURI_PRIVATE_KEY_PASSWORD="$key_password"
+}
+
 prepare() {
   require_cmd git
   require_cmd node
   require_cmd pnpm
+  setup_signing_env
 
   E2E_BRANCH="${E2E_BRANCH:-feat/tauri-manual-updater}"
   E2E_WORKTREE="${E2E_WORKTREE:-$DEFAULT_WORKTREE}"
@@ -170,6 +206,7 @@ publish() {
   require_cmd node
   require_cmd pnpm
   require_cmd gh
+  setup_signing_env
 
   load_env
 
