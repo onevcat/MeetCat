@@ -60,10 +60,39 @@
   padding: 18px;
 }
 
+.update-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .update-dialog-header h2 {
   margin: 0;
   font-size: 18px;
   color: #202124;
+}
+
+.update-dialog-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #5f6368;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.update-dialog-close:hover:not(:disabled) {
+  background: #f1f3f4;
+  color: #202124;
+}
+
+.update-dialog-close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .update-dialog-description {
@@ -84,7 +113,7 @@
   text-transform: uppercase;
 }
 
-.update-dialog-notes pre {
+.update-dialog-markdown {
   margin: 0;
   padding: 10px;
   border: 1px solid #e8eaed;
@@ -95,7 +124,38 @@
     "Courier New", monospace;
   font-size: 12px;
   line-height: 1.45;
-  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.update-dialog-markdown h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #202124;
+}
+
+.update-dialog-markdown p {
+  margin: 0 0 8px;
+}
+
+.update-dialog-markdown ul,
+.update-dialog-markdown ol {
+  margin: 0 0 8px 16px;
+}
+
+.update-dialog-markdown li {
+  margin-bottom: 4px;
+}
+
+.update-dialog-markdown a {
+  color: #1a73e8;
+}
+
+.update-dialog-markdown code {
+  background: #e8eaed;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 11px;
 }
 
 .update-dialog-progress {
@@ -136,7 +196,16 @@
 
 .update-dialog-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
+}
+
+.update-dialog-minor-actions {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
+  flex-wrap: wrap;
 }

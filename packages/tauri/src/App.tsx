@@ -1,7 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   enable as enableAutostart,
   disable as disableAutostart,
@@ -22,6 +22,15 @@ type UpdateDownloadProgress = {
   total?: number | null;
   percent?: number | null;
 };
+
+type UpdatePreference = {
+  skippedVersion?: string;
+  remindVersion?: string;
+  remindUntilMs?: number;
+};
+
+const UPDATE_PREFERENCE_KEY = "meetcat.update.preference";
+const REMIND_LATER_MS = 24 * 60 * 60 * 1000;
 
 const defaultSettings = getTauriDefaults();
 
@@ -107,6 +116,169 @@ const adapter: SettingsAdapter = {
   getVersion: async () => getVersion(),
 };
 
+function loadUpdatePreference(): UpdatePreference {
+  const storage =
+    typeof globalThis !== "undefined"
+      ? (globalThis as { localStorage?: Storage }).localStorage
+      : undefined;
+  if (!storage || typeof storage.getItem !== "function") {
+    return {};
+  }
+  try {
+    const raw = storage.getItem(UPDATE_PREFERENCE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as UpdatePreference;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function saveUpdatePreference(next: UpdatePreference): void {
+  const storage =
+    typeof globalThis !== "undefined"
+      ? (globalThis as { localStorage?: Storage }).localStorage
+      : undefined;
+  if (!storage || typeof storage.setItem !== "function") {
+    return;
+  }
+  try {
+    storage.setItem(UPDATE_PREFERENCE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage write failure and keep in-memory preference.
+  }
+}
+
+function isSuppressedByPreference(
+  update: UpdateInfo | null,
+  preference: UpdatePreference
+): boolean {
+  if (!update) return false;
+  if (preference.skippedVersion === update.version) return true;
+  if (
+    preference.remindVersion === update.version &&
+    typeof preference.remindUntilMs === "number" &&
+    preference.remindUntilMs > Date.now()
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function renderInlineMarkdown(text: string): Array<string | JSX.Element> {
+  const parts: Array<string | JSX.Element> = [];
+  const pattern = /(`[^`]+`)|(\[[^\]]+\]\((https?:\/\/[^\s)]+)\))/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null = null;
+  let index = 0;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      parts.push(text.slice(cursor, match.index));
+    }
+    if (match[1]) {
+      parts.push(
+        <code key={`code-${index}`}>{match[1].slice(1, -1)}</code>
+      );
+    } else {
+      const raw = match[2];
+      const url = match[3];
+      const label = raw.slice(1, raw.indexOf("]"));
+      parts.push(
+        <a
+          key={`link-${index}`}
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {label}
+        </a>
+      );
+    }
+    cursor = pattern.lastIndex;
+    index += 1;
+  }
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+  if (parts.length === 0) {
+    return [text];
+  }
+  return parts;
+}
+
+function renderMarkdown(notes: string): JSX.Element {
+  const lines = notes.replace(/\r\n/g, "\n").split("\n");
+  const blocks: JSX.Element[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) {
+      i += 1;
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      blocks.push(
+        <h4 key={`h-${i}`}>
+          {renderInlineMarkdown(heading[2])}
+        </h4>
+      );
+      i += 1;
+      continue;
+    }
+
+    const bullet = line.match(/^- (.+)$/);
+    if (bullet) {
+      const items: JSX.Element[] = [];
+      while (i < lines.length) {
+        const candidate = lines[i].trim().match(/^- (.+)$/);
+        if (!candidate) break;
+        items.push(
+          <li key={`li-${i}`}>{renderInlineMarkdown(candidate[1])}</li>
+        );
+        i += 1;
+      }
+      blocks.push(<ul key={`ul-${i}`}>{items}</ul>);
+      continue;
+    }
+
+    const ordered = line.match(/^\d+\.\s+(.+)$/);
+    if (ordered) {
+      const items: JSX.Element[] = [];
+      while (i < lines.length) {
+        const candidate = lines[i].trim().match(/^\d+\.\s+(.+)$/);
+        if (!candidate) break;
+        items.push(
+          <li key={`ol-li-${i}`}>{renderInlineMarkdown(candidate[1])}</li>
+        );
+        i += 1;
+      }
+      blocks.push(<ol key={`ol-${i}`}>{items}</ol>);
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (i < lines.length) {
+      const text = lines[i].trim();
+      if (!text) break;
+      if (/^(#{1,3})\s+/.test(text)) break;
+      if (/^- /.test(text)) break;
+      if (/^\d+\.\s+/.test(text)) break;
+      paragraphLines.push(text);
+      i += 1;
+    }
+    blocks.push(
+      <p key={`p-${i}`}>
+        {renderInlineMarkdown(paragraphLines.join(" "))}
+      </p>
+    );
+  }
+
+  return <Fragment>{blocks}</Fragment>;
+}
+
 /**
  * Settings window for MeetCat Tauri app
  */
@@ -119,6 +291,15 @@ export function App() {
   const [updateStatusText, setUpdateStatusText] = useState<string | null>(null);
   const [updateErrorText, setUpdateErrorText] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<UpdateDownloadProgress | null>(null);
+  const [updatePreference, setUpdatePreference] = useState<UpdatePreference>(() =>
+    loadUpdatePreference()
+  );
+
+  const bannerUpdate = useMemo(() => {
+    if (!updateInfo) return null;
+    if (isSuppressedByPreference(updateInfo, updatePreference)) return null;
+    return updateInfo;
+  }, [updateInfo, updatePreference]);
 
   const formatBytes = (bytes: number): string => {
     if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
@@ -177,6 +358,31 @@ export function App() {
     },
     []
   );
+
+  const applyUpdatePreference = useCallback((next: UpdatePreference) => {
+    saveUpdatePreference(next);
+    setUpdatePreference(next);
+  }, []);
+
+  const skipCurrentVersion = useCallback(() => {
+    if (!updateInfo) return;
+    applyUpdatePreference({
+      skippedVersion: updateInfo.version,
+      remindVersion: undefined,
+      remindUntilMs: undefined,
+    });
+    setIsUpdateDialogOpen(false);
+  }, [applyUpdatePreference, updateInfo]);
+
+  const remindCurrentVersionLater = useCallback(() => {
+    if (!updateInfo) return;
+    applyUpdatePreference({
+      skippedVersion: undefined,
+      remindVersion: updateInfo.version,
+      remindUntilMs: Date.now() + REMIND_LATER_MS,
+    });
+    setIsUpdateDialogOpen(false);
+  }, [applyUpdatePreference, updateInfo]);
 
   const installUpdate = useCallback(async () => {
     if (isInstallingUpdate || !canInstallUpdate || !updateInfo) return;
@@ -292,10 +498,10 @@ export function App() {
 
   return (
     <div className="tauri-settings-shell">
-      {updateInfo && (
+      {bannerUpdate && (
         <div className="update-banner" role="status">
           <span className="update-banner-text">
-            New version {updateInfo.version} is available
+            New version {bannerUpdate.version} is available
           </span>
           <button
             type="button"
@@ -336,6 +542,15 @@ export function App() {
                   ? `Update to ${updateInfo.version}`
                   : "Check for updates"}
               </h2>
+              <button
+                type="button"
+                className="update-dialog-close"
+                aria-label="Close update dialog"
+                disabled={isInstallingUpdate}
+                onClick={() => setIsUpdateDialogOpen(false)}
+              >
+                ×
+              </button>
             </div>
 
             {updateInfo ? (
@@ -345,7 +560,9 @@ export function App() {
                 </p>
                 <div className="update-dialog-notes">
                   <h3>What&apos;s new</h3>
-                  <pre>{updateInfo.notes?.trim() || "No release notes provided."}</pre>
+                  <div className="update-dialog-markdown">
+                    {renderMarkdown(updateInfo.notes?.trim() || "No release notes provided.")}
+                  </div>
                 </div>
               </>
             ) : (
@@ -378,34 +595,49 @@ export function App() {
             {updateErrorText && <p className="update-dialog-error">{updateErrorText}</p>}
 
             <div className="update-dialog-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={isCheckingForUpdate || isInstallingUpdate}
-                onClick={() => {
-                  void checkForUpdates(false);
-                }}
-              >
-                {isCheckingForUpdate ? "Checking..." : "Check now"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!canInstallUpdate || isCheckingForUpdate || isInstallingUpdate}
-                onClick={() => {
-                  void installUpdate();
-                }}
-              >
-                {isInstallingUpdate ? "Installing..." : "Install update"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={isInstallingUpdate}
-                onClick={() => setIsUpdateDialogOpen(false)}
-              >
-                Close
-              </button>
+              {updateInfo ? (
+                <>
+                  <div className="update-dialog-minor-actions">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={isCheckingForUpdate || isInstallingUpdate}
+                      onClick={skipCurrentVersion}
+                    >
+                      Skip this version
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={isCheckingForUpdate || isInstallingUpdate}
+                      onClick={remindCurrentVersionLater}
+                    >
+                      Remind me tomorrow
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={!canInstallUpdate || isCheckingForUpdate || isInstallingUpdate}
+                    onClick={() => {
+                      void installUpdate();
+                    }}
+                  >
+                    {isInstallingUpdate ? "Installing..." : "Install update"}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isCheckingForUpdate || isInstallingUpdate}
+                  onClick={() => {
+                    void checkForUpdates(false);
+                  }}
+                >
+                  {isCheckingForUpdate ? "Checking..." : "Check for updates"}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -61,6 +61,9 @@ describe("App", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    if (typeof localStorage?.removeItem === "function") {
+      localStorage.removeItem("meetcat.update.preference");
+    }
     mockInvokeWithSettings(defaultSettings);
     mockListen.mockResolvedValue(() => {});
   });
@@ -566,7 +569,7 @@ describe("App", () => {
     });
   });
 
-  it("should keep install button disabled when no update is cached", async () => {
+  it("should show check action when no update is cached", async () => {
     mockInvoke.mockImplementation((cmd) => {
       if (cmd === "get_settings") return Promise.resolve(defaultSettings);
       if (cmd === "get_update_info") return Promise.resolve(null);
@@ -577,13 +580,14 @@ describe("App", () => {
 
     render(<App />);
 
-    const installButton = await screen.findByRole("button", {
-      name: "Install update",
+    const checkButton = await screen.findByRole("button", {
+      name: "Check for updates",
     });
-    expect(installButton).toBeDisabled();
+    expect(checkButton).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Install update" })).toBeNull();
   });
 
-  it("should disable install button after check failure", async () => {
+  it("should enable install button when update is cached", async () => {
     mockInvoke.mockImplementation((cmd) => {
       if (cmd === "get_settings") return Promise.resolve(defaultSettings);
       if (cmd === "get_update_info") {
@@ -591,7 +595,6 @@ describe("App", () => {
       }
       if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
       if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
-      if (cmd === "check_for_update_manual") return Promise.reject(new Error("check failed"));
       return Promise.resolve(undefined);
     });
 
@@ -601,13 +604,68 @@ describe("App", () => {
       name: "Install update",
     });
     expect(installButton).toBeEnabled();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Check now" }));
+  it("should show error after manual check failure", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") return Promise.resolve(null);
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      if (cmd === "check_for_update_manual") return Promise.reject(new Error("check failed"));
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
 
     await waitFor(() => {
       expect(screen.getByText("check failed")).toBeInTheDocument();
     });
-    expect(installButton).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Install update" })).toBeNull();
+  });
+
+  it("should hide banner after skipping current version", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") {
+        return Promise.resolve({ version: "0.0.99", notes: "- item" });
+      }
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("New version 0.0.99 is available")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Skip this version" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("New version 0.0.99 is available")).toBeNull();
+    });
+  });
+
+  it("should hide banner after remind later action", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") {
+        return Promise.resolve({ version: "0.0.99", notes: "- item" });
+      }
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("New version 0.0.99 is available")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Remind me tomorrow" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("New version 0.0.99 is available")).toBeNull();
+    });
   });
 
   it("should show saving indicator when saving", async () => {
