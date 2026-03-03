@@ -21,9 +21,10 @@ Implemented in `@meetcat/core`:
   - Excludes volatile fields like `startsInMinutes` so countdown ticks do not look like data changes.
 - `HomepageReloadWatchdog`
   - Default stale threshold: `30 min`
+  - **Force-stale threshold: `4 hours`** — overrides foreground deferral for prolonged staleness (e.g. overnight idle).
   - Backoff schedule: `30 -> 60 -> 120 min`
   - Daily reload cap: `8`
-  - Foreground-aware: marks reload as pending while focused, triggers only after background/blur.
+  - Foreground-aware: marks reload as pending while focused, triggers only after background/blur — unless force-stale threshold is exceeded.
 
 ## Extension: Stability Efforts in v0.0.4
 
@@ -72,15 +73,25 @@ Primary files:
 - Added same fingerprint watchdog flow as extension side.
 - Evaluated after each homepage parse before reporting/scheduling updates.
 - Defers reload while homepage is foreground; flushes on `visibilitychange` and `window.blur`.
+- **Force-stale override**: when data is unchanged for ≥ `4 hours` (`DEFAULT_HOMEPAGE_FORCE_STALE_THRESHOLD_MS`), the watchdog forces a reload even while the page is in the foreground. This covers the case where the Mac stays awake overnight without sleeping, the Google session expires, and a reload is necessary to detect the new session state. The force-stale threshold is always clamped to be ≥ the normal stale threshold.
 - Adds recovery logs (`homepage.reload.*`) for operational diagnostics.
 
-### 2. Homepage refresh shortcut and app menu integration
+### 2. System wake detector
+
+- Detects system sleep/wake via time-jump heuristic in the injected script (`inject.ts`).
+- A `setInterval` ticks every `10s`; if elapsed time since last tick exceeds `60s`, the system likely just woke from sleep.
+- On wake detection: stops the detector, waits `3s` for network reconnection, then calls `location.reload()`.
+- Complements the force-stale watchdog: wake detector handles the common case (Mac sleeps overnight, wakes up) with immediate reload; force-stale handles the edge case (Mac stays awake overnight) with a delayed but guaranteed reload.
+- Lifecycle: started in `initHomepage()`, cleaned up in `cleanup()`.
+- Logs: `homepage.wake.detected`, `homepage.wake.reload`, `homepage.wake.start`, `homepage.wake.stop`.
+
+### 3. Homepage refresh shortcut and app menu integration
 
 - Homepage script listens for `Cmd+R` and performs `location.reload()`.
 - macOS app menu adds `Refresh Home` with `Cmd+R`.
 - Rust side enables/disables this menu item according to detected page type.
 
-### 3. Auto-join safety guard
+### 4. Auto-join safety guard
 
 - Same in-meeting detection via leave button on Tauri webview page.
 - Prevents repeated join attempts after already entering meeting.
@@ -101,7 +112,7 @@ These are important when modifying or validating v0.0.4 behavior:
 When changing reliability logic, keep these invariants aligned:
 
 - Same stale policy constants unless there is an explicit product reason.
-- Same foreground deferral semantics (avoid visible forced reload while user is active).
+- Same foreground deferral semantics (avoid visible forced reload while user is active), with same force-stale override threshold for prolonged staleness.
 - Same joined/suppressed meeting filtering semantics for scheduling and overlay.
 - Same leave-button based in-meeting detection to block duplicate auto-join attempts.
 

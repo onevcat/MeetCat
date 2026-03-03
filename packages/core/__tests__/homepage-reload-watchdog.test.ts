@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createHomepageReloadWatchdog,
   createMeetingsFingerprint,
+  DEFAULT_HOMEPAGE_FORCE_STALE_THRESHOLD_MS,
 } from "../src/utils/homepage-reload-watchdog.js";
 import type { Meeting } from "../src/types.js";
 
@@ -47,6 +48,28 @@ describe("createMeetingsFingerprint", () => {
     expect(createMeetingsFingerprint([changedCallId])).not.toBe(baseFingerprint);
     expect(createMeetingsFingerprint([changedTitle])).not.toBe(baseFingerprint);
     expect(createMeetingsFingerprint([changedBegin])).not.toBe(baseFingerprint);
+  });
+
+  it("returns stable value for empty array", () => {
+    expect(createMeetingsFingerprint([])).toBe("0:empty");
+    expect(createMeetingsFingerprint([])).toBe(createMeetingsFingerprint([]));
+  });
+
+  it("handles meetings with invalid dates gracefully", () => {
+    const m = meeting({
+      beginTime: new Date("invalid"),
+      endTime: new Date("invalid"),
+    });
+    const fingerprint = createMeetingsFingerprint([m]);
+    expect(fingerprint).toMatch(/^1:/);
+    // Should be stable across calls
+    expect(createMeetingsFingerprint([m])).toBe(fingerprint);
+  });
+
+  it("produces same fingerprint regardless of meeting order", () => {
+    const m1 = meeting({ callId: "aaa-bbbb-ccc", title: "Alpha" });
+    const m2 = meeting({ callId: "xxx-yyyy-zzz", title: "Beta" });
+    expect(createMeetingsFingerprint([m1, m2])).toBe(createMeetingsFingerprint([m2, m1]));
   });
 });
 
@@ -250,6 +273,123 @@ describe("HomepageReloadWatchdog", () => {
     });
     expect(result.action).toBe("none");
     expect(result.reason).toBe("not_homepage");
+  });
+
+  it("returns not_stale when fingerprint is unchanged within threshold", () => {
+    const watchdog = createHomepageReloadWatchdog(config);
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    const result = watchdog.evaluate({
+      fingerprint,
+      nowMs: 500, // < staleThresholdMs (1000)
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(result.action).toBe("none");
+    expect(result.reason).toBe("not_stale");
+    expect(result.staleForMs).toBe(500);
+  });
+
+  it("daily limit blocks force_stale reload", () => {
+    const forceConfig = {
+      ...config,
+      dailyReloadLimit: 1,
+      forceStaleThresholdMs: 5_000,
+    };
+    const watchdog = createHomepageReloadWatchdog(forceConfig);
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    // Use up the daily limit with a background reload
+    const reloaded = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(reloaded.action).toBe("reload");
+    expect(reloaded.reloadCountToday).toBe(1);
+
+    // Now exceed force threshold in foreground — daily_limit should block it
+    const blocked = watchdog.evaluate({
+      fingerprint,
+      nowMs: 6_000,
+      isHomepage: true,
+      isForeground: true,
+    });
+    expect(blocked.action).toBe("none");
+    expect(blocked.reason).toBe("daily_limit");
+  });
+
+  it("clamps forceStaleThresholdMs to at least staleThresholdMs", () => {
+    const clampConfig = {
+      staleThresholdMs: 2_000,
+      forceStaleThresholdMs: 500, // lower than staleThresholdMs
+      backoffScheduleMs: [1_000],
+      dailyReloadLimit: 8,
+      getDayKey: () => "day",
+    };
+    const watchdog = createHomepageReloadWatchdog(clampConfig);
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: true });
+
+    // At 1_500ms: past the configured forceStaleThresholdMs (500) but within
+    // staleThresholdMs (2_000). If clamping works, this should be not_stale.
+    const result = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_500,
+      isHomepage: true,
+      isForeground: true,
+    });
+    expect(result.action).toBe("none");
+    expect(result.reason).toBe("not_stale");
+
+    // At 2_500ms: past staleThresholdMs but force threshold is clamped to 2_000,
+    // so it should force reload in foreground.
+    const forced = watchdog.evaluate({
+      fingerprint,
+      nowMs: 2_500,
+      isHomepage: true,
+      isForeground: true,
+    });
+    expect(forced.action).toBe("reload");
+    expect(forced.reason).toBe("force_stale");
+  });
+
+  it("uses default 4-hour force stale threshold when not configured", () => {
+    const defaultWatchdog = createHomepageReloadWatchdog({
+      staleThresholdMs: 1_000,
+      backoffScheduleMs: [1_000],
+      dailyReloadLimit: 8,
+      getDayKey: () => "day",
+    });
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    defaultWatchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: true });
+
+    // At 2 hours: should defer (< 4h force threshold)
+    const deferred = defaultWatchdog.evaluate({
+      fingerprint,
+      nowMs: 2 * 60 * 60 * 1000,
+      isHomepage: true,
+      isForeground: true,
+    });
+    expect(deferred.action).toBe("defer");
+    expect(deferred.reason).toBe("foreground");
+
+    // At 4h+1ms: should force reload
+    const forced = defaultWatchdog.evaluate({
+      fingerprint,
+      nowMs: DEFAULT_HOMEPAGE_FORCE_STALE_THRESHOLD_MS + 1,
+      isHomepage: true,
+      isForeground: true,
+    });
+    expect(forced.action).toBe("reload");
+    expect(forced.reason).toBe("force_stale");
   });
 
   it("force reloads in foreground when stale exceeds force threshold", () => {
