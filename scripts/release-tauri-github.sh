@@ -15,6 +15,24 @@ ALLOW_DIRTY="${ALLOW_DIRTY:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 BUILD_TARGETS="${BUILD_TARGETS:-universal-apple-darwin}"
 
+updater_platform_keys_for_target() {
+  local target="$1"
+  case "$target" in
+    universal-apple-darwin)
+      echo "darwin-aarch64-app darwin-aarch64 darwin-x86_64-app darwin-x86_64"
+      ;;
+    aarch64-apple-darwin)
+      echo "darwin-aarch64-app darwin-aarch64"
+      ;;
+    x86_64-apple-darwin)
+      echo "darwin-x86_64-app darwin-x86_64"
+      ;;
+    *)
+      echo "$target"
+      ;;
+  esac
+}
+
 if ! command -v gh >/dev/null 2>&1; then
   echo "[release] gh CLI is required." >&2
   exit 1
@@ -103,7 +121,10 @@ for target in "${targets[@]}"; do
   fi
 
   updater_url="https://github.com/onevcat/MeetCat/releases/download/${TAG}/${updater_name}"
-  PLATFORM_ARGS+=(--platform "${target}|${updater_url}|${updater_sig_path}")
+  keys="$(updater_platform_keys_for_target "$target")"
+  for key in $keys; do
+    PLATFORM_ARGS+=(--platform "${key}|${updater_url}|${updater_sig_path}")
+  done
 done
 
 echo "[release] Generating updater metadata: $VERSION_JSON_PATH"
