@@ -54,6 +54,9 @@ ENV
 }
 
 ensure_worktree() {
+  # Clean stale worktree registrations first.
+  git -C "$ROOT_DIR" worktree prune --expire now >/dev/null 2>&1 || true
+
   if [[ -d "$E2E_WORKTREE/.git" ]]; then
     echo "[e2e] Worktree already exists: $E2E_WORKTREE"
     return
@@ -79,6 +82,13 @@ ensure_worktree() {
   local branch_head
   branch_head="$(git -C "$ROOT_DIR" rev-parse "$branch_ref")"
   echo "[e2e] Branch is busy in another worktree, using detached HEAD: $branch_head"
+  if git -C "$ROOT_DIR" worktree add --detach "$E2E_WORKTREE" "$branch_head"; then
+    return
+  fi
+
+  # If a missing-but-registered path still exists, remove the registration and retry once.
+  git -C "$ROOT_DIR" worktree remove --force "$E2E_WORKTREE" >/dev/null 2>&1 || true
+  git -C "$ROOT_DIR" worktree prune --expire now >/dev/null 2>&1 || true
   git -C "$ROOT_DIR" worktree add --detach "$E2E_WORKTREE" "$branch_head"
 }
 
