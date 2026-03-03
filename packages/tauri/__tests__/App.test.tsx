@@ -566,6 +566,50 @@ describe("App", () => {
     });
   });
 
+  it("should keep install button disabled when no update is cached", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") return Promise.resolve(null);
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    const installButton = await screen.findByRole("button", {
+      name: "Install update",
+    });
+    expect(installButton).toBeDisabled();
+  });
+
+  it("should disable install button after check failure", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") {
+        return Promise.resolve({ version: "0.0.99", notes: "cached" });
+      }
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      if (cmd === "check_for_update_manual") return Promise.reject(new Error("check failed"));
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    const installButton = await screen.findByRole("button", {
+      name: "Install update",
+    });
+    expect(installButton).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Check now" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("check failed")).toBeInTheDocument();
+    });
+    expect(installButton).toBeDisabled();
+  });
+
   it("should show saving indicator when saving", async () => {
     // Make save hang to see the indicator
     mockInvoke.mockImplementation((cmd) => {

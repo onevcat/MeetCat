@@ -112,6 +112,7 @@ const adapter: SettingsAdapter = {
  */
 export function App() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [canInstallUpdate, setCanInstallUpdate] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isCheckingForUpdate, setIsCheckingForUpdate] = useState(false);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
@@ -151,12 +152,14 @@ export function App() {
         setIsUpdateDialogOpen(true);
       }
       setIsCheckingForUpdate(true);
+      setCanInstallUpdate(false);
       setUpdateErrorText(null);
       setUpdateStatusText("Checking for updates...");
 
       try {
         const result = await invoke<UpdateInfo | null>("check_for_update_manual");
         setUpdateInfo(result);
+        setCanInstallUpdate(Boolean(result));
         if (result) {
           setUpdateStatusText(`New version ${result.version} is available.`);
         } else {
@@ -164,6 +167,8 @@ export function App() {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        setUpdateInfo(null);
+        setCanInstallUpdate(false);
         setUpdateErrorText(message);
         setUpdateStatusText(null);
       } finally {
@@ -174,8 +179,9 @@ export function App() {
   );
 
   const installUpdate = useCallback(async () => {
-    if (isInstallingUpdate) return;
+    if (isInstallingUpdate || !canInstallUpdate || !updateInfo) return;
     setIsInstallingUpdate(true);
+    setCanInstallUpdate(false);
     setUpdateErrorText(null);
     setDownloadProgress(null);
     setUpdateStatusText("Downloading update...");
@@ -184,6 +190,7 @@ export function App() {
         autoRestart: true,
       });
       if (!installed) {
+        setUpdateInfo(null);
         setUpdateStatusText("No update is available.");
         setIsInstallingUpdate(false);
         return;
@@ -206,6 +213,7 @@ export function App() {
         const info = await invoke<UpdateInfo | null>("get_update_info");
         if (!disposed) {
           setUpdateInfo(info);
+          setCanInstallUpdate(Boolean(info));
         }
       } catch (error) {
         console.error("Failed to load update info:", error);
@@ -234,6 +242,7 @@ export function App() {
       const unlistenUpdate = await listen<UpdateInfo | null>("update:available", (event) => {
         if (!disposed) {
           setUpdateInfo(event.payload);
+          setCanInstallUpdate(Boolean(event.payload));
         }
       });
       cleanupTasks.push(unlistenUpdate);
@@ -382,7 +391,7 @@ export function App() {
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!updateInfo || isCheckingForUpdate || isInstallingUpdate}
+                disabled={!canInstallUpdate || isCheckingForUpdate || isInstallingUpdate}
                 onClick={() => {
                   void installUpdate();
                 }}
