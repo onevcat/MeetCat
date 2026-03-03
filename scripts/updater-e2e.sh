@@ -106,6 +106,18 @@ fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 ' "$E2E_WORKTREE/packages/tauri/src-tauri/tauri.conf.json" "$endpoint"
 }
 
+ensure_worktree_dependencies() {
+  if [[ -d "$E2E_WORKTREE/node_modules" ]]; then
+    return
+  fi
+
+  echo "[e2e] Installing dependencies in worktree..."
+  (
+    cd "$E2E_WORKTREE"
+    pnpm install --frozen-lockfile
+  )
+}
+
 prepare() {
   require_cmd git
   require_cmd node
@@ -127,6 +139,7 @@ prepare() {
   echo "[e2e] Using endpoint: $E2E_ENDPOINT"
 
   update_endpoint "$E2E_ENDPOINT"
+  ensure_worktree_dependencies
 
   (
     cd "$E2E_WORKTREE"
