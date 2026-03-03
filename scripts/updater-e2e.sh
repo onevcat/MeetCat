@@ -119,21 +119,16 @@ ensure_worktree_dependencies() {
   )
 }
 
-find_latest_artifact() {
-  local -a candidates=()
-  local pattern=""
-  local match=""
-  for pattern in "$@"; do
-    while IFS= read -r match; do
-      candidates+=("$match")
-    done < <(compgen -G "$pattern" || true)
-  done
-
-  if [[ ${#candidates[@]} -eq 0 ]]; then
-    return 1
-  fi
-
-  ls -t "${candidates[@]}" | head -n1
+stable_updater_name_for_target() {
+  local target="$1"
+  case "$target" in
+    universal-apple-darwin)
+      echo "MeetCat_macos_universal.app.tar.gz"
+      ;;
+    *)
+      echo "MeetCat_macos_${target}.app.tar.gz"
+      ;;
+  esac
 }
 
 build_tauri_for_target() {
@@ -142,6 +137,7 @@ build_tauri_for_target() {
     pnpm run version:set "$1"
     pnpm run check:tauri-version
     pnpm run build:shared
+    rm -rf "packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle"
     pnpm --filter @meetcat/tauri tauri build --target "$E2E_TARGET"
   )
 }
@@ -207,14 +203,10 @@ prepare() {
   build_tauri_for_target "$E2E_V1"
 
   local dmg_path
-  dmg_path="$(
-    find_latest_artifact \
-      "$E2E_WORKTREE/packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle/dmg/*.dmg" \
-      "$E2E_WORKTREE/packages/tauri/src-tauri/target/*/release/bundle/dmg/*.dmg" \
-      "$E2E_WORKTREE/packages/tauri/src-tauri/target/release/bundle/dmg/*.dmg"
-  )" || true
+  dmg_path="$(ls -t "$E2E_WORKTREE"/packages/tauri/src-tauri/target/"$E2E_TARGET"/release/bundle/dmg/*.dmg 2>/dev/null | head -n1)"
   if [[ -z "$dmg_path" ]]; then
-    echo "[e2e] Failed to find V1 DMG" >&2
+    echo "[e2e] Failed to find V1 DMG for target: $E2E_TARGET" >&2
+    echo "[e2e] Expected path: $E2E_WORKTREE/packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle/dmg" >&2
     exit 1
   fi
 
@@ -249,22 +241,21 @@ publish() {
 
     mkdir -p release
 
+    local updater_name
+    updater_name="$(stable_updater_name_for_target "$E2E_TARGET")"
+
     local tar_path
-    tar_path="$(
-      find_latest_artifact \
-        "packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle/macos/*.app.tar.gz" \
-        "packages/tauri/src-tauri/target/*/release/bundle/macos/*.app.tar.gz" \
-        "packages/tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz"
-    )" || true
+    tar_path="$(ls -t "packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle/macos/"*.app.tar.gz 2>/dev/null | head -n1)"
     local sig_path="${tar_path}.sig"
 
     if [[ ! -f "$tar_path" || ! -f "$sig_path" ]]; then
-      echo "[e2e] Missing updater tarball or signature" >&2
+      echo "[e2e] Missing updater tarball or signature for target: $E2E_TARGET" >&2
+      echo "[e2e] Expected path: packages/tauri/src-tauri/target/$E2E_TARGET/release/bundle/macos" >&2
       exit 1
     fi
 
-    cp -f "$tar_path" release/MeetCat_macos_universal.app.tar.gz
-    cp -f "$sig_path" release/MeetCat_macos_universal.app.tar.gz.sig
+    cp -f "$tar_path" "release/${updater_name}"
+    cp -f "$sig_path" "release/${updater_name}.sig"
 
     cat > release/e2e-notes.md <<NOTES
 - Updater E2E validation release.
@@ -275,7 +266,7 @@ NOTES
       --version "$E2E_V2" \
       --notes-file release/e2e-notes.md \
       --out release/version.json \
-      --platform "$E2E_TARGET|https://github.com/$E2E_RELEASE_REPO/releases/download/$E2E_TAG/MeetCat_macos_universal.app.tar.gz|release/MeetCat_macos_universal.app.tar.gz.sig"
+      --platform "$E2E_TARGET|https://github.com/$E2E_RELEASE_REPO/releases/download/$E2E_TAG/$updater_name|release/${updater_name}.sig"
 
     gh release delete "$E2E_TAG" --repo "$E2E_RELEASE_REPO" --yes --cleanup-tag >/dev/null 2>&1 || true
 
@@ -285,8 +276,8 @@ NOTES
       --target "$(git rev-parse HEAD)" \
       --title "Updater E2E $E2E_TAG" \
       --notes "Updater E2E only. Do not use in production." \
-      release/MeetCat_macos_universal.app.tar.gz \
-      release/MeetCat_macos_universal.app.tar.gz.sig \
+      "release/${updater_name}" \
+      "release/${updater_name}.sig" \
       release/version.json
   )
 
