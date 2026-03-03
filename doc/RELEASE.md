@@ -84,6 +84,22 @@ To build and notarize the DMG without publishing a GitHub release:
 pnpm run release:tauri:build
 ```
 
+## Updater E2E (Safe for production latest link)
+
+Use a GitHub pre-release tag so `releases/latest` remains unchanged.
+
+Run exactly three commands:
+
+```bash
+bash scripts/updater-e2e.sh prepare
+bash scripts/updater-e2e.sh publish
+bash scripts/updater-e2e.sh finish
+```
+
+- `prepare`: creates a dedicated worktree, builds/installable V1 bootstrap app with fixed updater endpoint.
+- `publish`: builds V2, uploads `.app.tar.gz + .sig + version.json` to a pre-release tag.
+- `finish`: deletes the pre-release/tag and removes local E2E env file.
+
 ## Tauri Version Upgrades
 
 Tauri requires the Rust crate and the NPM API package to stay on the same major/minor.

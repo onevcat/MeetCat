@@ -20,6 +20,7 @@ pnpm-debug.log*
 .env.*
 !.env.example
 !.env.*.example
+.updater-e2e.env
 
 # --- Node / PNPM ---
 node_modules/
