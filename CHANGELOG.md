@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5]
+
+Auto updating support is now integrated for the macOS desktop app, with user-visible prompts across tray, settings, and overlay before installation.
+
+### Added
+
+- Added auto updating support for the macOS app, including startup/daily checks, tray/settings/overlay prompts, release notes, and explicit user-confirmed installation.
+
+### Changed
+
+- Changed stale-homepage recovery to detect wake-from-sleep and trigger controlled homepage refresh after wake.
+- Changed stale-homepage policy to force refresh after long unchanged sessions (foreground included) for better overnight/session-long reliability.
+
+### Fixed
+
+- Fixed homepage freshness handling to reduce stale meeting lists during long-running sessions and after system wake.
+
 ## [0.0.4] - 2026-02-09
 
 A reliability-focused release for homepage freshness and long-running stability across both the Chrome extension and the macOS app.
