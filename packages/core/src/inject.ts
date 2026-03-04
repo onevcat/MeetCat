@@ -36,10 +36,12 @@ import {
   reportMeetings,
   getSettings,
   getUpdateInfo,
+  getUpdatePromptPreference,
   onCheckMeetings,
   onNavigateAndJoin,
   onSettingsChanged,
   onUpdateAvailable,
+  onUpdatePromptPreferenceChanged,
   openUpdateDialog,
   reportJoined,
   reportMeetingClosed,
@@ -51,6 +53,7 @@ import {
   type TauriSettings,
   type NavigateAndJoinCommand,
   type UpdateInfo,
+  type UpdatePromptPreference,
 } from "./tauri-bridge.js";
 import type { Meeting } from "./types.js";
 import { DEFAULT_SETTINGS as SETTINGS_DEFAULTS } from "@meetcat/settings";
@@ -65,6 +68,7 @@ let settings: TauriSettings | null = null;
 let overlay: HomepageOverlay | null = null;
 let countdown: JoinCountdown | null = null;
 let availableUpdate: UpdateInfo | null = null;
+let updatePromptPreference: UpdatePromptPreference = {};
 let lastMeetings: Meeting[] = [];
 let mediaApplied = false;
 let joinAttempted = false;
@@ -213,6 +217,32 @@ function reportPageDetectedForNativeState(
   }).catch((error) => {
     console.warn("[MeetCat] Failed to report page detection:", error);
   });
+}
+
+function isUpdateNoticeSuppressed(
+  update: UpdateInfo | null,
+  preference: UpdatePromptPreference,
+  nowMs: number = Date.now()
+): boolean {
+  if (!update) return false;
+  if (preference.skippedVersion === update.version) return true;
+  if (
+    preference.remindVersion === update.version &&
+    typeof preference.remindUntilMs === "number" &&
+    preference.remindUntilMs > nowMs
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function syncOverlayUpdateNotice(): void {
+  if (!overlay) return;
+  if (!availableUpdate || isUpdateNoticeSuppressed(availableUpdate, updatePromptPreference)) {
+    overlay.setUpdateInfo(null);
+    return;
+  }
+  overlay.setUpdateInfo({ version: availableUpdate.version });
 }
 
 function detectEnteredMeeting(stage: string): boolean {
@@ -396,9 +426,38 @@ async function setupEventListeners(): Promise<void> {
   }
 
   try {
+    updatePromptPreference = await getUpdatePromptPreference();
+    syncOverlayUpdateNotice();
+  } catch (e) {
+    console.warn("[MeetCat] Failed to load update prompt preference:", e);
+  }
+
+  try {
+    const unsubUpdatePreference = await onUpdatePromptPreferenceChanged((preference) => {
+      updatePromptPreference = preference;
+      syncOverlayUpdateNotice();
+    });
+    unsubscribers.push(unsubUpdatePreference);
+    logToDisk(
+      "debug",
+      "inject",
+      "listener.update_preference",
+      "Update preference listener attached"
+    );
+  } catch (e) {
+    console.warn("[MeetCat] Failed to listen for update prompt preference:", e);
+    logToDisk(
+      "warn",
+      "inject",
+      "listener.update_preference_failed",
+      "Update preference listener failed"
+    );
+  }
+
+  try {
     const unsubUpdate = await onUpdateAvailable((update) => {
       availableUpdate = update;
-      overlay?.setUpdateInfo(update ? { version: update.version } : null);
+      syncOverlayUpdateNotice();
       logToDisk("info", "update", "update.available_changed", "Update availability changed", {
         hasUpdate: Boolean(update),
         version: update?.version ?? null,
@@ -461,10 +520,15 @@ async function initHomepage(): Promise<void> {
     }
 
     try {
+      updatePromptPreference = await getUpdatePromptPreference();
+      syncOverlayUpdateNotice();
+    } catch (e) {
+      console.warn("[MeetCat] Failed to load update prompt preference:", e);
+    }
+
+    try {
       availableUpdate = await getUpdateInfo();
-      overlay?.setUpdateInfo(
-        availableUpdate ? { version: availableUpdate.version } : null
-      );
+      syncOverlayUpdateNotice();
     } catch (e) {
       console.warn("[MeetCat] Failed to load update info:", e);
     }
@@ -570,9 +634,7 @@ function createOverlay(): void {
       });
     },
   });
-  if (availableUpdate) {
-    overlay.setUpdateInfo({ version: availableUpdate.version });
-  }
+  syncOverlayUpdateNotice();
   logToDisk("info", "overlay", "overlay.created", "Homepage overlay created");
 
   // Update with current next meeting

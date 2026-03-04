@@ -29,11 +29,17 @@ describe("App", () => {
       if (cmd === "get_update_info") {
         return Promise.resolve(null);
       }
+      if (cmd === "get_update_prompt_preference") {
+        return Promise.resolve({});
+      }
       if (cmd === "consume_open_update_dialog_request") {
         return Promise.resolve(false);
       }
       if (cmd === "consume_manual_update_check_request") {
         return Promise.resolve(false);
+      }
+      if (cmd === "set_update_prompt_preference") {
+        return Promise.resolve(undefined);
       }
       if (cmd === "check_for_update_manual") {
         return Promise.resolve(null);
@@ -645,6 +651,13 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.queryByText("New version 0.0.99 is available")).toBeNull();
     });
+    expect(mockInvoke).toHaveBeenCalledWith("set_update_prompt_preference", {
+      preference: {
+        skippedVersion: "0.0.99",
+        remindVersion: undefined,
+        remindUntilMs: undefined,
+      },
+    });
   });
 
   it("should hide banner after remind later action", async () => {
@@ -665,6 +678,12 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.queryByText("New version 0.0.99 is available")).toBeNull();
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("set_update_prompt_preference", {
+      preference: expect.objectContaining({
+        skippedVersion: undefined,
+        remindVersion: "0.0.99",
+      }),
     });
   });
 

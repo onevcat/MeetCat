@@ -12,6 +12,9 @@ import {
   getUpdateInfo,
   onUpdateAvailable,
   openUpdateDialog,
+  getUpdatePromptPreference,
+  setUpdatePromptPreference,
+  onUpdatePromptPreferenceChanged,
 } from "../src/tauri-bridge.js";
 import type { Meeting } from "../src/types.js";
 
@@ -269,6 +272,49 @@ describe("Tauri Bridge", () => {
       await openUpdateDialog();
 
       expect(mockInvoke).toHaveBeenCalledWith("open_update_dialog", undefined);
+    });
+  });
+
+  describe("getUpdatePromptPreference", () => {
+    it("should call invoke with get_update_prompt_preference command", async () => {
+      const payload = { skippedVersion: "0.0.99" };
+      mockInvoke.mockResolvedValue(payload);
+
+      const result = await getUpdatePromptPreference();
+
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "get_update_prompt_preference",
+        undefined
+      );
+      expect(result).toEqual(payload);
+    });
+  });
+
+  describe("setUpdatePromptPreference", () => {
+    it("should call invoke with set_update_prompt_preference command", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await setUpdatePromptPreference({ remindVersion: "0.0.99", remindUntilMs: 1234 });
+
+      expect(mockInvoke).toHaveBeenCalledWith("set_update_prompt_preference", {
+        preference: { remindVersion: "0.0.99", remindUntilMs: 1234 },
+      });
+    });
+  });
+
+  describe("onUpdatePromptPreferenceChanged", () => {
+    it("should listen for update:preference-changed event", async () => {
+      const unlisten = vi.fn();
+      mockListen.mockResolvedValue(unlisten);
+      const handler = vi.fn();
+
+      const result = await onUpdatePromptPreferenceChanged(handler);
+
+      expect(mockListen).toHaveBeenCalledWith(
+        "update:preference-changed",
+        expect.any(Function)
+      );
+      expect(result).toBe(unlisten);
     });
   });
 });

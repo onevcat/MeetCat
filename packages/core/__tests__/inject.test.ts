@@ -38,6 +38,8 @@ const tauriMocks = vi.hoisted(() => ({
   onNavigateAndJoin: vi.fn(),
   onSettingsChanged: vi.fn(),
   onUpdateAvailable: vi.fn(),
+  getUpdatePromptPreference: vi.fn(),
+  onUpdatePromptPreferenceChanged: vi.fn(),
   getUpdateInfo: vi.fn(),
   openUpdateDialog: vi.fn(),
   reportJoined: vi.fn(),
@@ -61,6 +63,8 @@ describe("inject homepage checks", () => {
     vi.resetModules();
     vi.clearAllMocks();
     tauriMocks.onUpdateAvailable.mockResolvedValue(() => {});
+    tauriMocks.onUpdatePromptPreferenceChanged.mockResolvedValue(() => {});
+    tauriMocks.getUpdatePromptPreference.mockResolvedValue({});
     tauriMocks.getUpdateInfo.mockResolvedValue(null);
     tauriMocks.openUpdateDialog.mockResolvedValue(undefined);
     delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;

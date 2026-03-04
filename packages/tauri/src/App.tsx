@@ -29,7 +29,6 @@ type UpdatePreference = {
   remindUntilMs?: number;
 };
 
-const UPDATE_PREFERENCE_KEY = "meetcat.update.preference";
 const REMIND_LATER_MS = 24 * 60 * 60 * 1000;
 
 const defaultSettings = getTauriDefaults();
@@ -115,40 +114,6 @@ const adapter: SettingsAdapter = {
   },
   getVersion: async () => getVersion(),
 };
-
-function loadUpdatePreference(): UpdatePreference {
-  const storage =
-    typeof globalThis !== "undefined"
-      ? (globalThis as { localStorage?: Storage }).localStorage
-      : undefined;
-  if (!storage || typeof storage.getItem !== "function") {
-    return {};
-  }
-  try {
-    const raw = storage.getItem(UPDATE_PREFERENCE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as UpdatePreference;
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed;
-  } catch {
-    return {};
-  }
-}
-
-function saveUpdatePreference(next: UpdatePreference): void {
-  const storage =
-    typeof globalThis !== "undefined"
-      ? (globalThis as { localStorage?: Storage }).localStorage
-      : undefined;
-  if (!storage || typeof storage.setItem !== "function") {
-    return;
-  }
-  try {
-    storage.setItem(UPDATE_PREFERENCE_KEY, JSON.stringify(next));
-  } catch {
-    // Ignore storage write failure and keep in-memory preference.
-  }
-}
 
 function isSuppressedByPreference(
   update: UpdateInfo | null,
@@ -291,9 +256,7 @@ export function App() {
   const [updateStatusText, setUpdateStatusText] = useState<string | null>(null);
   const [updateErrorText, setUpdateErrorText] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<UpdateDownloadProgress | null>(null);
-  const [updatePreference, setUpdatePreference] = useState<UpdatePreference>(() =>
-    loadUpdatePreference()
-  );
+  const [updatePreference, setUpdatePreference] = useState<UpdatePreference>({});
 
   const bannerUpdate = useMemo(() => {
     if (!updateInfo) return null;
@@ -359,14 +322,18 @@ export function App() {
     []
   );
 
-  const applyUpdatePreference = useCallback((next: UpdatePreference) => {
-    saveUpdatePreference(next);
+  const applyUpdatePreference = useCallback(async (next: UpdatePreference) => {
     setUpdatePreference(next);
+    try {
+      await invoke("set_update_prompt_preference", { preference: next });
+    } catch (error) {
+      console.error("Failed to persist update prompt preference:", error);
+    }
   }, []);
 
   const skipCurrentVersion = useCallback(() => {
     if (!updateInfo) return;
-    applyUpdatePreference({
+    void applyUpdatePreference({
       skippedVersion: updateInfo.version,
       remindVersion: undefined,
       remindUntilMs: undefined,
@@ -376,7 +343,7 @@ export function App() {
 
   const remindCurrentVersionLater = useCallback(() => {
     if (!updateInfo) return;
-    applyUpdatePreference({
+    void applyUpdatePreference({
       skippedVersion: undefined,
       remindVersion: updateInfo.version,
       remindUntilMs: Date.now() + REMIND_LATER_MS,
@@ -426,6 +393,17 @@ export function App() {
       }
 
       try {
+        const preference = await invoke<UpdatePreference | null>(
+          "get_update_prompt_preference"
+        );
+        if (!disposed) {
+          setUpdatePreference(preference ?? {});
+        }
+      } catch (error) {
+        console.error("Failed to load update prompt preference:", error);
+      }
+
+      try {
         const shouldOpenDialog = await invoke<boolean>("consume_open_update_dialog_request");
         if (!disposed && shouldOpenDialog) {
           setIsUpdateDialogOpen(true);
@@ -452,6 +430,16 @@ export function App() {
         }
       });
       cleanupTasks.push(unlistenUpdate);
+
+      const unlistenPreference = await listen<UpdatePreference>(
+        "update:preference-changed",
+        (event) => {
+          if (!disposed) {
+            setUpdatePreference(event.payload ?? {});
+          }
+        }
+      );
+      cleanupTasks.push(unlistenPreference);
 
       const unlistenOpenDialog = await listen("update:open-dialog", () => {
         if (!disposed) {
