@@ -20,8 +20,13 @@ This document describes the release flow for MeetCat (macOS app + Chrome extensi
 
 ## Workflow
 
-1. Update `CHANGELOG.md` with user-facing changes.
-2. Ensure the working tree is clean.
+1. Set next version:
+
+```bash
+pnpm run version:set -- <version>
+```
+
+2. Update `CHANGELOG.md` with user-facing changes.
 3. Run the combined release script:
 
 ```bash
@@ -30,6 +35,8 @@ pnpm run release
 
 The script will:
 
+- Auto-stamp the release date in `CHANGELOG.md` for the current version.
+- Auto-commit release preparation files when needed (version/changelog related files only).
 - Build shared packages and the Tauri app (default target: `universal-apple-darwin`).
 - Notarize the DMG.
 - Copy artifacts into `release/` with stable names:
@@ -42,6 +49,9 @@ The script will:
 - Build the Chrome extension and zip it into `release/`.
 - The GitHub UI always exposes a `latest` release endpoint, so stable links can use `/releases/latest/download/...`.
 - After the GitHub release is published, `.github/workflows/trigger-meetcat-site-deploy.yml` automatically triggers the MeetCat site rebuild via Netlify Build Hook.
+
+If there are unrelated local changes, the release script stops and prints the file list.  
+Default behavior is strict to avoid accidental release from a mixed working tree.
 
 ## Split Releases
 

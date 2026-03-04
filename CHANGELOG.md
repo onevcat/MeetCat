@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.5]
+## [0.0.5] - 2026-03-04
 
 Auto updating support is now integrated for the macOS desktop app, with user-visible prompts across tray, settings, and overlay before installation.
 

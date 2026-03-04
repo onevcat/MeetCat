@@ -15,6 +15,84 @@ ALLOW_DIRTY="${ALLOW_DIRTY:-0}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 BUILD_TARGETS="${BUILD_TARGETS:-universal-apple-darwin}"
 IFS=" " read -r -a targets <<< "$BUILD_TARGETS"
+AUTO_COMMITTED_RELEASE_CHANGES=0
+
+RELEASE_ALLOWED_DIRTY_FILES=(
+  "CHANGELOG.md"
+  "package.json"
+  "packages/core/package.json"
+  "packages/settings/package.json"
+  "packages/settings-ui/package.json"
+  "packages/extension/package.json"
+  "packages/tauri/package.json"
+  "packages/extension/public/manifest.json"
+  "packages/tauri/src-tauri/tauri.conf.json"
+  "packages/tauri/src-tauri/Cargo.toml"
+  "packages/tauri/src-tauri/Cargo.lock"
+)
+
+collect_dirty_files() {
+  {
+    git diff --name-only
+    git diff --cached --name-only
+    git ls-files --others --exclude-standard
+  } | awk 'NF' | sort -u
+}
+
+is_allowed_dirty_file() {
+  local file_path="$1"
+  local allowed=""
+  for allowed in "${RELEASE_ALLOWED_DIRTY_FILES[@]}"; do
+    if [[ "$file_path" == "$allowed" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+validate_dirty_files_for_release() {
+  local blocked=()
+  local file_path=""
+  for file_path in "$@"; do
+    if [[ -z "$file_path" ]]; then
+      continue
+    fi
+    if ! is_allowed_dirty_file "$file_path"; then
+      blocked+=("$file_path")
+    fi
+  done
+
+  if [[ ${#blocked[@]} -gt 0 ]]; then
+    echo "[release] Working tree contains non-release changes." >&2
+    echo "[release] Commit or stash these files before release:" >&2
+    printf '  - %s\n' "${blocked[@]}" >&2
+    echo "[release] Set ALLOW_DIRTY=1 to bypass this guard (not recommended)." >&2
+    exit 1
+  fi
+}
+
+auto_commit_release_changes_if_needed() {
+  if [[ "$ALLOW_DIRTY" -eq 1 ]]; then
+    return
+  fi
+
+  local dirty_files=()
+  readarray -t dirty_files < <(collect_dirty_files)
+  if [[ ${#dirty_files[@]} -eq 0 ]]; then
+    return
+  fi
+
+  validate_dirty_files_for_release "${dirty_files[@]}"
+
+  echo "[release] Auto-committing release preparation changes..."
+  git add -- "${dirty_files[@]}"
+  if git diff --cached --quiet; then
+    return
+  fi
+
+  git commit -m "chore(release): prepare ${VERSION}"
+  AUTO_COMMITTED_RELEASE_CHANGES=1
+}
 
 updater_platform_keys_for_target() {
   local target="$1"
@@ -121,15 +199,25 @@ if ! rg -q "^## \\[${VERSION}\\]" "$CHANGELOG_PATH"; then
   exit 1
 fi
 
-if [[ -n "$(git status --porcelain)" && "$ALLOW_DIRTY" -ne 1 ]]; then
-  echo "[release] Working tree is dirty. Commit changes or set ALLOW_DIRTY=1." >&2
-  exit 1
+if [[ "$ALLOW_DIRTY" -ne 1 ]]; then
+  readarray -t initial_dirty_files < <(collect_dirty_files)
+  validate_dirty_files_for_release "${initial_dirty_files[@]}"
 fi
 
 validate_targets_selection
 
 echo "[release] Syncing changelog date for version: $VERSION"
 node "$ROOT_DIR/scripts/update-changelog-release-date.mjs" "$VERSION"
+auto_commit_release_changes_if_needed
+
+if [[ "$ALLOW_DIRTY" -ne 1 ]]; then
+  readarray -t remaining_dirty_files < <(collect_dirty_files)
+  if [[ ${#remaining_dirty_files[@]} -gt 0 ]]; then
+    echo "[release] Working tree is still dirty after auto-commit." >&2
+    printf '  - %s\n' "${remaining_dirty_files[@]}" >&2
+    exit 1
+  fi
+fi
 
 mkdir -p "$ROOT_DIR/release"
 
@@ -212,6 +300,15 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   fi
 else
   git tag -a "$TAG" -m "MeetCat $VERSION"
+fi
+
+if [[ "$AUTO_COMMITTED_RELEASE_CHANGES" -eq 1 ]]; then
+  current_branch="$(git branch --show-current)"
+  if [[ -z "$current_branch" ]]; then
+    echo "[release] Auto-commit created on detached HEAD. Push branch manually before tagging." >&2
+    exit 1
+  fi
+  git push origin "$current_branch"
 fi
 
 git push origin "$TAG"

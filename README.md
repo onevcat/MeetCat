@@ -76,6 +76,19 @@ pnpm run dev
 
 That is enough to preview the app locally. For full workflows, see `doc/RELEASE.md`.
 
+## Release Quick Path
+
+For normal app release, use this three-step flow:
+
+```bash
+pnpm run version:set -- <version>
+# update CHANGELOG.md (use changelog skill)
+pnpm run release:app
+```
+
+`release:app` auto-stamps the changelog date and auto-commits release preparation changes before tag/release.
+If there are unrelated local changes, it stops and asks you to clean the working tree first.
+
 ## License
 
 TBD.

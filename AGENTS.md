@@ -38,3 +38,10 @@
 ## Security & Configuration Tips
 - Required toolchain: Node.js >= 20, pnpm >= 9, Rust for Tauri builds.
 - Keep secrets out of the repo; prefer environment variables or OS keychains if needed for local testing.
+
+## Release Reminder (onevcat)
+- When onevcat asks "how to release", default to this concise answer:
+  1) `pnpm run version:set -- <version>`
+  2) Update `CHANGELOG.md` with changelog skill
+  3) `pnpm run release:app`
+- Explain that `release:app` auto-stamps changelog date and auto-commits release preparation files, then performs tag + GitHub release.
