@@ -9,6 +9,12 @@ import {
   onCheckMeetings,
   onNavigateAndJoin,
   onSettingsChanged,
+  getUpdateInfo,
+  onUpdateAvailable,
+  openUpdateDialog,
+  getUpdatePromptPreference,
+  setUpdatePromptPreference,
+  onUpdatePromptPreferenceChanged,
 } from "../src/tauri-bridge.js";
 import type { Meeting } from "../src/types.js";
 
@@ -225,6 +231,87 @@ describe("Tauri Bridge", () => {
 
       expect(mockListen).toHaveBeenCalledWith(
         "settings_changed",
+        expect.any(Function)
+      );
+      expect(result).toBe(unlisten);
+    });
+  });
+
+  describe("getUpdateInfo", () => {
+    it("should call invoke with get_update_info command", async () => {
+      const payload = { version: "0.0.5", notes: "update notes" };
+      mockInvoke.mockResolvedValue(payload);
+
+      const result = await getUpdateInfo();
+
+      expect(mockInvoke).toHaveBeenCalledWith("get_update_info", undefined);
+      expect(result).toEqual(payload);
+    });
+  });
+
+  describe("onUpdateAvailable", () => {
+    it("should listen for update:available event", async () => {
+      const unlisten = vi.fn();
+      mockListen.mockResolvedValue(unlisten);
+      const handler = vi.fn();
+
+      const result = await onUpdateAvailable(handler);
+
+      expect(mockListen).toHaveBeenCalledWith(
+        "update:available",
+        expect.any(Function)
+      );
+      expect(result).toBe(unlisten);
+    });
+  });
+
+  describe("openUpdateDialog", () => {
+    it("should call invoke with open_update_dialog command", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await openUpdateDialog();
+
+      expect(mockInvoke).toHaveBeenCalledWith("open_update_dialog", undefined);
+    });
+  });
+
+  describe("getUpdatePromptPreference", () => {
+    it("should call invoke with get_update_prompt_preference command", async () => {
+      const payload = { skippedVersion: "0.0.99" };
+      mockInvoke.mockResolvedValue(payload);
+
+      const result = await getUpdatePromptPreference();
+
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "get_update_prompt_preference",
+        undefined
+      );
+      expect(result).toEqual(payload);
+    });
+  });
+
+  describe("setUpdatePromptPreference", () => {
+    it("should call invoke with set_update_prompt_preference command", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await setUpdatePromptPreference({ remindVersion: "0.0.99", remindUntilMs: 1234 });
+
+      expect(mockInvoke).toHaveBeenCalledWith("set_update_prompt_preference", {
+        preference: { remindVersion: "0.0.99", remindUntilMs: 1234 },
+      });
+    });
+  });
+
+  describe("onUpdatePromptPreferenceChanged", () => {
+    it("should listen for update:preference-changed event", async () => {
+      const unlisten = vi.fn();
+      mockListen.mockResolvedValue(unlisten);
+      const handler = vi.fn();
+
+      const result = await onUpdatePromptPreferenceChanged(handler);
+
+      expect(mockListen).toHaveBeenCalledWith(
+        "update:preference-changed",
         expect.any(Function)
       );
       expect(result).toBe(unlisten);

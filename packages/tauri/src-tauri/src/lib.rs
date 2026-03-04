@@ -10,21 +10,25 @@ mod tray;
 
 use daemon::{DaemonState, Meeting};
 use logging::{now_ms, LogEventInput, LogManager};
-use settings::{LogLevel, Settings, TAURI_DEFAULT_CHECK_INTERVAL_SECONDS};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use settings::{LogLevel, Settings, TAURI_DEFAULT_CHECK_INTERVAL_SECONDS};
+use std::error::Error as StdError;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{
-    AppHandle, Emitter, Listener, Manager, State, WebviewWindowBuilder, WebviewUrl, Url,
-};
+use tauri::async_runtime::JoinHandle;
 #[cfg(target_os = "macos")]
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
-use tauri::async_runtime::JoinHandle;
+use tauri_plugin_updater::UpdaterExt;
 
 const MEET_HOME_URL: &str = "https://meet.google.com/";
+const UPDATE_CHECK_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
+const UPDATE_PROMPT_PREFERENCE_FILE: &str = "update-prompt-preference.json";
 
 /// Application state shared across commands
 pub struct AppState {
@@ -32,6 +36,11 @@ pub struct AppState {
     pub daemon: Mutex<DaemonState>,
     /// Handle to cancel the current join trigger timer
     pub join_trigger_handle: Mutex<Option<JoinHandle<()>>>,
+    pub update_checking: Mutex<bool>,
+    pub update_info: Mutex<Option<UpdateInfo>>,
+    pub update_prompt_preference: Mutex<UpdatePromptPreference>,
+    pub update_dialog_requested: Mutex<bool>,
+    pub update_manual_check_requested: Mutex<bool>,
     pub logger: Mutex<LogManager>,
     #[cfg(target_os = "macos")]
     pub homepage_active: Mutex<Option<bool>>,
@@ -41,10 +50,16 @@ impl Default for AppState {
     fn default() -> Self {
         let settings = Settings::load().unwrap_or_default();
         let logger = LogManager::new(&settings);
+        let update_prompt_preference = load_update_prompt_preference();
         Self {
             settings: Mutex::new(settings),
             daemon: Mutex::new(DaemonState::default()),
             join_trigger_handle: Mutex::new(None),
+            update_checking: Mutex::new(false),
+            update_info: Mutex::new(None),
+            update_prompt_preference: Mutex::new(update_prompt_preference),
+            update_dialog_requested: Mutex::new(false),
+            update_manual_check_requested: Mutex::new(false),
             logger: Mutex::new(logger),
             #[cfg(target_os = "macos")]
             homepage_active: Mutex::new(None),
@@ -58,6 +73,32 @@ pub struct AppStatus {
     enabled: bool,
     next_meeting: Option<Meeting>,
     meetings: Vec<Meeting>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePromptPreference {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remind_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remind_until_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDownloadProgress {
+    downloaded: u64,
+    total: Option<u64>,
+    percent: Option<f64>,
 }
 
 // =============================================================================
@@ -91,11 +132,7 @@ fn get_settings(state: State<AppState>) -> Settings {
 
 /// Save settings
 #[tauri::command]
-fn save_settings(
-    app: AppHandle,
-    state: State<AppState>,
-    settings: Settings,
-) -> Result<(), String> {
+fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<(), String> {
     let previous_settings = state.settings.lock().unwrap().clone();
 
     {
@@ -109,8 +146,7 @@ fn save_settings(
         .map_err(|e| e.to_string())?;
 
     {
-        let (changed_keys, changes) =
-            build_settings_change_summary(&previous_settings, &settings);
+        let (changed_keys, changes) = build_settings_change_summary(&previous_settings, &settings);
         let mut logger = state.logger.lock().unwrap();
         logger.configure(&settings);
         logger.log_internal(
@@ -169,8 +205,7 @@ fn log_event(app: AppHandle, state: State<AppState>, input: LogEventInput) {
     #[cfg(target_os = "macos")]
     let input_context = input.context.clone();
     #[cfg(target_os = "macos")]
-    let is_page_detected =
-        input.module == "inject" && input.event == "init.page_detected";
+    let is_page_detected = input.module == "inject" && input.event == "init.page_detected";
 
     if let Ok(mut logger) = state.logger.lock() {
         logger.log_from_input(input, "webview");
@@ -300,14 +335,7 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
         *handle = Some(join_handle);
     } else {
         println!("[MeetCat] No meeting to schedule trigger for");
-        log_app_event(
-            app,
-            LogLevel::Debug,
-            "join",
-            "trigger.none",
-            None,
-            None,
-        );
+        log_app_event(app, LogLevel::Debug, "join", "trigger.none", None, None);
     }
 }
 
@@ -377,14 +405,10 @@ fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, close
     let mut trigger_at_ms: Option<i64> = None;
     {
         let mut daemon = state.daemon.lock().unwrap();
-        if let Some(meeting) = daemon
-            .get_meetings()
-            .iter()
-            .find(|m| m.call_id == call_id)
-        {
+        if let Some(meeting) = daemon.get_meetings().iter().find(|m| m.call_id == call_id) {
             matched = true;
-            let computed_trigger_at_ms =
-                meeting.begin_time.timestamp_millis() - (settings.join_before_minutes as i64) * 60 * 1000;
+            let computed_trigger_at_ms = meeting.begin_time.timestamp_millis()
+                - (settings.join_before_minutes as i64) * 60 * 1000;
             trigger_at_ms = Some(computed_trigger_at_ms);
             if closed_at_ms >= computed_trigger_at_ms {
                 daemon.mark_suppressed(&call_id, closed_at_ms);
@@ -421,9 +445,283 @@ fn get_suppressed_meetings(state: State<AppState>) -> Vec<String> {
     daemon.get_suppressed_meetings()
 }
 
+#[tauri::command]
+fn get_update_info(state: State<AppState>) -> Option<UpdateInfo> {
+    state.update_info.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn get_update_prompt_preference(state: State<AppState>) -> UpdatePromptPreference {
+    state.update_prompt_preference.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_update_prompt_preference(
+    app: AppHandle,
+    state: State<AppState>,
+    preference: UpdatePromptPreference,
+) -> Result<(), String> {
+    {
+        let mut current = state.update_prompt_preference.lock().unwrap();
+        *current = preference.clone();
+    }
+
+    save_update_prompt_preference(&preference)?;
+
+    app.emit("update:preference-changed", preference)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn check_for_update_manual(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    check_for_update_with_source(app, "manual").await
+}
+
+#[tauri::command]
+async fn download_and_install_update(app: AppHandle, auto_restart: bool) -> Result<bool, String> {
+    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
+
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+    if let Some(update) = update {
+        log_app_event(
+            &app,
+            LogLevel::Info,
+            "update",
+            "install.start",
+            None,
+            Some(json!({
+                "version": update.version,
+                "target": update.target,
+                "url": update.download_url,
+            })),
+        );
+
+        let mut downloaded: u64 = 0;
+        let app_progress = app.clone();
+        let app_finish = app.clone();
+        let result = update
+            .download_and_install(
+                move |chunk_len, total| {
+                    downloaded = downloaded.saturating_add(chunk_len as u64);
+                    let percent = total.and_then(|total| {
+                        if total == 0 {
+                            None
+                        } else {
+                            Some((downloaded as f64 / total as f64) * 100.0)
+                        }
+                    });
+                    let _ = app_progress.emit(
+                        "update:download-progress",
+                        UpdateDownloadProgress {
+                            downloaded,
+                            total: total.map(|value| value as u64),
+                            percent,
+                        },
+                    );
+                },
+                move || {
+                    let _ = app_finish.emit("update:download-finish", ());
+                },
+            )
+            .await;
+
+        if let Err(err) = result {
+            log_update_error(&err);
+            return Err(err.to_string());
+        }
+
+        {
+            let state = app.state::<AppState>();
+            *state.update_info.lock().unwrap() = None;
+        }
+        let _ = app.emit("update:available", Option::<UpdateInfo>::None);
+        refresh_tray_status(&app);
+
+        log_app_event(
+            &app,
+            LogLevel::Info,
+            "update",
+            "install.done",
+            None,
+            Some(json!({ "version": update.version })),
+        );
+
+        if auto_restart {
+            app.request_restart();
+        }
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn open_update_dialog(app: AppHandle) -> Result<(), String> {
+    ensure_settings_window(&app)?;
+    request_open_update_dialog(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn consume_open_update_dialog_request(state: State<AppState>) -> bool {
+    let mut requested = state.update_dialog_requested.lock().unwrap();
+    let value = *requested;
+    *requested = false;
+    value
+}
+
+#[tauri::command]
+fn consume_manual_update_check_request(state: State<AppState>) -> bool {
+    let mut requested = state.update_manual_check_requested.lock().unwrap();
+    let value = *requested;
+    *requested = false;
+    value
+}
+
+pub(crate) fn request_open_update_dialog(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.update_dialog_requested.lock().unwrap() = true;
+    }
+    let _ = app.emit("update:open-dialog", ());
+}
+
+pub(crate) fn request_manual_update_check(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.update_manual_check_requested.lock().unwrap() = true;
+    }
+    let _ = app.emit("update:manual-check", ());
+}
+
+async fn check_for_update_with_source(
+    app: AppHandle,
+    source: &'static str,
+) -> Result<Option<UpdateInfo>, String> {
+    let state = app.state::<AppState>();
+    {
+        let mut checking = state.update_checking.lock().unwrap();
+        if *checking {
+            return Ok(state.update_info.lock().unwrap().clone());
+        }
+        *checking = true;
+    }
+
+    let result = async {
+        let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
+        let update = updater.check().await.map_err(|e| e.to_string())?;
+
+        let info = update.map(|item| UpdateInfo {
+            version: item.version,
+            notes: item.body,
+        });
+
+        {
+            let state = app.state::<AppState>();
+            *state.update_info.lock().unwrap() = info.clone();
+        }
+        let _ = app.emit("update:available", info.clone());
+        refresh_tray_status(&app);
+
+        let context = match info.as_ref() {
+            Some(update) => json!({
+                "source": source,
+                "available": true,
+                "version": update.version,
+            }),
+            None => json!({
+                "source": source,
+                "available": false,
+            }),
+        };
+        log_app_event(
+            &app,
+            LogLevel::Info,
+            "update",
+            "check.done",
+            None,
+            Some(context),
+        );
+
+        Ok(info)
+    }
+    .await;
+
+    {
+        let state = app.state::<AppState>();
+        *state.update_checking.lock().unwrap() = false;
+    }
+
+    result
+}
+
+fn log_update_error(err: &impl StdError) {
+    eprintln!("[MeetCat] update install failed: {}", err);
+    let mut source = err.source();
+    let mut index = 0;
+    while let Some(cause) = source {
+        eprintln!("[MeetCat] caused by({}): {}", index, cause);
+        source = cause.source();
+        index += 1;
+    }
+}
+
+fn setup_update_checker(app: &AppHandle) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let _ = check_for_update_with_source(app_handle.clone(), "startup").await;
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(UPDATE_CHECK_INTERVAL_SECONDS)).await;
+            let _ = check_for_update_with_source(app_handle.clone(), "polling").await;
+        }
+    });
+}
+
+fn update_prompt_preference_path() -> Result<PathBuf, String> {
+    let config_dir =
+        dirs::config_dir().ok_or_else(|| "Failed to get config directory".to_string())?;
+    let app_dir = config_dir.join("meetcat");
+    fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
+    Ok(app_dir.join(UPDATE_PROMPT_PREFERENCE_FILE))
+}
+
+fn load_update_prompt_preference() -> UpdatePromptPreference {
+    let Ok(path) = update_prompt_preference_path() else {
+        return UpdatePromptPreference::default();
+    };
+    if !path.exists() {
+        return UpdatePromptPreference::default();
+    }
+
+    let Ok(content) = fs::read_to_string(path) else {
+        return UpdatePromptPreference::default();
+    };
+
+    serde_json::from_str::<UpdatePromptPreference>(&content).unwrap_or_default()
+}
+
+fn save_update_prompt_preference(preference: &UpdatePromptPreference) -> Result<(), String> {
+    let path = update_prompt_preference_path()?;
+    let content = serde_json::to_string_pretty(preference).map_err(|e| e.to_string())?;
+    fs::write(path, content).map_err(|e| e.to_string())
+}
+
+fn refresh_tray_status(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        let settings = state.settings.lock().unwrap().clone();
+        let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
+        tray::update_tray_status(app, next_meeting.as_ref());
+    }
+}
+
 /// Open the settings window
 #[tauri::command]
 fn open_settings_window(app: AppHandle) -> Result<(), String> {
+    ensure_settings_window(&app)
+}
+
+pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
     // Check if settings window already exists
     if let Some(window) = app.get_webview_window("settings") {
         window.show().map_err(|e| e.to_string())?;
@@ -432,7 +730,7 @@ fn open_settings_window(app: AppHandle) -> Result<(), String> {
     }
 
     // Create new settings window
-    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("index.html".into()))
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
         .title("MeetCat Settings")
         .inner_size(420.0, 640.0)
         .resizable(false)
@@ -673,14 +971,7 @@ fn setup_daemon(app: &AppHandle) {
         loop {
             let interval_seconds = app_handle
                 .try_state::<AppState>()
-                .map(|state| {
-                    state
-                        .settings
-                        .lock()
-                        .unwrap()
-                        .check_interval_seconds
-                        .max(1)
-                })
+                .map(|state| state.settings.lock().unwrap().check_interval_seconds.max(1))
                 .unwrap_or(TAURI_DEFAULT_CHECK_INTERVAL_SECONDS);
 
             check_id += 1;
@@ -753,10 +1044,7 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String> {
     let app_name = "MeetCat";
-    let about_icon_bytes = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/icons/icon.png"
-    ));
+    let about_icon_bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.png"));
     let about_icon =
         tauri::image::Image::from_bytes(about_icon_bytes).map_err(|e| e.to_string())?;
     let mut about_metadata = AboutMetadata::default();
@@ -1215,6 +1503,7 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
@@ -1266,20 +1555,16 @@ pub fn run() {
                         *homepage = Some(false);
                     }
                 }
-                app.on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "app-quit" => app.exit(0),
-                        "app-go-home" => {
-                            if let Err(e) = navigate_to_meet_home(app) {
-                                eprintln!(
-                                    "Failed to navigate to Google Meet home: {}",
-                                    e
-                                );
-                            }
+                app.on_menu_event(|app, event| match event.id().as_ref() {
+                    "app-quit" => app.exit(0),
+                    "app-go-home" => {
+                        if let Err(e) = navigate_to_meet_home(app) {
+                            eprintln!("Failed to navigate to Google Meet home: {}", e);
                         }
-                        "app-refresh-home" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let script = r#"
+                    }
+                    "app-refresh-home" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let script = r#"
                                     document.dispatchEvent(new KeyboardEvent("keydown", {
                                       key: "r",
                                       metaKey: true,
@@ -1287,13 +1572,12 @@ pub fn run() {
                                       cancelable: true
                                     }));
                                 "#;
-                                if let Err(e) = window.eval(script) {
-                                    eprintln!("Failed to dispatch refresh shortcut: {}", e);
-                                }
+                            if let Err(e) = window.eval(script) {
+                                eprintln!("Failed to dispatch refresh shortcut: {}", e);
                             }
                         }
-                        _ => {}
                     }
+                    _ => {}
                 });
             }
 
@@ -1311,10 +1595,7 @@ pub fn run() {
                 .iter()
                 .find(|w| w.label == "main")
                 .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "Missing main window config",
-                    )
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "Missing main window config")
                 })?;
 
             let app_handle = app.handle().clone();
@@ -1357,8 +1638,16 @@ pub fn run() {
                 let mut daemon = state.daemon.lock().unwrap();
                 daemon.start();
                 let mut logger = state.logger.lock().unwrap();
-                logger.log_internal(LogLevel::Info, "daemon", "daemon.start", Some("auto".to_string()), None);
+                logger.log_internal(
+                    LogLevel::Info,
+                    "daemon",
+                    "daemon.start",
+                    Some("auto".to_string()),
+                    None,
+                );
             }
+
+            setup_update_checker(app.handle());
 
             Ok(())
         })
@@ -1374,6 +1663,14 @@ pub fn run() {
             meeting_joined,
             meeting_closed,
             open_settings_window,
+            get_update_info,
+            get_update_prompt_preference,
+            set_update_prompt_preference,
+            check_for_update_manual,
+            download_and_install_update,
+            open_update_dialog,
+            consume_open_update_dialog_request,
+            consume_manual_update_check_request,
             log_event,
         ])
         .build(tauri::generate_context!())

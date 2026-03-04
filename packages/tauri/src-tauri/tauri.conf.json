@@ -33,6 +33,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -46,5 +47,12 @@
       "entitlements": "Entitlements.plist"
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxQjQ4NjA2OEEzNDE2NjgKUldSb0ZqU0tCb2EwZ1ZBT1VVV3VSSEVESVNlWUVYTzVCTE54U0NXY21nRHBkeW8zVHgvT3JLakMK",
+      "endpoints": [
+        "https://github.com/onevcat/MeetCat/releases/latest/download/version.json"
+      ]
+    }
+  }
 }

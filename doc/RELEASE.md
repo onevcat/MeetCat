@@ -5,6 +5,7 @@ This document describes the release flow for MeetCat (macOS app + Chrome extensi
 ## Goals
 
 - Produce a notarized DMG (Universal by default).
+- Produce signed updater artifacts (`.app.tar.gz` + `.sig`) and `version.json`.
 - Publish a Git tag and GitHub release for the macOS app.
 - Package the Chrome extension as a zip bundle.
 - Upload stable-named artifacts so the download links never change.
@@ -14,6 +15,7 @@ This document describes the release flow for MeetCat (macOS app + Chrome extensi
 - macOS with Xcode Command Line Tools installed.
 - `pnpm`, `gh`, `git`, and Rust toolchain available.
 - Apple notarization credentials configured (either a keychain profile or Apple ID/password).
+- Tauri updater signing key available (default path: `~/.tauri/meetcat-updater.key`).
 - Repository secret `NETLIFY_BUILD_HOOK_URL` configured for the MeetCat website build hook.
 
 ## Workflow
@@ -30,7 +32,11 @@ The script will:
 
 - Build shared packages and the Tauri app (default target: `universal-apple-darwin`).
 - Notarize the DMG.
-- Copy artifacts into `release/` with stable names.
+- Copy artifacts into `release/` with stable names:
+  - `MeetCat_macos_<target>.dmg`
+  - `MeetCat_macos_<target>.app.tar.gz`
+  - `MeetCat_macos_<target>.app.tar.gz.sig`
+  - `version.json`
 - Create/push the version tag (e.g. `0.0.2`).
 - Create/edit the GitHub release and upload artifacts.
 - Build the Chrome extension and zip it into `release/`.
@@ -56,12 +62,19 @@ pnpm run release:extension
 These links are backed by the GitHub `latest` release endpoint and do not change between versions:
 
 - `https://github.com/onevcat/MeetCat/releases/latest/download/MeetCat_macos_universal.dmg`
+- `https://github.com/onevcat/MeetCat/releases/latest/download/version.json`
 
 ## Environment Variables
 
 - `BUILD_TARGETS`: Space-separated list of targets (default: `universal-apple-darwin`).
 - `SKIP_BUILD=1`: Skip the build/notarization step (useful if you already have artifacts).
 - `ALLOW_DIRTY=1`: Allow running the release script with a dirty working tree.
+- `TAURI_SIGNING_PRIVATE_KEY`: Updater private key content (optional if key file exists).
+- `TAURI_SIGNING_PRIVATE_KEY_PATH`: Path to updater private key file (default `~/.tauri/meetcat-updater.key`).
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: Updater private key password.
+
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is only needed during release build/sign.  
+If it is not set, Tauri tooling prompts for it while building updater artifacts.
 
 ## Build-Only
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -19,6 +19,38 @@ describe("App", () => {
     tauri: DEFAULT_TAURI_SETTINGS,
   };
 
+  const mockInvokeWithSettings = (
+    settings: typeof defaultSettings | typeof DEFAULT_SETTINGS
+  ) => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") {
+        return Promise.resolve(settings);
+      }
+      if (cmd === "get_update_info") {
+        return Promise.resolve(null);
+      }
+      if (cmd === "get_update_prompt_preference") {
+        return Promise.resolve({});
+      }
+      if (cmd === "consume_open_update_dialog_request") {
+        return Promise.resolve(false);
+      }
+      if (cmd === "consume_manual_update_check_request") {
+        return Promise.resolve(false);
+      }
+      if (cmd === "set_update_prompt_preference") {
+        return Promise.resolve(undefined);
+      }
+      if (cmd === "check_for_update_manual") {
+        return Promise.resolve(null);
+      }
+      if (cmd === "download_and_install_update") {
+        return Promise.resolve(false);
+      }
+      return Promise.resolve(undefined);
+    });
+  };
+
   const updateNumberInput = async (
     input: HTMLElement,
     value: number,
@@ -35,7 +67,10 @@ describe("App", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInvoke.mockResolvedValue(defaultSettings);
+    if (typeof localStorage?.removeItem === "function") {
+      localStorage.removeItem("meetcat.update.preference");
+    }
+    mockInvokeWithSettings(defaultSettings);
     mockListen.mockResolvedValue(() => {});
   });
 
@@ -299,12 +334,12 @@ describe("App", () => {
 
     fireEvent.click(screen.getByText("Add"));
 
-    // Should only have the initial get_settings call
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    const saveCalls = mockInvoke.mock.calls.filter(([command]) => command === "save_settings");
+    expect(saveCalls).toHaveLength(0);
   });
 
   it("should not add duplicate filter", async () => {
-    mockInvoke.mockResolvedValue({
+    mockInvokeWithSettings({
       ...defaultSettings,
       titleExcludeFilters: ["existing-filter"],
     });
@@ -319,12 +354,12 @@ describe("App", () => {
     fireEvent.change(filterInput, { target: { value: "existing-filter" } });
     fireEvent.click(screen.getByText("Add"));
 
-    // Should only have the initial get_settings call
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    const saveCalls = mockInvoke.mock.calls.filter(([command]) => command === "save_settings");
+    expect(saveCalls).toHaveLength(0);
   });
 
   it("should remove filter when clicking remove button", async () => {
-    mockInvoke.mockResolvedValue({
+    mockInvokeWithSettings({
       ...defaultSettings,
       titleExcludeFilters: ["filter-to-remove"],
     });
@@ -408,7 +443,7 @@ describe("App", () => {
   });
 
   it("should use defaults when tauri settings are missing", async () => {
-    mockInvoke.mockResolvedValue({
+    mockInvokeWithSettings({
       ...DEFAULT_SETTINGS,
       tauri: undefined,
     });
@@ -442,7 +477,23 @@ describe("App", () => {
   });
 
   it("should handle settings loading error gracefully", async () => {
-    mockInvoke.mockRejectedValue(new Error("Load error"));
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") {
+        return Promise.reject(new Error("Load error"));
+      }
+      if (
+        cmd === "get_update_info"
+      ) {
+        return Promise.resolve(null);
+      }
+      if (
+        cmd === "consume_open_update_dialog_request" ||
+        cmd === "consume_manual_update_check_request"
+      ) {
+        return Promise.resolve(false);
+      }
+      return Promise.resolve(undefined);
+    });
 
     render(<App />);
 
@@ -514,11 +565,125 @@ describe("App", () => {
       ...defaultSettings,
       joinBeforeMinutes: 10,
     };
-    settingsChangedHandler!({ payload: newSettings });
+    await act(async () => {
+      settingsChangedHandler!({ payload: newSettings });
+    });
 
     await waitFor(() => {
       const inputs = screen.getAllByRole("spinbutton");
       expect(inputs[0]).toHaveValue(10);
+    });
+  });
+
+  it("should show check action when no update is cached", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") return Promise.resolve(null);
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    const checkButton = await screen.findByRole("button", {
+      name: "Check for updates",
+    });
+    expect(checkButton).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Install update" })).toBeNull();
+  });
+
+  it("should enable install button when update is cached", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") {
+        return Promise.resolve({ version: "0.0.99", notes: "cached" });
+      }
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    const installButton = await screen.findByRole("button", {
+      name: "Install update",
+    });
+    expect(installButton).toBeEnabled();
+  });
+
+  it("should show error after manual check failure", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") return Promise.resolve(null);
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      if (cmd === "check_for_update_manual") return Promise.reject(new Error("check failed"));
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("check failed")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Install update" })).toBeNull();
+  });
+
+  it("should hide banner after skipping current version", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") {
+        return Promise.resolve({ version: "0.0.99", notes: "- item" });
+      }
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("New version 0.0.99 is available")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Skip this version" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("New version 0.0.99 is available")).toBeNull();
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("set_update_prompt_preference", {
+      preference: {
+        skippedVersion: "0.0.99",
+        remindVersion: undefined,
+        remindUntilMs: undefined,
+      },
+    });
+  });
+
+  it("should hide banner after remind later action", async () => {
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_settings") return Promise.resolve(defaultSettings);
+      if (cmd === "get_update_info") {
+        return Promise.resolve({ version: "0.0.99", notes: "- item" });
+      }
+      if (cmd === "consume_open_update_dialog_request") return Promise.resolve(true);
+      if (cmd === "consume_manual_update_check_request") return Promise.resolve(false);
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("New version 0.0.99 is available")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Remind me tomorrow" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("New version 0.0.99 is available")).toBeNull();
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("set_update_prompt_preference", {
+      preference: expect.objectContaining({
+        skippedVersion: undefined,
+        remindVersion: "0.0.99",
+      }),
     });
   });
 
@@ -548,7 +713,7 @@ describe("App", () => {
   });
 
   it("should update tray display mode and reset title toggle from icon-only", async () => {
-    mockInvoke.mockResolvedValueOnce({
+    mockInvokeWithSettings({
       ...defaultSettings,
       tauri: {
         ...DEFAULT_TAURI_SETTINGS,
@@ -579,7 +744,7 @@ describe("App", () => {
   });
 
   it("should update tray meeting title toggle when enabled", async () => {
-    mockInvoke.mockResolvedValueOnce({
+    mockInvokeWithSettings({
       ...defaultSettings,
       tauri: {
         ...DEFAULT_TAURI_SETTINGS,
@@ -643,7 +808,7 @@ describe("App", () => {
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 
-    mockInvoke.mockResolvedValueOnce({
+    mockInvokeWithSettings({
       ...defaultSettings,
       tauri: {
         ...DEFAULT_TAURI_SETTINGS,
@@ -676,7 +841,7 @@ describe("App", () => {
   it("should sync startAtLogin on load when system entry is missing", async () => {
     (isAutostartEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
-    mockInvoke.mockResolvedValueOnce({
+    mockInvokeWithSettings({
       ...defaultSettings,
       tauri: {
         ...DEFAULT_TAURI_SETTINGS,

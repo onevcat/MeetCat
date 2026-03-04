@@ -9,8 +9,8 @@ const parserMocks = vi.hoisted(() => ({
 }));
 
 const controllerMocks = vi.hoisted(() => ({
-  setMicState: vi.fn(),
-  setCameraState: vi.fn(),
+  setMicState: vi.fn(() => ({ changed: false, success: false })),
+  setCameraState: vi.fn(() => ({ changed: false, success: false })),
   clickJoinButton: vi.fn(() => false),
   getMeetingCodeFromPath: vi.fn(() => null),
   findJoinButton: vi.fn(() => ({ button: null, matchedText: null })),
@@ -19,7 +19,11 @@ const controllerMocks = vi.hoisted(() => ({
 }));
 
 const uiMocks = vi.hoisted(() => ({
-  createHomepageOverlay: vi.fn(() => ({ update: vi.fn(), destroy: vi.fn() })),
+  createHomepageOverlay: vi.fn(() => ({
+    update: vi.fn(),
+    setUpdateInfo: vi.fn(),
+    destroy: vi.fn(),
+  })),
   createJoinCountdown: vi.fn(() => ({ update: vi.fn(), destroy: vi.fn() })),
   ensureStyles: vi.fn(),
 }));
@@ -33,6 +37,11 @@ const tauriMocks = vi.hoisted(() => ({
   onCheckMeetings: vi.fn(),
   onNavigateAndJoin: vi.fn(),
   onSettingsChanged: vi.fn(),
+  onUpdateAvailable: vi.fn(),
+  getUpdatePromptPreference: vi.fn(),
+  onUpdatePromptPreferenceChanged: vi.fn(),
+  getUpdateInfo: vi.fn(),
+  openUpdateDialog: vi.fn(),
   reportJoined: vi.fn(),
   reportMeetingClosed: vi.fn().mockResolvedValue(undefined),
   logEvent: vi.fn().mockResolvedValue(undefined),
@@ -53,6 +62,11 @@ describe("inject homepage checks", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    tauriMocks.onUpdateAvailable.mockResolvedValue(() => {});
+    tauriMocks.onUpdatePromptPreferenceChanged.mockResolvedValue(() => {});
+    tauriMocks.getUpdatePromptPreference.mockResolvedValue({});
+    tauriMocks.getUpdateInfo.mockResolvedValue(null);
+    tauriMocks.openUpdateDialog.mockResolvedValue(undefined);
     delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
     if (!("location" in globalThis)) {
       Object.defineProperty(globalThis, "location", {
@@ -147,6 +161,7 @@ describe("inject homepage checks", () => {
     const updateSpy = vi.fn();
     uiMocks.createHomepageOverlay.mockReturnValue({
       update: updateSpy,
+      setUpdateInfo: vi.fn(),
       destroy: vi.fn(),
     });
     parserMocks.parseMeetingCards.mockReturnValue({
@@ -183,7 +198,7 @@ describe("inject homepage checks", () => {
     let capturedOnHide: (() => void) | undefined;
     uiMocks.createHomepageOverlay.mockImplementation((_container, options) => {
       capturedOnHide = options?.onHide;
-      return { update: vi.fn(), destroy: vi.fn() };
+      return { update: vi.fn(), setUpdateInfo: vi.fn(), destroy: vi.fn() };
     });
 
     const module = await import("../src/inject.js");

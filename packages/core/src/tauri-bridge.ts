@@ -48,6 +48,17 @@ export type CheckMeetingsPayload = {
   emittedAtMs: number;
 };
 
+export interface UpdateInfo {
+  version: string;
+  notes?: string | null;
+}
+
+export interface UpdatePromptPreference {
+  skippedVersion?: string;
+  remindVersion?: string;
+  remindUntilMs?: number;
+}
+
 /**
  * Navigation command from Rust
  */
@@ -174,6 +185,36 @@ export async function onSettingsChanged(
   handler: (settings: TauriSettings) => void
 ): Promise<() => void> {
   return listen<TauriSettings>("settings_changed", handler);
+}
+
+export async function getUpdateInfo(): Promise<UpdateInfo | null> {
+  return invoke<UpdateInfo | null>("get_update_info");
+}
+
+export async function onUpdateAvailable(
+  handler: (update: UpdateInfo | null) => void
+): Promise<() => void> {
+  return listen<UpdateInfo | null>("update:available", handler);
+}
+
+export async function openUpdateDialog(): Promise<void> {
+  await invoke("open_update_dialog");
+}
+
+export async function getUpdatePromptPreference(): Promise<UpdatePromptPreference> {
+  return invoke<UpdatePromptPreference>("get_update_prompt_preference");
+}
+
+export async function setUpdatePromptPreference(
+  preference: UpdatePromptPreference
+): Promise<void> {
+  await invoke("set_update_prompt_preference", { preference });
+}
+
+export async function onUpdatePromptPreferenceChanged(
+  handler: (preference: UpdatePromptPreference) => void
+): Promise<() => void> {
+  return listen<UpdatePromptPreference>("update:preference-changed", handler);
 }
 
 /**

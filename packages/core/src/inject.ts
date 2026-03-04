@@ -35,9 +35,14 @@ import {
   isTauriEnvironment,
   reportMeetings,
   getSettings,
+  getUpdateInfo,
+  getUpdatePromptPreference,
   onCheckMeetings,
   onNavigateAndJoin,
   onSettingsChanged,
+  onUpdateAvailable,
+  onUpdatePromptPreferenceChanged,
+  openUpdateDialog,
   reportJoined,
   reportMeetingClosed,
   getJoinedMeetings,
@@ -47,6 +52,8 @@ import {
   type CheckMeetingsPayload,
   type TauriSettings,
   type NavigateAndJoinCommand,
+  type UpdateInfo,
+  type UpdatePromptPreference,
 } from "./tauri-bridge.js";
 import type { Meeting } from "./types.js";
 import { DEFAULT_SETTINGS as SETTINGS_DEFAULTS } from "@meetcat/settings";
@@ -60,6 +67,8 @@ import { createWakeDetector, type WakeDetector } from "./utils/wake-detector.js"
 let settings: TauriSettings | null = null;
 let overlay: HomepageOverlay | null = null;
 let countdown: JoinCountdown | null = null;
+let availableUpdate: UpdateInfo | null = null;
+let updatePromptPreference: UpdatePromptPreference = {};
 let lastMeetings: Meeting[] = [];
 let mediaApplied = false;
 let joinAttempted = false;
@@ -208,6 +217,32 @@ function reportPageDetectedForNativeState(
   }).catch((error) => {
     console.warn("[MeetCat] Failed to report page detection:", error);
   });
+}
+
+function isUpdateNoticeSuppressed(
+  update: UpdateInfo | null,
+  preference: UpdatePromptPreference,
+  nowMs: number = Date.now()
+): boolean {
+  if (!update) return false;
+  if (preference.skippedVersion === update.version) return true;
+  if (
+    preference.remindVersion === update.version &&
+    typeof preference.remindUntilMs === "number" &&
+    preference.remindUntilMs > nowMs
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function syncOverlayUpdateNotice(): void {
+  if (!overlay) return;
+  if (!availableUpdate || isUpdateNoticeSuppressed(availableUpdate, updatePromptPreference)) {
+    overlay.setUpdateInfo(null);
+    return;
+  }
+  overlay.setUpdateInfo({ version: availableUpdate.version });
 }
 
 function detectEnteredMeeting(stage: string): boolean {
@@ -389,6 +424,51 @@ async function setupEventListeners(): Promise<void> {
     console.warn("[MeetCat] Failed to listen for settings changes:", e);
     logToDisk("warn", "inject", "listener.settings_failed", "Settings listener failed");
   }
+
+  try {
+    updatePromptPreference = await getUpdatePromptPreference();
+    syncOverlayUpdateNotice();
+  } catch (e) {
+    console.warn("[MeetCat] Failed to load update prompt preference:", e);
+  }
+
+  try {
+    const unsubUpdatePreference = await onUpdatePromptPreferenceChanged((preference) => {
+      updatePromptPreference = preference;
+      syncOverlayUpdateNotice();
+    });
+    unsubscribers.push(unsubUpdatePreference);
+    logToDisk(
+      "debug",
+      "inject",
+      "listener.update_preference",
+      "Update preference listener attached"
+    );
+  } catch (e) {
+    console.warn("[MeetCat] Failed to listen for update prompt preference:", e);
+    logToDisk(
+      "warn",
+      "inject",
+      "listener.update_preference_failed",
+      "Update preference listener failed"
+    );
+  }
+
+  try {
+    const unsubUpdate = await onUpdateAvailable((update) => {
+      availableUpdate = update;
+      syncOverlayUpdateNotice();
+      logToDisk("info", "update", "update.available_changed", "Update availability changed", {
+        hasUpdate: Boolean(update),
+        version: update?.version ?? null,
+      });
+    });
+    unsubscribers.push(unsubUpdate);
+    logToDisk("debug", "inject", "listener.update", "Update listener attached");
+  } catch (e) {
+    console.warn("[MeetCat] Failed to listen for update availability:", e);
+    logToDisk("warn", "inject", "listener.update_failed", "Update listener failed");
+  }
 }
 
 /**
@@ -437,6 +517,20 @@ async function initHomepage(): Promise<void> {
       unsubscribers.push(unsubNav);
     } catch (e) {
       console.warn("[MeetCat] Failed to listen for navigate-and-join:", e);
+    }
+
+    try {
+      updatePromptPreference = await getUpdatePromptPreference();
+      syncOverlayUpdateNotice();
+    } catch (e) {
+      console.warn("[MeetCat] Failed to load update prompt preference:", e);
+    }
+
+    try {
+      availableUpdate = await getUpdateInfo();
+      syncOverlayUpdateNotice();
+    } catch (e) {
+      console.warn("[MeetCat] Failed to load update info:", e);
     }
   }
 
@@ -533,7 +627,14 @@ function createOverlay(): void {
         overlayType: "homepage",
       });
     },
+    onUpdateClick: () => {
+      if (!isTauriEnvironment()) return;
+      openUpdateDialog().catch((error) => {
+        console.warn("[MeetCat] Failed to open update dialog:", error);
+      });
+    },
   });
+  syncOverlayUpdateNotice();
   logToDisk("info", "overlay", "overlay.created", "Homepage overlay created");
 
   // Update with current next meeting

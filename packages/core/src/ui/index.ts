@@ -2,6 +2,7 @@ export {
   createHomepageOverlay,
   type HomepageOverlay,
   type HomepageOverlayOptions,
+  type UpdateNotice,
 } from "./homepage-overlay.js";
 
 export {
