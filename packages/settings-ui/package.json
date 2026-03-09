@@ -29,6 +29,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@meetcat/i18n": "workspace:*",
     "@meetcat/settings": "workspace:*"
   },
   "peerDependencies": {

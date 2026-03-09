@@ -1,9 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import type { Settings } from "@meetcat/settings";
 import { DEFAULT_SETTINGS, DEFAULT_TAURI_SETTINGS } from "@meetcat/settings";
+import { initI18n } from "@meetcat/i18n";
+import { I18nProvider } from "@meetcat/i18n/react";
 import { SettingsContainer, SettingsView } from "../src/index";
 import { applyTrayDisplayModeChange } from "../src/tray-settings";
+
+beforeAll(async () => {
+  await initI18n("en");
+});
 
 const createSettings = (overrides: Partial<Settings> = {}): Settings => {
   return {
@@ -447,7 +453,7 @@ describe("SettingsView", () => {
     );
 
     const selects = screen.getAllByRole("combobox");
-    const cameraSelect = selects[1];
+    const cameraSelect = selects[2];
     fireEvent.change(cameraSelect, { target: { value: "unmuted" } });
 
     await waitFor(() => {
@@ -477,7 +483,7 @@ describe("SettingsView", () => {
     );
 
     const selects = screen.getAllByRole("combobox");
-    const micSelect = selects[0];
+    const micSelect = selects[1];
     fireEvent.change(micSelect, { target: { value: "unmuted" } });
 
     await waitFor(() => {

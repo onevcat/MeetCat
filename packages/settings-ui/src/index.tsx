@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Settings, MediaState } from "@meetcat/settings";
 import { DEFAULT_SETTINGS, DEFAULT_TAURI_SETTINGS } from "@meetcat/settings";
+import { useTranslation } from "@meetcat/i18n/react";
+import { initI18n, changeLanguage, type LanguageSetting } from "@meetcat/i18n";
 import {
   applyTrayDisplayModeChange,
   canShowTrayTitle,
@@ -44,27 +46,33 @@ export function SettingsContainer({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
+  const [i18nReady, setI18nReady] = useState(false);
 
   const footerText = useMemo(() => {
     if (version) return `${appName} ${version}`;
     return appName;
   }, [appName, version]);
 
+  // Initialize i18n with saved language preference
   useEffect(() => {
     let mounted = true;
 
-    async function load() {
+    async function loadAndInit() {
       setLoading(true);
       try {
         const loaded = await adapter.loadSettings();
         const resolved = adapter.resolveSettings(loaded);
         if (mounted) {
           setSettings(resolved);
+          await initI18n(resolved.language as LanguageSetting);
+          setI18nReady(true);
         }
       } catch (e) {
         console.error("Failed to load settings:", e);
         if (mounted) {
           setSettings(adapter.getDefaultSettings());
+          await initI18n("auto");
+          setI18nReady(true);
         }
       } finally {
         if (mounted) {
@@ -73,10 +81,13 @@ export function SettingsContainer({
       }
     }
 
-    load();
+    loadAndInit();
 
     const unsubscribe = adapter.subscribe?.((nextSettings) => {
-      setSettings(adapter.resolveSettings(nextSettings));
+      const resolved = adapter.resolveSettings(nextSettings);
+      setSettings(resolved);
+      // Sync language if changed externally
+      void changeLanguage(resolved.language as LanguageSetting);
     });
 
     return () => {
@@ -136,6 +147,17 @@ export function SettingsContainer({
     }
   }, [adapter, handleSettingsChange, settings]);
 
+  const handleLanguageChange = useCallback(async (lang: LanguageSetting) => {
+    await changeLanguage(lang);
+    const nextSettings = { ...settings, language: lang };
+    setSettings(nextSettings);
+    void saveSettings(nextSettings);
+  }, [settings, saveSettings]);
+
+  if (!i18nReady) {
+    return null;
+  }
+
   return (
     <SettingsView
       settings={settings}
@@ -150,6 +172,7 @@ export function SettingsContainer({
       onStartAtLoginChange={
         adapter.capabilities.startAtLogin ? handleStartAtLoginChange : undefined
       }
+      onLanguageChange={handleLanguageChange}
     />
   );
 }
@@ -165,6 +188,7 @@ export type SettingsViewProps = {
   capabilities: SettingsCapabilities;
   onSettingsChange: (settings: Settings) => void;
   onStartAtLoginChange?: (enabled: boolean) => void;
+  onLanguageChange?: (lang: LanguageSetting) => void;
 };
 
 function NumberInput({
@@ -234,7 +258,9 @@ export function SettingsView({
   capabilities,
   onSettingsChange,
   onStartAtLoginChange,
+  onLanguageChange,
 }: SettingsViewProps) {
+  const { t } = useTranslation();
   const [filterInput, setFilterInput] = useState("");
 
   const updateSettings = (updates: Partial<Settings>) => {
@@ -280,7 +306,7 @@ export function SettingsView({
   if (loading) {
     return (
       <div className="settings-window">
-        <div className="loading">Loading settings...</div>
+        <div className="loading">{t("settings.loading")}</div>
       </div>
     );
   }
@@ -294,7 +320,27 @@ export function SettingsView({
 
       <main className="settings-content">
         <section className="settings-section">
-          <h2>General</h2>
+          <h2>{t("settings.general")}</h2>
+
+          <div className="form-group">
+            <label htmlFor="language" className="form-label">
+              {t("settings.language")}
+            </label>
+            <select
+              id="language"
+              className="form-select"
+              value={settings.language ?? "auto"}
+              onChange={(e) => {
+                onLanguageChange?.(e.target.value as LanguageSetting);
+              }}
+            >
+              <option value="auto">{t("settings.languageAuto")}</option>
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+            </select>
+          </div>
 
           {capabilities.startAtLogin && (
             <div className="form-group">
@@ -313,10 +359,10 @@ export function SettingsView({
                   }}
                 />
                 <label htmlFor="startAtLogin" className="form-checkbox-label">
-                  Start at login
+                  {t("settings.startAtLogin")}
                 </label>
               </div>
-              <p className="form-hint">Launch MeetCat when you sign in</p>
+              <p className="form-hint">{t("settings.startAtLoginHint")}</p>
             </div>
           )}
 
@@ -330,10 +376,10 @@ export function SettingsView({
                 onChange={(e) => updateSettings({ autoClickJoin: e.target.checked })}
               />
               <label htmlFor="autoClickJoin" className="form-checkbox-label">
-                Auto-click join
+                {t("settings.autoClickJoin")}
               </label>
             </div>
-            <p className="form-hint">Off: only open the meeting page</p>
+            <p className="form-hint">{t("settings.autoClickJoinHint")}</p>
           </div>
 
           <div className="form-group">
@@ -348,96 +394,95 @@ export function SettingsView({
                 }
               />
               <label htmlFor="showCountdownOverlay" className="form-checkbox-label">
-                Homepage overlay
+                {t("settings.homepageOverlay")}
               </label>
             </div>
-            <p className="form-hint">Show next meeting overlay on Meet homepage</p>
+            <p className="form-hint">{t("settings.homepageOverlayHint")}</p>
           </div>
         </section>
 
         <section className="settings-section">
-          <h2>Timing</h2>
+          <h2>{t("settings.timing")}</h2>
 
           <div className="form-group">
-            <label className="form-label">Open Meeting Preparing Page</label>
+            <label className="form-label">{t("settings.openMeetingPreparingPage")}</label>
             <NumberInput
               value={settings.joinBeforeMinutes}
               defaultValue={DEFAULT_SETTINGS.joinBeforeMinutes}
               min={0}
               max={30}
-              prefix="before meeting starts"
-              suffix="minutes"
+              prefix={t("settings.beforeMeetingStarts")}
+              suffix={t("settings.minutes")}
               onChange={(value) => updateSettings({ joinBeforeMinutes: value })}
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label">Auto-join countdown</label>
+            <label className="form-label">{t("settings.autoJoinCountdown")}</label>
             <NumberInput
               value={settings.joinCountdownSeconds}
               defaultValue={DEFAULT_SETTINGS.joinCountdownSeconds}
               min={0}
               max={60}
-              prefix="before auto-join"
-              suffix="seconds"
+              prefix={t("settings.beforeAutoJoin")}
+              suffix={t("settings.seconds")}
               onChange={(value) => updateSettings({ joinCountdownSeconds: value })}
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label">Stop auto-join</label>
+            <label className="form-label">{t("settings.stopAutoJoin")}</label>
             <NumberInput
               value={settings.maxMinutesAfterStart}
               defaultValue={DEFAULT_SETTINGS.maxMinutesAfterStart}
               min={0}
               max={30}
-              prefix="after meeting starts"
-              suffix="minutes"
+              prefix={t("settings.afterMeetingStarts")}
+              suffix={t("settings.minutes")}
               onChange={(value) => updateSettings({ maxMinutesAfterStart: value })}
             />
           </div>
         </section>
 
         <section className="settings-section">
-          <h2>Advanced</h2>
+          <h2>{t("settings.advanced")}</h2>
 
           <div className="form-group">
-            <label className="form-label">Exclude keywords</label>
+            <label className="form-label">{t("settings.excludeKeywords")}</label>
             <div className="filter-input-row">
               <input
                 type="text"
                 className="form-input"
-                placeholder="Enter filter text..."
+                placeholder={t("settings.enterFilterText")}
                 value={filterInput}
                 onChange={(e) => setFilterInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addFilter()}
               />
               <button className="btn btn-secondary" onClick={addFilter}>
-                Add
+                {t("settings.add")}
               </button>
             </div>
-            <p className="form-hint">Skip meetings with matching titles</p>
+            <p className="form-hint">{t("settings.skipMatchingTitles")}</p>
+            {titleExcludeFilters.length > 0 && (
+              <div className="filter-list">
+                {titleExcludeFilters.map((filter) => (
+                  <div key={filter} className="filter-item">
+                    <span className="filter-text">{filter}</span>
+                    <button
+                      className="filter-remove"
+                      onClick={() => removeFilter(filter)}
+                      title={t("settings.removeFilter")}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {titleExcludeFilters.length > 0 && (
-            <div className="filter-list">
-              {titleExcludeFilters.map((filter) => (
-                <div key={filter} className="filter-item">
-                  <span className="filter-text">{filter}</span>
-                  <button
-                    className="filter-remove"
-                    onClick={() => removeFilter(filter)}
-                    title="Remove filter"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
           <div className="form-group">
-            <label className="form-label">Default microphone</label>
+            <label className="form-label">{t("settings.defaultMicrophone")}</label>
             <select
               className="form-select"
               value={settings.defaultMicState}
@@ -447,14 +492,14 @@ export function SettingsView({
                 })
               }
             >
-              <option value="muted">Muted</option>
-              <option value="unmuted">Unmuted</option>
+              <option value="muted">{t("settings.muted")}</option>
+              <option value="unmuted">{t("settings.unmuted")}</option>
             </select>
-            <p className="form-hint">Applied when joining</p>
+            <p className="form-hint">{t("settings.appliedWhenJoining")}</p>
           </div>
 
           <div className="form-group">
-            <label className="form-label">Default camera</label>
+            <label className="form-label">{t("settings.defaultCamera")}</label>
             <select
               className="form-select"
               value={settings.defaultCameraState}
@@ -464,17 +509,17 @@ export function SettingsView({
                 })
               }
             >
-              <option value="muted">Off</option>
-              <option value="unmuted">On</option>
+              <option value="muted">{t("settings.cameraOff")}</option>
+              <option value="unmuted">{t("settings.cameraOn")}</option>
             </select>
-            <p className="form-hint">Applied when joining</p>
+            <p className="form-hint">{t("settings.appliedWhenJoining")}</p>
           </div>
 
           {capabilities.tray && (
             <>
               <div className="form-group">
                 <label htmlFor="trayDisplayMode" className="form-label">
-                  Tray display
+                  {t("settings.trayDisplay")}
                 </label>
                 <select
                   id="trayDisplayMode"
@@ -489,14 +534,14 @@ export function SettingsView({
                     )
                   }
                 >
-                  <option value="iconOnly">Icon only</option>
-                  <option value="iconWithTime">Icon + next meeting time</option>
+                  <option value="iconOnly">{t("settings.iconOnly")}</option>
+                  <option value="iconWithTime">{t("settings.iconWithTime")}</option>
                   <option value="iconWithCountdown">
-                    Icon + countdown to next meeting
+                    {t("settings.iconWithCountdown")}
                   </option>
                 </select>
                 <p className="form-hint">
-                  Text shown next to tray icon. Blank when there is no next meeting.
+                  {t("settings.trayDisplayHint")}
                 </p>
               </div>
 
@@ -520,11 +565,11 @@ export function SettingsView({
                       allowTrayTitle ? "" : " is-disabled"
                     }`}
                   >
-                    Show next meeting title
+                    {t("settings.showNextMeetingTitle")}
                   </label>
                 </div>
                 <p className="form-hint">
-                  Only available when tray text is enabled
+                  {t("settings.showNextMeetingTitleHint")}
                 </p>
               </div>
             </>
@@ -533,7 +578,7 @@ export function SettingsView({
 
         {capabilities.developer && (
           <section className="settings-section">
-            <h2>Developer</h2>
+            <h2>{t("settings.developer")}</h2>
 
             <div className="form-group">
               <div className="form-checkbox-group">
@@ -547,14 +592,14 @@ export function SettingsView({
                   }
                 />
                 <label htmlFor="logCollectionEnabled" className="form-checkbox-label">
-                  Collect logs to disk
+                  {t("settings.collectLogs")}
                 </label>
               </div>
-              <p className="form-hint">Stores logs locally for 3 days</p>
+              <p className="form-hint">{t("settings.collectLogsHint")}</p>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Log level</label>
+              <label className="form-label">{t("settings.logLevel")}</label>
               <select
                 className="form-select"
                 value={logLevel}
@@ -570,7 +615,7 @@ export function SettingsView({
                 <option value="debug">Debug</option>
                 <option value="trace">Trace</option>
               </select>
-              <p className="form-hint">Higher levels include more detail</p>
+              <p className="form-hint">{t("settings.logLevelHint")}</p>
             </div>
           </section>
         )}
@@ -578,7 +623,7 @@ export function SettingsView({
 
       {footerText && <footer className="settings-footer">{footerText}</footer>}
       {showSavingIndicator && saving && (
-        <div className="saving-indicator">Saving...</div>
+        <div className="saving-indicator">{t("settings.saving")}</div>
       )}
     </div>
   );
