@@ -3,6 +3,7 @@ export {
   ExtensionSettingsSchema,
   TauriSettingsSchema,
   MediaStateSchema,
+  LanguageSchema,
   LogLevelSchema,
   type Settings,
   type ExtensionSettings,

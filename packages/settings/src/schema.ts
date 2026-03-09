@@ -2,6 +2,7 @@ import { z } from "zod";
 import defaults from "./defaults.json";
 
 type DefaultsJson = {
+  language: "auto" | "en" | "zh" | "ja" | "ko";
   checkIntervalSeconds: number;
   joinBeforeMinutes: number;
   maxMinutesAfterStart: number;
@@ -41,6 +42,11 @@ export const TrayDisplayModeSchema = z.enum([
 ]);
 
 /**
+ * Language options
+ */
+export const LanguageSchema = z.enum(["auto", "en", "zh", "ja", "ko"]);
+
+/**
  * Log level options
  */
 export const LogLevelSchema = z.enum(["error", "warn", "info", "debug", "trace"]);
@@ -77,6 +83,10 @@ export const TauriSettingsSchema = z.object({
  * Main settings schema for MeetCat
  */
 export const SettingsSchema = z.object({
+  // Language
+  /** UI language (default: auto-detect) */
+  language: LanguageSchema.default(DEFAULTS.language),
+
   // Timing
   /** Interval in seconds between checking for meetings (30-120, default: 30) */
   checkIntervalSeconds: z

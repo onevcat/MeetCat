@@ -2,6 +2,7 @@ import type { Settings, ExtensionSettings, TauriSettings } from "./schema.js";
 import defaults from "./defaults.json";
 
 type DefaultsJson = {
+  language: "auto" | "en" | "zh" | "ja" | "ko";
   checkIntervalSeconds: number;
   joinBeforeMinutes: number;
   maxMinutesAfterStart: number;
@@ -21,6 +22,9 @@ const DEFAULTS = defaults as DefaultsJson;
  * Default settings values
  */
 export const DEFAULT_SETTINGS: Settings = {
+  // Language
+  language: DEFAULTS.language,
+
   // Timing
   checkIntervalSeconds: DEFAULTS.checkIntervalSeconds,
   joinBeforeMinutes: DEFAULTS.joinBeforeMinutes,
