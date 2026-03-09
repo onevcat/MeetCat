@@ -1045,6 +1045,8 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String> {
     let app_name = "MeetCat";
+    let lang = i18n::Language::detect();
+
     let about_icon_bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.png"));
     let about_icon =
         tauri::image::Image::from_bytes(about_icon_bytes).map_err(|e| e.to_string())?;
@@ -1055,7 +1057,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let quit_item = MenuItem::with_id(
         app,
         "app-quit",
-        format!("Quit {}", app_name),
+        i18n::tr(&lang, i18n::keys::QUIT_MEETCAT),
         true,
         Some("Cmd+Q"),
     )
@@ -1063,7 +1065,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let go_home_item = MenuItem::with_id(
         app,
         "app-go-home",
-        "Back to Google Meet Home",
+        i18n::tr(&lang, i18n::keys::BACK_TO_GOOGLE_MEET_HOME),
         true,
         Some("Cmd+Shift+H"),
     )
@@ -1071,7 +1073,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let refresh_item = MenuItem::with_id(
         app,
         "app-refresh-home",
-        "Refresh Home",
+        i18n::tr(&lang, i18n::keys::MENU_REFRESH_HOME),
         refresh_enabled,
         Some("Cmd+R"),
     )
@@ -1079,52 +1081,52 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let settings_item = MenuItem::with_id(
         app,
         "app-settings",
-        format!("{} Settings...", app_name),
+        i18n::tr(&lang, i18n::keys::SETTINGS),
         true,
         Some("Cmd+,"),
     )
     .map_err(|e| e.to_string())?;
 
     let app_menu = SubmenuBuilder::with_id(app, "app", app_name)
-        .about(Some(about_metadata))
+        .about_with_text(i18n::tr_about(&lang, app_name), Some(about_metadata))
         .item(&settings_item)
         .separator()
         .item(&go_home_item)
         .separator()
-        .services()
+        .services_with_text(i18n::tr(&lang, i18n::keys::MENU_SERVICES))
         .separator()
-        .hide()
-        .hide_others()
-        .show_all()
+        .hide_with_text(i18n::tr_hide(&lang, app_name))
+        .hide_others_with_text(i18n::tr(&lang, i18n::keys::MENU_HIDE_OTHERS))
+        .show_all_with_text(i18n::tr(&lang, i18n::keys::MENU_SHOW_ALL))
         .separator()
         .item(&quit_item)
         .build()
         .map_err(|e| e.to_string())?;
 
-    let edit_menu = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
+    let edit_menu = SubmenuBuilder::new(app, i18n::tr(&lang, i18n::keys::MENU_EDIT))
+        .undo_with_text(i18n::tr(&lang, i18n::keys::MENU_UNDO))
+        .redo_with_text(i18n::tr(&lang, i18n::keys::MENU_REDO))
         .separator()
-        .cut()
-        .copy()
-        .paste()
+        .cut_with_text(i18n::tr(&lang, i18n::keys::MENU_CUT))
+        .copy_with_text(i18n::tr(&lang, i18n::keys::MENU_COPY))
+        .paste_with_text(i18n::tr(&lang, i18n::keys::MENU_PASTE))
         .separator()
-        .select_all()
+        .select_all_with_text(i18n::tr(&lang, i18n::keys::MENU_SELECT_ALL))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let view_menu = SubmenuBuilder::new(app, "View")
+    let view_menu = SubmenuBuilder::new(app, i18n::tr(&lang, i18n::keys::MENU_VIEW))
         .item(&refresh_item)
         .separator()
-        .fullscreen()
+        .fullscreen_with_text(i18n::tr(&lang, i18n::keys::MENU_FULLSCREEN))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let window_menu = SubmenuBuilder::new(app, "Window")
-        .minimize()
-        .maximize()
+    let window_menu = SubmenuBuilder::new(app, i18n::tr(&lang, i18n::keys::MENU_WINDOW))
+        .minimize_with_text(i18n::tr(&lang, i18n::keys::MENU_MINIMIZE))
+        .maximize_with_text(i18n::tr(&lang, i18n::keys::MENU_ZOOM))
         .separator()
-        .close_window()
+        .close_window_with_text(i18n::tr(&lang, i18n::keys::MENU_CLOSE_WINDOW))
         .build()
         .map_err(|e| e.to_string())?;
 

@@ -9,14 +9,16 @@ if ! command -v pnpm >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[meetcat] Building shared packages (@meetcat/settings -> @meetcat/settings-ui -> @meetcat/core)..."
+echo "[meetcat] Building shared packages (@meetcat/settings -> @meetcat/i18n -> @meetcat/settings-ui -> @meetcat/core)..."
 pnpm --filter @meetcat/settings build
+pnpm --filter @meetcat/i18n build
 pnpm --filter @meetcat/settings-ui build
 pnpm --filter @meetcat/core build
 
 echo "[meetcat] Starting shared package watchers..."
 pnpm -r --parallel \
   --filter @meetcat/settings \
+  --filter @meetcat/i18n \
   --filter @meetcat/settings-ui \
   --filter @meetcat/core \
   dev &
