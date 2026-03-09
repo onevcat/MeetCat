@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@meetcat/core": "workspace:*",
+    "@meetcat/i18n": "workspace:*",
     "@meetcat/settings": "workspace:*",
     "@meetcat/settings-ui": "workspace:*",
     "@tauri-apps/api": "^2.10.1",

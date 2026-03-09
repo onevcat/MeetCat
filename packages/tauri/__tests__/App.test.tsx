@@ -78,9 +78,10 @@ describe("App", () => {
     // Make the Promise hang to keep loading state
     mockInvoke.mockImplementation(() => new Promise(() => {}));
 
-    render(<App />);
+    const { container } = render(<App />);
 
-    expect(screen.getByText("Loading settings...")).toBeDefined();
+    // App returns null while initializing i18n, so no content is rendered
+    expect(container.innerHTML).toBe("");
   });
 
   it("should render MeetCat Settings title after loading", async () => {
@@ -390,7 +391,7 @@ describe("App", () => {
     });
 
     const selects = screen.getAllByRole("combobox");
-    const micSelect = selects[0];
+    const micSelect = selects[1];
     fireEvent.change(micSelect, { target: { value: "unmuted" } });
 
     await waitFor(() => {
@@ -408,7 +409,7 @@ describe("App", () => {
     });
 
     const selects = screen.getAllByRole("combobox");
-    const cameraSelect = selects[1];
+    const cameraSelect = selects[2];
     fireEvent.change(cameraSelect, { target: { value: "unmuted" } });
 
     await waitFor(() => {

@@ -4,6 +4,7 @@
 //! and background daemon for meeting scheduling.
 
 mod daemon;
+pub mod i18n;
 mod logging;
 mod settings;
 mod tray;

@@ -92,6 +92,10 @@ impl Default for TauriSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
+    // Language
+    #[serde(default = "default_language")]
+    pub language: String,
+
     // Timing
     #[serde(default = "default_check_interval")]
     pub check_interval_seconds: u32,
@@ -142,6 +146,7 @@ struct DefaultsTauriSettings {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DefaultsFile {
+    language: String,
     join_before_minutes: u32,
     max_minutes_after_start: u32,
     auto_click_join: bool,
@@ -159,6 +164,10 @@ fn defaults() -> &'static DefaultsFile {
         let raw = include_str!("../../../settings/src/defaults.json");
         serde_json::from_str(raw).expect("Failed to parse shared defaults.json")
     })
+}
+
+fn default_language() -> String {
+    defaults().language.clone()
 }
 
 fn default_check_interval() -> u32 {
@@ -225,6 +234,7 @@ impl Default for Settings {
     fn default() -> Self {
         let defaults = defaults();
         Self {
+            language: defaults.language.clone(),
             check_interval_seconds: default_check_interval(),
             join_before_minutes: defaults.join_before_minutes,
             max_minutes_after_start: defaults.max_minutes_after_start,
@@ -403,6 +413,7 @@ mod tests {
     #[test]
     fn test_settings_full_roundtrip() {
         let original = Settings {
+            language: "en".to_string(),
             check_interval_seconds: 60,
             join_before_minutes: 5,
             max_minutes_after_start: 12,

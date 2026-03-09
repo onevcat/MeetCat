@@ -10,6 +10,8 @@ import {
 import type { Settings } from "@meetcat/settings";
 import { DEFAULT_TAURI_SETTINGS, getTauriDefaults } from "@meetcat/settings";
 import { SettingsContainer, type SettingsAdapter } from "@meetcat/settings-ui";
+import { initI18n, type LanguageSetting } from "@meetcat/i18n";
+import { I18nProvider, useTranslation } from "@meetcat/i18n/react";
 import "./App.css";
 
 type UpdateInfo = {
@@ -247,7 +249,8 @@ function renderMarkdown(notes: string): JSX.Element {
 /**
  * Settings window for MeetCat Tauri app
  */
-export function App() {
+function AppContent() {
+  const { t } = useTranslation();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [canInstallUpdate, setCanInstallUpdate] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
@@ -298,16 +301,16 @@ export function App() {
       setIsCheckingForUpdate(true);
       setCanInstallUpdate(false);
       setUpdateErrorText(null);
-      setUpdateStatusText("Checking for updates...");
+      setUpdateStatusText(t("update.checkingForUpdates"));
 
       try {
         const result = await invoke<UpdateInfo | null>("check_for_update_manual");
         setUpdateInfo(result);
         setCanInstallUpdate(Boolean(result));
         if (result) {
-          setUpdateStatusText(`New version ${result.version} is available.`);
+          setUpdateStatusText(t("update.newVersionAvailable", { version: result.version }));
         } else {
-          setUpdateStatusText("You are using the latest version.");
+          setUpdateStatusText(t("update.latestVersion"));
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -319,7 +322,7 @@ export function App() {
         setIsCheckingForUpdate(false);
       }
     },
-    []
+    [t]
   );
 
   const applyUpdatePreference = useCallback(async (next: UpdatePreference) => {
@@ -357,25 +360,25 @@ export function App() {
     setCanInstallUpdate(false);
     setUpdateErrorText(null);
     setDownloadProgress(null);
-    setUpdateStatusText("Downloading update...");
+    setUpdateStatusText(t("update.downloadingUpdate"));
     try {
       const installed = await invoke<boolean>("download_and_install_update", {
         autoRestart: true,
       });
       if (!installed) {
         setUpdateInfo(null);
-        setUpdateStatusText("No update is available.");
+        setUpdateStatusText(t("update.noUpdateAvailable"));
         setIsInstallingUpdate(false);
         return;
       }
-      setUpdateStatusText("Update installed. Restarting MeetCat...");
+      setUpdateStatusText(t("update.updateInstalled"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setUpdateErrorText(message);
       setUpdateStatusText(null);
       setIsInstallingUpdate(false);
     }
-  }, [isInstallingUpdate]);
+  }, [isInstallingUpdate, canInstallUpdate, updateInfo, t]);
 
   useEffect(() => {
     let disposed = false;
@@ -460,7 +463,7 @@ export function App() {
         (event) => {
           if (!disposed) {
             setDownloadProgress(event.payload);
-            setUpdateStatusText("Downloading update...");
+            setUpdateStatusText(t("update.downloadingUpdate"));
           }
         }
       );
@@ -468,7 +471,7 @@ export function App() {
 
       const unlistenFinish = await listen("update:download-finish", () => {
         if (!disposed) {
-          setUpdateStatusText("Installing update...");
+          setUpdateStatusText(t("update.installingUpdate"));
         }
       });
       cleanupTasks.push(unlistenFinish);
@@ -482,21 +485,21 @@ export function App() {
         cleanup();
       }
     };
-  }, [checkForUpdates]);
+  }, [checkForUpdates, t]);
 
   return (
     <div className="tauri-settings-shell">
       {bannerUpdate && (
         <div className="update-banner" role="status">
           <span className="update-banner-text">
-            New version {bannerUpdate.version} is available
+            {t("update.newVersionBanner", { version: bannerUpdate.version })}
           </span>
           <button
             type="button"
             className="update-banner-btn"
             onClick={() => setIsUpdateDialogOpen(true)}
           >
-            View details
+            {t("update.viewDetails")}
           </button>
         </div>
       )}
@@ -527,13 +530,13 @@ export function App() {
             <div className="update-dialog-header">
               <h2 id="update-dialog-title">
                 {updateInfo
-                  ? `Update to ${updateInfo.version}`
-                  : "Check for updates"}
+                  ? t("update.updateTo", { version: updateInfo.version })
+                  : t("update.checkForUpdates")}
               </h2>
               <button
                 type="button"
                 className="update-dialog-close"
-                aria-label="Close update dialog"
+                aria-label={t("update.closeDialog")}
                 disabled={isInstallingUpdate}
                 onClick={() => setIsUpdateDialogOpen(false)}
               >
@@ -544,18 +547,18 @@ export function App() {
             {updateInfo ? (
               <>
                 <p className="update-dialog-description">
-                  A new version is ready. Install will restart MeetCat automatically.
+                  {t("update.newVersionReady")}
                 </p>
                 <div className="update-dialog-notes">
-                  <h3>What&apos;s new</h3>
+                  <h3>{t("update.whatsNew")}</h3>
                   <div className="update-dialog-markdown">
-                    {renderMarkdown(updateInfo.notes?.trim() || "No release notes provided.")}
+                    {renderMarkdown(updateInfo.notes?.trim() || t("update.noReleaseNotes"))}
                   </div>
                 </div>
               </>
             ) : (
               <p className="update-dialog-description">
-                No update is currently cached. You can run a manual check now.
+                {t("update.noUpdateCached")}
               </p>
             )}
 
@@ -592,7 +595,7 @@ export function App() {
                       disabled={isCheckingForUpdate || isInstallingUpdate}
                       onClick={skipCurrentVersion}
                     >
-                      Skip this version
+                      {t("update.skipThisVersion")}
                     </button>
                     <button
                       type="button"
@@ -600,7 +603,7 @@ export function App() {
                       disabled={isCheckingForUpdate || isInstallingUpdate}
                       onClick={remindCurrentVersionLater}
                     >
-                      Remind me tomorrow
+                      {t("update.remindTomorrow")}
                     </button>
                   </div>
                   <button
@@ -611,7 +614,7 @@ export function App() {
                       void installUpdate();
                     }}
                   >
-                    {isInstallingUpdate ? "Installing..." : "Install update"}
+                    {isInstallingUpdate ? t("update.installing") : t("update.installUpdate")}
                   </button>
                 </>
               ) : (
@@ -623,7 +626,7 @@ export function App() {
                     void checkForUpdates(false);
                   }}
                 >
-                  {isCheckingForUpdate ? "Checking..." : "Check for updates"}
+                  {isCheckingForUpdate ? t("update.checking") : t("update.checkForUpdates")}
                 </button>
               )}
             </div>
@@ -631,5 +634,22 @@ export function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export function App() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    // Pre-initialize i18n before rendering; SettingsContainer will refine language
+    initI18n("auto").then(() => setReady(true));
+  }, []);
+
+  if (!ready) return null;
+
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
   );
 }
