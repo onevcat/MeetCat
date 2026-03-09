@@ -57,6 +57,7 @@ import {
 } from "./tauri-bridge.js";
 import type { Meeting } from "./types.js";
 import { DEFAULT_SETTINGS as SETTINGS_DEFAULTS } from "@meetcat/settings";
+import { initI18n, changeLanguage, type LanguageSetting } from "@meetcat/i18n";
 import {
   createHomepageReloadWatchdog,
   createMeetingsFingerprint,
@@ -320,6 +321,9 @@ async function init(): Promise<void> {
   // Ensure styles are injected first (this doesn't need Tauri)
   ensureStyles(document);
 
+  // Initialize i18n early with auto-detect; will update after settings load
+  await initI18n("auto");
+
   document.addEventListener(
     "click",
     (event) => {
@@ -351,6 +355,10 @@ async function init(): Promise<void> {
         logCollectionEnabled: settings?.tauri?.logCollectionEnabled ?? false,
         logLevel: settings?.tauri?.logLevel ?? "info",
       });
+      // Update i18n language from settings
+      if (settings?.language) {
+        await initI18n(settings.language as LanguageSetting);
+      }
     } else {
       settings = DEFAULT_SETTINGS;
       logToConsole("info", "[MeetCat] Using default settings (not in Tauri)");
@@ -413,6 +421,10 @@ async function setupEventListeners(): Promise<void> {
       });
       settings = newSettings;
       updateOverlayVisibility();
+      // Sync i18n language if changed
+      if (newSettings?.language) {
+        void changeLanguage(newSettings.language as LanguageSetting);
+      }
       logToDisk("info", "settings", "settings.changed", "Settings updated", {
         logCollectionEnabled: settings?.tauri?.logCollectionEnabled ?? false,
         logLevel: settings?.tauri?.logLevel ?? "info",

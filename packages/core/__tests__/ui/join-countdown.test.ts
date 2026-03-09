@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { JSDOM } from "jsdom";
+import { initI18n } from "@meetcat/i18n";
 import { createJoinCountdown } from "../../src/ui/join-countdown.js";
 
 describe("Join Countdown", () => {
@@ -9,6 +10,10 @@ describe("Join Countdown", () => {
   let onComplete: ReturnType<typeof vi.fn>;
   let onCancel: ReturnType<typeof vi.fn>;
   let onHide: ReturnType<typeof vi.fn>;
+
+  beforeAll(async () => {
+    await initI18n("en");
+  });
 
   beforeEach(() => {
     vi.useFakeTimers();

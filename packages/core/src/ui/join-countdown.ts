@@ -1,3 +1,4 @@
+import { t } from "@meetcat/i18n";
 import { attachOverlayHideButton } from "./overlay-controls.js";
 import { ensureStyles } from "./styles.js";
 
@@ -41,7 +42,7 @@ function createIconElement(doc: Document, iconUrl?: string): HTMLElement {
   }
   const span = doc.createElement("span");
   span.className = "meetcat-icon";
-  span.textContent = "🐱";
+  span.textContent = "\u{1F431}";
   return span;
 }
 
@@ -80,7 +81,7 @@ export function createJoinCountdown(
   const titleDiv = doc.createElement("div");
   titleDiv.className = "meetcat-title";
 
-  const titleText = doc.createTextNode("Auto-joining in ");
+  const titleText = doc.createTextNode(t("overlay.autoJoiningIn"));
   titleDiv.appendChild(titleText);
 
   const countdownEl = doc.createElement("span");
@@ -105,7 +106,7 @@ export function createJoinCountdown(
   // Create cancel button
   const cancelBtn = doc.createElement("button");
   cancelBtn.className = "meetcat-btn meetcat-btn-cancel";
-  cancelBtn.textContent = "Cancel";
+  cancelBtn.textContent = t("overlay.cancel");
   overlay.appendChild(cancelBtn);
 
   attachOverlayHideButton(overlay, {

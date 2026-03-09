@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { JSDOM } from "jsdom";
+import { initI18n } from "@meetcat/i18n";
 import { createHomepageOverlay } from "../../src/ui/homepage-overlay.js";
 import type { Meeting } from "../../src/types.js";
 
@@ -7,6 +8,10 @@ describe("Homepage Overlay", () => {
   let dom: JSDOM;
   let document: Document;
   let container: HTMLElement;
+
+  beforeAll(async () => {
+    await initI18n("en");
+  });
 
   beforeEach(() => {
     vi.useFakeTimers();

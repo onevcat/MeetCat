@@ -1,3 +1,4 @@
+import { t } from "@meetcat/i18n";
 import type { Meeting } from "../types.js";
 import { attachOverlayHideButton } from "./overlay-controls.js";
 import { ensureStyles } from "./styles.js";
@@ -52,7 +53,7 @@ function createIconElement(doc: Document, iconUrl?: string): HTMLElement {
   }
   const span = doc.createElement("span");
   span.className = "meetcat-icon";
-  span.textContent = "🐱";
+  span.textContent = "\u{1F431}";
   return span;
 }
 
@@ -85,7 +86,7 @@ export function createHomepageOverlay(
 
   const titleEl = doc.createElement("div");
   titleEl.className = "meetcat-title";
-  titleEl.textContent = "No upcoming meetings";
+  titleEl.textContent = t("overlay.noUpcomingMeetings");
   textDiv.appendChild(titleEl);
 
   const subtitleEl = doc.createElement("div");
@@ -99,7 +100,7 @@ export function createHomepageOverlay(
   const updateButton = doc.createElement("button");
   updateButton.type = "button";
   updateButton.className = "meetcat-update-btn";
-  updateButton.textContent = "Update available";
+  updateButton.textContent = t("overlay.updateAvailable");
   updateButton.addEventListener("click", () => onUpdateClick?.());
   updateRow.appendChild(updateButton);
   textDiv.appendChild(updateRow);
@@ -117,7 +118,7 @@ export function createHomepageOverlay(
 
   function updateDisplay(): void {
     if (!currentMeeting) {
-      titleEl.textContent = "No upcoming meetings";
+      titleEl.textContent = t("overlay.noUpcomingMeetings");
       subtitleEl.textContent = "";
       countdownSpan = null;
       return;
@@ -129,17 +130,17 @@ export function createHomepageOverlay(
 
     if (minutesUntil <= 0) {
       // Meeting has started
-      titleEl.textContent = `In progress: ${currentMeeting.title}`;
+      titleEl.textContent = t("overlay.inProgress", { title: currentMeeting.title });
       subtitleEl.textContent = "";
       countdownSpan = null;
     } else {
       // Meeting upcoming
-      titleEl.textContent = `Next: ${currentMeeting.title}`;
+      titleEl.textContent = t("overlay.next", { title: currentMeeting.title });
 
       // Build subtitle using DOM API
       if (!countdownSpan) {
         subtitleEl.textContent = "";
-        const inText = doc.createTextNode("in ");
+        const inText = doc.createTextNode(t("overlay.in"));
         subtitleEl.appendChild(inText);
 
         countdownSpan = doc.createElement("span");
@@ -166,10 +167,12 @@ export function createHomepageOverlay(
       currentUpdate = update;
       if (!currentUpdate) {
         updateRow.style.display = "none";
-        updateButton.textContent = "Update available";
+        updateButton.textContent = t("overlay.updateAvailable");
         return;
       }
-      updateButton.textContent = `New version ${currentUpdate.version} available`;
+      updateButton.textContent = t("overlay.newVersionAvailable", {
+        version: currentUpdate.version,
+      });
       updateRow.style.display = "block";
     },
 

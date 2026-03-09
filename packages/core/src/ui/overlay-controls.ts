@@ -1,3 +1,5 @@
+import { t } from "@meetcat/i18n";
+
 export interface OverlayHideOptions {
   title?: string;
   onHide?: () => void;
@@ -30,7 +32,7 @@ export function attachOverlayHideButton(
   button.type = "button";
   button.className = "meetcat-btn-icon meetcat-hide-btn";
 
-  const title = options.title ?? "Temporarily hide";
+  const title = options.title ?? t("overlay.temporarilyHide");
   button.title = title;
   button.setAttribute("aria-label", title);
 
