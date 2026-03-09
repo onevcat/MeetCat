@@ -408,7 +408,7 @@ function AppContent() {
 
       try {
         const shouldOpenDialog = await invoke<boolean>("consume_open_update_dialog_request");
-        if (!disposed && shouldOpenDialog) {
+        if (shouldOpenDialog) {
           setIsUpdateDialogOpen(true);
         }
       } catch (error) {
@@ -419,7 +419,7 @@ function AppContent() {
         const shouldRunManualCheck = await invoke<boolean>(
           "consume_manual_update_check_request"
         );
-        if (!disposed && shouldRunManualCheck) {
+        if (shouldRunManualCheck) {
           void checkForUpdates(true);
         }
       } catch (error) {
