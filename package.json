@@ -1,6 +1,6 @@
 {
   "name": "meetcat",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "description": "Auto-join Google Meet meetings with Chrome Extension and Tauri desktop app",
   "scripts": {
