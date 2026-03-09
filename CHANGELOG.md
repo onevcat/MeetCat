@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-03-10
+
+Multi-language support across the entire app, plus a Settings shortcut and a tray update-check fix.
+
+### Added
+
+- Added full i18n support (English, Chinese, Japanese, Korean) for tray menu, macOS app menu, settings UI, overlay, countdown, and Chrome extension popup.
+- Added Settings menu item with Cmd+, shortcut in the macOS menu bar.
+- Added localization for all macOS native menu items (Edit, View, Window submenus and their predefined items) using system language detection.
+
+### Fixed
+
+- Fixed update dialog not showing on first "Check for Updates" click from the tray menu.
+
 ## [0.0.5] - 2026-03-04
 
 Auto updating support is now integrated for the macOS desktop app, with user-visible prompts across tray, settings, and overlay before installation.
