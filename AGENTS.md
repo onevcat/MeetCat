@@ -41,7 +41,7 @@
 
 ## Release Reminder (onevcat)
 - When onevcat asks "how to release", default to this concise answer:
-  1) `pnpm run version:set -- <version>`
+  1) `pnpm run version:set <version>`
   2) Update `CHANGELOG.md` with changelog skill
   3) `pnpm run release:app`
 - Explain that `release:app` auto-stamps changelog date and auto-commits release preparation files, then performs tag + GitHub release.

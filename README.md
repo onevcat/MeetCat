@@ -81,7 +81,7 @@ That is enough to preview the app locally. For full workflows, see `doc/RELEASE.
 For normal app release, use this three-step flow:
 
 ```bash
-pnpm run version:set -- <version>
+pnpm run version:set <version>
 # update CHANGELOG.md (use changelog skill)
 pnpm run release:app
 ```

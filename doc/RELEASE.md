@@ -23,7 +23,7 @@ This document describes the release flow for MeetCat (macOS app + Chrome extensi
 1. Set next version:
 
 ```bash
-pnpm run version:set -- <version>
+pnpm run version:set <version>
 ```
 
 2. Update `CHANGELOG.md` with user-facing changes.
