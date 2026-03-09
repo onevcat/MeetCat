@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@meetcat/core": "workspace:*",
+    "@meetcat/i18n": "workspace:*",
     "@meetcat/settings": "workspace:*",
     "@meetcat/settings-ui": "workspace:*",
     "react": "^19.0.0",

@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
 import type { Settings } from "@meetcat/settings";
 import { DEFAULT_SETTINGS } from "@meetcat/settings";
 import { SettingsContainer, type SettingsAdapter } from "@meetcat/settings-ui";
+import { initI18n, type LanguageSetting } from "@meetcat/i18n";
+import { I18nProvider } from "@meetcat/i18n/react";
 
 const STORAGE_KEY = "meetcat_settings";
 
@@ -45,12 +48,33 @@ const adapter: SettingsAdapter = {
 };
 
 export function Popup() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    // Load settings to detect language, then init i18n
+    async function init() {
+      try {
+        const loaded = await adapter.loadSettings();
+        const resolved = resolveSettings(loaded);
+        await initI18n((resolved.language ?? "auto") as LanguageSetting);
+      } catch {
+        await initI18n("auto");
+      }
+      setReady(true);
+    }
+    init();
+  }, []);
+
+  if (!ready) return null;
+
   return (
-    <SettingsContainer
-      adapter={adapter}
-      headerTitle="MeetCat Settings"
-      headerIconSrc="/icons/icon48.png"
-      appName="MeetCat"
-    />
+    <I18nProvider>
+      <SettingsContainer
+        adapter={adapter}
+        headerTitle="MeetCat Settings"
+        headerIconSrc="/icons/icon48.png"
+        appName="MeetCat"
+      />
+    </I18nProvider>
   );
 }

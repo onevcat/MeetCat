@@ -62,9 +62,10 @@ describe("Popup", () => {
       () => new Promise(() => {})
     );
 
-    render(<Popup />);
+    const { container } = render(<Popup />);
 
-    expect(screen.getByText("Loading settings...")).toBeDefined();
+    // Popup returns null while initializing i18n, so no content is rendered
+    expect(container.innerHTML).toBe("");
   });
 
   it("should render MeetCat title after loading", async () => {
