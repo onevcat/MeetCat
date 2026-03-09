@@ -23,6 +23,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
+sys-locale = "0.3"
 thiserror = "2"
 
 [profile.release]

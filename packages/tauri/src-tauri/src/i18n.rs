@@ -1,0 +1,183 @@
+//! Lightweight i18n for tray menu and tooltips
+
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+/// Supported languages
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Language {
+    En,
+    Zh,
+    Ja,
+    Ko,
+}
+
+impl Language {
+    /// Parse a language string (e.g., "en", "zh", "ja", "ko", "auto") into a Language.
+    /// For "auto", detects from system locale. Falls back to English.
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "en" => Language::En,
+            "zh" => Language::Zh,
+            "ja" => Language::Ja,
+            "ko" => Language::Ko,
+            "auto" | _ => Self::detect(),
+        }
+    }
+
+    /// Detect language from system locale
+    fn detect() -> Self {
+        let locale = sys_locale::get_locale().unwrap_or_default().to_lowercase();
+        if locale.starts_with("zh") {
+            Language::Zh
+        } else if locale.starts_with("ja") {
+            Language::Ja
+        } else if locale.starts_with("ko") {
+            Language::Ko
+        } else {
+            Language::En
+        }
+    }
+}
+
+/// Translation key constants
+pub mod keys {
+    pub const QUIT_MEETCAT: &str = "tray.quitMeetCat";
+    pub const SHOW_WINDOW: &str = "tray.showWindow";
+    pub const BACK_TO_GOOGLE_MEET_HOME: &str = "tray.backToGoogleMeetHome";
+    pub const SETTINGS: &str = "tray.settings";
+    pub const CHECK_FOR_UPDATES: &str = "tray.checkForUpdates";
+    pub const NO_UPCOMING_MEETINGS: &str = "tray.noUpcomingMeetings";
+    pub const TOOLTIP: &str = "tray.tooltip";
+    pub const NOW: &str = "tray.now";
+}
+
+type TranslationMap = HashMap<&'static str, HashMap<Language, &'static str>>;
+
+fn translations() -> &'static TranslationMap {
+    static TRANSLATIONS: OnceLock<TranslationMap> = OnceLock::new();
+    TRANSLATIONS.get_or_init(|| {
+        let mut m: TranslationMap = HashMap::new();
+
+        macro_rules! tr {
+            ($key:expr, en: $en:expr, zh: $zh:expr, ja: $ja:expr, ko: $ko:expr) => {{
+                let mut map = HashMap::new();
+                map.insert(Language::En, $en);
+                map.insert(Language::Zh, $zh);
+                map.insert(Language::Ja, $ja);
+                map.insert(Language::Ko, $ko);
+                m.insert($key, map);
+            }};
+        }
+
+        tr!(keys::QUIT_MEETCAT,
+            en: "Quit MeetCat", zh: "退出 MeetCat", ja: "MeetCat を終了", ko: "MeetCat 종료");
+        tr!(keys::SHOW_WINDOW,
+            en: "Show Window", zh: "显示窗口", ja: "ウィンドウを表示", ko: "창 표시");
+        tr!(keys::BACK_TO_GOOGLE_MEET_HOME,
+            en: "Back to Google Meet Home", zh: "返回 Google Meet 主页", ja: "Google Meet ホームに戻る", ko: "Google Meet 홈으로 돌아가기");
+        tr!(keys::SETTINGS,
+            en: "Settings...", zh: "设置...", ja: "設定...", ko: "설정...");
+        tr!(keys::CHECK_FOR_UPDATES,
+            en: "Check for updates...", zh: "检查更新...", ja: "アップデートを確認...", ko: "업데이트 확인...");
+        tr!(keys::NO_UPCOMING_MEETINGS,
+            en: "No upcoming meetings", zh: "没有即将开始的会议", ja: "予定されている会議はありません", ko: "예정된 회의가 없습니다");
+        tr!(keys::TOOLTIP,
+            en: "MeetCat - Auto-join Google Meet", zh: "MeetCat - 自动加入 Google Meet", ja: "MeetCat - Google Meet に自動参加", ko: "MeetCat - Google Meet 자동 참가");
+        tr!(keys::NOW,
+            en: "now", zh: "现在", ja: "間もなく", ko: "지금");
+
+        m
+    })
+}
+
+/// Translate a key for the given language
+pub fn tr(lang: &Language, key: &'static str) -> &'static str {
+    translations()
+        .get(key)
+        .and_then(|map| map.get(lang).or_else(|| map.get(&Language::En)))
+        .copied()
+        .unwrap_or(key)
+}
+
+/// Format "Update available: {version}" for the given language
+pub fn tr_update_available(lang: &Language, version: &str) -> String {
+    match lang {
+        Language::En => format!("Update available: {}", version),
+        Language::Zh => format!("有可用更新：{}", version),
+        Language::Ja => format!("アップデートがあります：{}", version),
+        Language::Ko => format!("업데이트 가능: {}", version),
+    }
+}
+
+/// Format "Next: {title} ({status})" for the given language
+pub fn tr_next_meeting(lang: &Language, title: &str, status: &str) -> String {
+    match lang {
+        Language::En => format!("Next: {} ({})", title, status),
+        Language::Zh => format!("下一个：{}（{}）", title, status),
+        Language::Ja => format!("次：{}（{}）", title, status),
+        Language::Ko => format!("다음: {} ({})", title, status),
+    }
+}
+
+/// Format "MeetCat - Next: {title} ({status})" for the given language
+pub fn tr_tooltip_with_meeting(lang: &Language, title: &str, status: &str) -> String {
+    match lang {
+        Language::En => format!("MeetCat - Next: {} ({})", title, status),
+        Language::Zh => format!("MeetCat - 下一个：{}（{}）", title, status),
+        Language::Ja => format!("MeetCat - 次：{}（{}）", title, status),
+        Language::Ko => format!("MeetCat - 다음: {} ({})", title, status),
+    }
+}
+
+/// Format "MeetCat - No upcoming meetings" for the given language
+pub fn tr_tooltip_no_meetings(lang: &Language) -> String {
+    match lang {
+        Language::En => "MeetCat - No upcoming meetings".to_string(),
+        Language::Zh => "MeetCat - 没有即将开始的会议".to_string(),
+        Language::Ja => "MeetCat - 予定されている会議はありません".to_string(),
+        Language::Ko => "MeetCat - 예정된 회의가 없습니다".to_string(),
+    }
+}
+
+/// Format time status like "in 5 min" / "now" / "3 min ago"
+pub fn tr_time_status(lang: &Language, starts_in_minutes: i64) -> String {
+    if starts_in_minutes > 0 {
+        match lang {
+            Language::En => format!("in {} min", starts_in_minutes),
+            Language::Zh => format!("{} 分钟后", starts_in_minutes),
+            Language::Ja => format!("{} 分後", starts_in_minutes),
+            Language::Ko => format!("{}분 후", starts_in_minutes),
+        }
+    } else if starts_in_minutes == 0 {
+        tr(lang, keys::NOW).to_string()
+    } else {
+        match lang {
+            Language::En => format!("{} min ago", -starts_in_minutes),
+            Language::Zh => format!("{} 分钟前", -starts_in_minutes),
+            Language::Ja => format!("{} 分前", -starts_in_minutes),
+            Language::Ko => format!("{}분 전", -starts_in_minutes),
+        }
+    }
+}
+
+/// Format countdown for tray title like "in 5m" / "now" / "3m ago"
+pub fn tr_countdown_short(lang: &Language, starts_in_minutes: i64) -> String {
+    if starts_in_minutes > 0 {
+        match lang {
+            Language::En => format!("in {}m", starts_in_minutes),
+            Language::Zh => format!("{}分后", starts_in_minutes),
+            Language::Ja => format!("{}分後", starts_in_minutes),
+            Language::Ko => format!("{}분 후", starts_in_minutes),
+        }
+    } else if starts_in_minutes == 0 {
+        tr(lang, keys::NOW).to_string()
+    } else {
+        match lang {
+            Language::En => format!("{}m ago", -starts_in_minutes),
+            Language::Zh => format!("{}分前", -starts_in_minutes),
+            Language::Ja => format!("{}分前", -starts_in_minutes),
+            Language::Ko => format!("{}분 전", -starts_in_minutes),
+        }
+    }
+}
