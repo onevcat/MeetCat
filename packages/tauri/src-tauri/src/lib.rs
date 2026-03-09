@@ -1076,9 +1076,19 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
         Some("Cmd+R"),
     )
     .map_err(|e| e.to_string())?;
+    let settings_item = MenuItem::with_id(
+        app,
+        "app-settings",
+        format!("{} Settings...", app_name),
+        true,
+        Some("Cmd+,"),
+    )
+    .map_err(|e| e.to_string())?;
 
     let app_menu = SubmenuBuilder::with_id(app, "app", app_name)
         .about(Some(about_metadata))
+        .item(&settings_item)
+        .separator()
         .item(&go_home_item)
         .separator()
         .services()
@@ -1558,6 +1568,11 @@ pub fn run() {
                 }
                 app.on_menu_event(|app, event| match event.id().as_ref() {
                     "app-quit" => app.exit(0),
+                    "app-settings" => {
+                        if let Err(e) = ensure_settings_window(app) {
+                            eprintln!("Failed to open settings window: {}", e);
+                        }
+                    }
                     "app-go-home" => {
                         if let Err(e) = navigate_to_meet_home(app) {
                             eprintln!("Failed to navigate to Google Meet home: {}", e);
