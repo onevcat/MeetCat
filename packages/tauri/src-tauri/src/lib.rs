@@ -177,6 +177,19 @@ fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> 
     let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
     tray::update_tray_status(&app, next_meeting.as_ref());
 
+    // Rebuild macOS app menu when language changes
+    #[cfg(target_os = "macos")]
+    if previous_settings.language != settings.language {
+        let is_homepage = state
+            .homepage_active
+            .lock()
+            .map(|v| v.unwrap_or(false))
+            .unwrap_or(false);
+        if let Err(e) = apply_macos_menu(&app, is_homepage) {
+            eprintln!("Failed to update macOS menu language: {}", e);
+        }
+    }
+
     Ok(())
 }
 
@@ -1045,6 +1058,17 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String> {
     let app_name = "MeetCat";
+    let lang = app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .settings
+                .lock()
+                .ok()
+                .map(|s| i18n::Language::from_setting(&s.language))
+        })
+        .unwrap_or_else(|| i18n::Language::from_setting("auto"));
+
     let about_icon_bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.png"));
     let about_icon =
         tauri::image::Image::from_bytes(about_icon_bytes).map_err(|e| e.to_string())?;
@@ -1055,7 +1079,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let quit_item = MenuItem::with_id(
         app,
         "app-quit",
-        format!("Quit {}", app_name),
+        i18n::tr(&lang, i18n::keys::QUIT_MEETCAT),
         true,
         Some("Cmd+Q"),
     )
@@ -1063,7 +1087,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let go_home_item = MenuItem::with_id(
         app,
         "app-go-home",
-        "Back to Google Meet Home",
+        i18n::tr(&lang, i18n::keys::BACK_TO_GOOGLE_MEET_HOME),
         true,
         Some("Cmd+Shift+H"),
     )
@@ -1071,7 +1095,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let refresh_item = MenuItem::with_id(
         app,
         "app-refresh-home",
-        "Refresh Home",
+        i18n::tr(&lang, i18n::keys::MENU_REFRESH_HOME),
         refresh_enabled,
         Some("Cmd+R"),
     )
@@ -1079,7 +1103,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
     let settings_item = MenuItem::with_id(
         app,
         "app-settings",
-        format!("{} Settings...", app_name),
+        i18n::tr(&lang, i18n::keys::SETTINGS),
         true,
         Some("Cmd+,"),
     )
@@ -1101,7 +1125,7 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
         .build()
         .map_err(|e| e.to_string())?;
 
-    let edit_menu = SubmenuBuilder::new(app, "Edit")
+    let edit_menu = SubmenuBuilder::new(app, i18n::tr(&lang, i18n::keys::MENU_EDIT))
         .undo()
         .redo()
         .separator()
@@ -1113,14 +1137,14 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
         .build()
         .map_err(|e| e.to_string())?;
 
-    let view_menu = SubmenuBuilder::new(app, "View")
+    let view_menu = SubmenuBuilder::new(app, i18n::tr(&lang, i18n::keys::MENU_VIEW))
         .item(&refresh_item)
         .separator()
         .fullscreen()
         .build()
         .map_err(|e| e.to_string())?;
 
-    let window_menu = SubmenuBuilder::new(app, "Window")
+    let window_menu = SubmenuBuilder::new(app, i18n::tr(&lang, i18n::keys::MENU_WINDOW))
         .minimize()
         .maximize()
         .separator()

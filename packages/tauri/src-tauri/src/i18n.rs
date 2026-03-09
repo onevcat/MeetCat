@@ -50,6 +50,12 @@ pub mod keys {
     pub const NO_UPCOMING_MEETINGS: &str = "tray.noUpcomingMeetings";
     pub const TOOLTIP: &str = "tray.tooltip";
     pub const NOW: &str = "tray.now";
+
+    // App menu keys
+    pub const MENU_REFRESH_HOME: &str = "menu.refreshHome";
+    pub const MENU_EDIT: &str = "menu.edit";
+    pub const MENU_VIEW: &str = "menu.view";
+    pub const MENU_WINDOW: &str = "menu.window";
 }
 
 type TranslationMap = HashMap<&'static str, HashMap<Language, &'static str>>;
@@ -86,6 +92,16 @@ fn translations() -> &'static TranslationMap {
             en: "MeetCat - Auto-join Google Meet", zh: "MeetCat - 自动加入 Google Meet", ja: "MeetCat - Google Meet に自動参加", ko: "MeetCat - Google Meet 자동 참가");
         tr!(keys::NOW,
             en: "now", zh: "现在", ja: "間もなく", ko: "지금");
+
+        // App menu
+        tr!(keys::MENU_REFRESH_HOME,
+            en: "Refresh Home", zh: "刷新主页", ja: "ホームを更新", ko: "홈 새로고침");
+        tr!(keys::MENU_EDIT,
+            en: "Edit", zh: "编辑", ja: "編集", ko: "편집");
+        tr!(keys::MENU_VIEW,
+            en: "View", zh: "显示", ja: "表示", ko: "보기");
+        tr!(keys::MENU_WINDOW,
+            en: "Window", zh: "窗口", ja: "ウインドウ", ko: "윈도우");
 
         m
     })
