@@ -26,7 +26,7 @@ impl Language {
     }
 
     /// Detect language from system locale
-    fn detect() -> Self {
+    pub fn detect() -> Self {
         let locale = sys_locale::get_locale().unwrap_or_default().to_lowercase();
         if locale.starts_with("zh") {
             Language::Zh

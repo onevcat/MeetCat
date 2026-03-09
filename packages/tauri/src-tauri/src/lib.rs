@@ -177,19 +177,6 @@ fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> 
     let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
     tray::update_tray_status(&app, next_meeting.as_ref());
 
-    // Rebuild macOS app menu when language changes
-    #[cfg(target_os = "macos")]
-    if previous_settings.language != settings.language {
-        let is_homepage = state
-            .homepage_active
-            .lock()
-            .map(|v| v.unwrap_or(false))
-            .unwrap_or(false);
-        if let Err(e) = apply_macos_menu(&app, is_homepage) {
-            eprintln!("Failed to update macOS menu language: {}", e);
-        }
-    }
-
     Ok(())
 }
 
@@ -1058,16 +1045,7 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
 #[cfg(target_os = "macos")]
 fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String> {
     let app_name = "MeetCat";
-    let lang = app
-        .try_state::<AppState>()
-        .and_then(|state| {
-            state
-                .settings
-                .lock()
-                .ok()
-                .map(|s| i18n::Language::from_setting(&s.language))
-        })
-        .unwrap_or_else(|| i18n::Language::from_setting("auto"));
+    let lang = i18n::Language::detect();
 
     let about_icon_bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.png"));
     let about_icon =
