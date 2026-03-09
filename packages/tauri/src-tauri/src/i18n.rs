@@ -56,6 +56,21 @@ pub mod keys {
     pub const MENU_EDIT: &str = "menu.edit";
     pub const MENU_VIEW: &str = "menu.view";
     pub const MENU_WINDOW: &str = "menu.window";
+
+    // Predefined menu item keys
+    pub const MENU_SERVICES: &str = "menu.services";
+    pub const MENU_HIDE_OTHERS: &str = "menu.hideOthers";
+    pub const MENU_SHOW_ALL: &str = "menu.showAll";
+    pub const MENU_UNDO: &str = "menu.undo";
+    pub const MENU_REDO: &str = "menu.redo";
+    pub const MENU_CUT: &str = "menu.cut";
+    pub const MENU_COPY: &str = "menu.copy";
+    pub const MENU_PASTE: &str = "menu.paste";
+    pub const MENU_SELECT_ALL: &str = "menu.selectAll";
+    pub const MENU_FULLSCREEN: &str = "menu.fullscreen";
+    pub const MENU_MINIMIZE: &str = "menu.minimize";
+    pub const MENU_ZOOM: &str = "menu.zoom";
+    pub const MENU_CLOSE_WINDOW: &str = "menu.closeWindow";
 }
 
 type TranslationMap = HashMap<&'static str, HashMap<Language, &'static str>>;
@@ -103,6 +118,34 @@ fn translations() -> &'static TranslationMap {
         tr!(keys::MENU_WINDOW,
             en: "Window", zh: "窗口", ja: "ウインドウ", ko: "윈도우");
 
+        // Predefined menu items
+        tr!(keys::MENU_SERVICES,
+            en: "Services", zh: "服务", ja: "サービス", ko: "서비스");
+        tr!(keys::MENU_HIDE_OTHERS,
+            en: "Hide Others", zh: "隐藏其他", ja: "ほかを隠す", ko: "기타 가리기");
+        tr!(keys::MENU_SHOW_ALL,
+            en: "Show All", zh: "显示全部", ja: "すべてを表示", ko: "모두 보기");
+        tr!(keys::MENU_UNDO,
+            en: "Undo", zh: "撤销", ja: "取り消す", ko: "실행 취소");
+        tr!(keys::MENU_REDO,
+            en: "Redo", zh: "重做", ja: "やり直す", ko: "실행 복귀");
+        tr!(keys::MENU_CUT,
+            en: "Cut", zh: "剪切", ja: "カット", ko: "잘라내기");
+        tr!(keys::MENU_COPY,
+            en: "Copy", zh: "拷贝", ja: "コピー", ko: "복사하기");
+        tr!(keys::MENU_PASTE,
+            en: "Paste", zh: "粘贴", ja: "ペースト", ko: "붙여넣기");
+        tr!(keys::MENU_SELECT_ALL,
+            en: "Select All", zh: "全选", ja: "すべてを選択", ko: "전체 선택");
+        tr!(keys::MENU_FULLSCREEN,
+            en: "Enter Full Screen", zh: "进入全屏幕", ja: "フルスクリーンにする", ko: "전체 화면 시작");
+        tr!(keys::MENU_MINIMIZE,
+            en: "Minimize", zh: "最小化", ja: "しまう", ko: "최소화");
+        tr!(keys::MENU_ZOOM,
+            en: "Zoom", zh: "缩放", ja: "拡大/縮小", ko: "확대/축소");
+        tr!(keys::MENU_CLOSE_WINDOW,
+            en: "Close Window", zh: "关闭窗口", ja: "ウインドウを閉じる", ko: "윈도우 닫기");
+
         m
     })
 }
@@ -114,6 +157,26 @@ pub fn tr(lang: &Language, key: &'static str) -> &'static str {
         .and_then(|map| map.get(lang).or_else(|| map.get(&Language::En)))
         .copied()
         .unwrap_or(key)
+}
+
+/// Format "About {app_name}" for the given language
+pub fn tr_about(lang: &Language, app_name: &str) -> String {
+    match lang {
+        Language::En => format!("About {}", app_name),
+        Language::Zh => format!("关于 {}", app_name),
+        Language::Ja => format!("{}について", app_name),
+        Language::Ko => format!("{}에 관하여", app_name),
+    }
+}
+
+/// Format "Hide {app_name}" for the given language
+pub fn tr_hide(lang: &Language, app_name: &str) -> String {
+    match lang {
+        Language::En => format!("Hide {}", app_name),
+        Language::Zh => format!("隐藏 {}", app_name),
+        Language::Ja => format!("{}を隠す", app_name),
+        Language::Ko => format!("{} 가리기", app_name),
+    }
 }
 
 /// Format "Update available: {version}" for the given language
