@@ -9,13 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.6] - 2026-03-10
 
-Multi-language support across the entire app, plus a Settings shortcut and a tray update-check fix.
+Multi-language support across major MeetCat surfaces, a quicker Settings shortcut on macOS, and a fix for tray-triggered update checks.
 
 ### Added
 
-- Added full i18n support (English, Chinese, Japanese, Korean) for tray menu, macOS app menu, settings UI, overlay, countdown, and Chrome extension popup.
-- Added Settings menu item with Cmd+, shortcut in the macOS menu bar.
-- Added localization for all macOS native menu items (Edit, View, Window submenus and their predefined items) using system language detection.
+- Added UI localization in English, Chinese, Japanese, and Korean across the tray menu, macOS app menu, settings screens, homepage overlay, join countdown, and Chrome extension popup.
+- Added a language selector in Settings, with Auto detection plus English, Chinese, Japanese, and Korean options.
+- Added a Settings menu item with the standard Cmd+, shortcut in the macOS app menu.
 
 ### Fixed
 
