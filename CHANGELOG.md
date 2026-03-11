@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.6] - 2026-03-10
+## [0.0.6] - 2026-03-11
 
 Multi-language support across major MeetCat surfaces, a quicker Settings shortcut on macOS, and a fix for tray-triggered update checks.
 
