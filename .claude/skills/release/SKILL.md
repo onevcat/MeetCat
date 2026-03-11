@@ -83,9 +83,10 @@ pnpm run release:app
 
 用户确认 `release:app` 完成后：
 
-1. 验证 tag：`git tag --sort=-v:refname | head -3`
-2. 验证 GitHub Release：`gh release view <version>`
-3. 汇报发布结果：
+1. 推送 tag 到远端：`git push origin --tags`
+2. 验证 tag：`git tag --sort=-v:refname | head -3`
+3. 验证 GitHub Release：`gh release view <version>`
+4. 汇报发布结果：
    - GitHub Release URL
    - Extension zip 路径（`release/meetcat-extension-<VERSION>.zip`）
 4. 提醒用户手动上传 extension zip 到 Chrome Web Store
