@@ -13,6 +13,7 @@ import {
   createHomepageOverlay,
   type Meeting,
 } from "@meetcat/core";
+import { initI18n } from "@meetcat/i18n";
 import { DEFAULT_SETTINGS } from "@meetcat/settings";
 import type { MeetingsUpdatedMessage, ExtensionMessage } from "../types.js";
 
@@ -206,6 +207,7 @@ async function init(): Promise<void> {
   console.log("[MeetCat] Homepage content script loaded");
 
   await loadSettings();
+  await initI18n(state.settings.language);
   initOverlay();
   startChecking();
 }

@@ -19,6 +19,7 @@ import {
   type JoinCountdown,
   hasAutoJoinParam,
 } from "@meetcat/core";
+import { initI18n } from "@meetcat/i18n";
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 
 const STORAGE_KEY = "meetcat_settings";
@@ -266,6 +267,7 @@ async function init(): Promise<void> {
   console.log("[MeetCat] Meeting page loaded:", meetingCode);
 
   await loadSettings();
+  await initI18n(state.settings.language);
   observeManualJoinClicks();
 
   const isAutoJoinRequested = hasAutoJoinParam(window.location.href);
