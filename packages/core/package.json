@@ -1,6 +1,6 @@
 {
   "name": "@meetcat/core",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Shared DOM logic for MeetCat",
   "type": "module",
   "main": "./dist/index.js",
