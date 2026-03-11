@@ -203,6 +203,15 @@
   margin-top: 16px;
 }
 
+.update-dialog .btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.update-dialog .btn-primary:disabled {
+  background: #9aa0a6;
+}
+
 .update-dialog-minor-actions {
   display: flex;
   gap: 8px;

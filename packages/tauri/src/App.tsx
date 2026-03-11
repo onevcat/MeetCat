@@ -252,7 +252,6 @@ function renderMarkdown(notes: string): JSX.Element {
 function AppContent() {
   const { t } = useTranslation();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [canInstallUpdate, setCanInstallUpdate] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isCheckingForUpdate, setIsCheckingForUpdate] = useState(false);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
@@ -299,14 +298,12 @@ function AppContent() {
         setIsUpdateDialogOpen(true);
       }
       setIsCheckingForUpdate(true);
-      setCanInstallUpdate(false);
       setUpdateErrorText(null);
       setUpdateStatusText(t("update.checkingForUpdates"));
 
       try {
         const result = await invoke<UpdateInfo | null>("check_for_update_manual");
         setUpdateInfo(result);
-        setCanInstallUpdate(Boolean(result));
         if (result) {
           setUpdateStatusText(t("update.newVersionAvailable", { version: result.version }));
         } else {
@@ -315,7 +312,6 @@ function AppContent() {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         setUpdateInfo(null);
-        setCanInstallUpdate(false);
         setUpdateErrorText(message);
         setUpdateStatusText(null);
       } finally {
@@ -355,9 +351,8 @@ function AppContent() {
   }, [applyUpdatePreference, updateInfo]);
 
   const installUpdate = useCallback(async () => {
-    if (isInstallingUpdate || !canInstallUpdate || !updateInfo) return;
+    if (isInstallingUpdate || !updateInfo) return;
     setIsInstallingUpdate(true);
-    setCanInstallUpdate(false);
     setUpdateErrorText(null);
     setDownloadProgress(null);
     setUpdateStatusText(t("update.downloadingUpdate"));
@@ -378,7 +373,7 @@ function AppContent() {
       setUpdateStatusText(null);
       setIsInstallingUpdate(false);
     }
-  }, [isInstallingUpdate, canInstallUpdate, updateInfo, t]);
+  }, [isInstallingUpdate, updateInfo, t]);
 
   useEffect(() => {
     let disposed = false;
@@ -389,7 +384,6 @@ function AppContent() {
         const info = await invoke<UpdateInfo | null>("get_update_info");
         if (!disposed) {
           setUpdateInfo(info);
-          setCanInstallUpdate(Boolean(info));
         }
       } catch (error) {
         console.error("Failed to load update info:", error);
@@ -429,7 +423,6 @@ function AppContent() {
       const unlistenUpdate = await listen<UpdateInfo | null>("update:available", (event) => {
         if (!disposed) {
           setUpdateInfo(event.payload);
-          setCanInstallUpdate(Boolean(event.payload));
         }
       });
       cleanupTasks.push(unlistenUpdate);
@@ -609,7 +602,7 @@ function AppContent() {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={!canInstallUpdate || isCheckingForUpdate || isInstallingUpdate}
+                    disabled={!updateInfo || isInstallingUpdate}
                     onClick={() => {
                       void installUpdate();
                     }}
