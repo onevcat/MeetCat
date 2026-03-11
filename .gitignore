@@ -42,4 +42,4 @@ packages/tauri/src-tauri/gen/
 packages/tauri/src-tauri/.tauri/
 
 # --- Release artifacts ---
-release/
+/release/
