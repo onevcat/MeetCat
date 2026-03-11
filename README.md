@@ -91,4 +91,4 @@ If there are unrelated local changes, it stops and asks you to clean the working
 
 ## License
 
-TBD.
+MIT. See [LICENSE](LICENSE) for details.
