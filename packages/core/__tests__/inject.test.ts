@@ -45,6 +45,7 @@ const tauriMocks = vi.hoisted(() => ({
   reportJoined: vi.fn(),
   reportMeetingClosed: vi.fn().mockResolvedValue(undefined),
   logEvent: vi.fn().mockResolvedValue(undefined),
+  requestNavigateHome: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../src/parser/index.js", () => parserMocks);
@@ -335,4 +336,146 @@ describe("inject homepage checks", () => {
     module.cleanup();
   });
 
+});
+
+describe("safeNavigateHome behavior", () => {
+  function setupTauriHomepage() {
+    tauriMocks.isTauriEnvironment.mockReturnValue(true);
+    tauriMocks.getSettings.mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      tauri: { ...DEFAULT_TAURI_SETTINGS, logCollectionEnabled: true, logLevel: "debug" },
+    });
+    tauriMocks.onCheckMeetings.mockResolvedValue(() => {});
+    tauriMocks.onNavigateAndJoin.mockResolvedValue(() => {});
+    tauriMocks.onSettingsChanged.mockResolvedValue(() => {});
+    tauriMocks.onUpdateAvailable.mockResolvedValue(() => {});
+    tauriMocks.onUpdatePromptPreferenceChanged.mockResolvedValue(() => {});
+    tauriMocks.getUpdatePromptPreference.mockResolvedValue({});
+    tauriMocks.getUpdateInfo.mockResolvedValue(null);
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    document.body.innerHTML = "<div></div>";
+    window.history.pushState({}, "", "/");
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+  });
+
+  it("Cmd+R calls requestNavigateHome instead of location.reload", async () => {
+    setupTauriHomepage();
+    tauriMocks.requestNavigateHome.mockResolvedValue(undefined);
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true, cancelable: true })
+    );
+    await flushPromises();
+
+    expect(tauriMocks.requestNavigateHome).toHaveBeenCalledTimes(1);
+
+    module.cleanup();
+  });
+
+  it("deduplicates rapid navigate-home calls", async () => {
+    setupTauriHomepage();
+    // Make requestNavigateHome hang (never resolve) to keep reloadInFlight=true
+    tauriMocks.requestNavigateHome.mockReturnValue(new Promise(() => {}));
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    // First trigger
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true, cancelable: true })
+    );
+    await flushPromises();
+
+    // Second trigger while first is still in-flight
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true, cancelable: true })
+    );
+    await flushPromises();
+
+    expect(tauriMocks.requestNavigateHome).toHaveBeenCalledTimes(1);
+    // Verify dedup log was emitted for the second call
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "reload.deduplicated",
+      })
+    );
+
+    module.cleanup();
+  });
+
+  it("logs fallback when requestNavigateHome fails", async () => {
+    setupTauriHomepage();
+    tauriMocks.requestNavigateHome.mockRejectedValue(new Error("IPC failed"));
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true, cancelable: true })
+    );
+    await flushPromises();
+
+    expect(tauriMocks.requestNavigateHome).toHaveBeenCalledTimes(1);
+    // Verify the fallback log was emitted (location.reload is called but can't spy on it in jsdom)
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "reload.navigate_home_failed",
+        context: expect.objectContaining({
+          source: "shortcut",
+          error: "IPC failed",
+        }),
+      })
+    );
+
+    module.cleanup();
+  });
+
+  it("cleanup resets reloadInFlight so navigation works again", async () => {
+    setupTauriHomepage();
+    // First import: hang the navigate to set reloadInFlight=true
+    tauriMocks.requestNavigateHome.mockReturnValue(new Promise(() => {}));
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true, cancelable: true })
+    );
+    await flushPromises();
+    expect(tauriMocks.requestNavigateHome).toHaveBeenCalledTimes(1);
+
+    // Cleanup resets state
+    module.cleanup();
+
+    // Re-import to get fresh init with shortcut handler re-attached
+    vi.resetModules();
+    vi.clearAllMocks();
+    setupTauriHomepage();
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    tauriMocks.requestNavigateHome.mockResolvedValue(undefined);
+
+    const module2 = await import("../src/inject.js");
+    await flushPromises();
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "r", metaKey: true, bubbles: true, cancelable: true })
+    );
+    await flushPromises();
+
+    // Should work again after cleanup + re-init
+    expect(tauriMocks.requestNavigateHome).toHaveBeenCalledTimes(1);
+
+    module2.cleanup();
+  });
 });

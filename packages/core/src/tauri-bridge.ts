@@ -201,6 +201,10 @@ export async function openUpdateDialog(): Promise<void> {
   await invoke("open_update_dialog");
 }
 
+export async function requestNavigateHome(): Promise<void> {
+  await invoke("navigate_home");
+}
+
 export async function getUpdatePromptPreference(): Promise<UpdatePromptPreference> {
   return invoke<UpdatePromptPreference>("get_update_prompt_preference");
 }

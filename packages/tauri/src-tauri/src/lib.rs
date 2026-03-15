@@ -716,6 +716,12 @@ fn refresh_tray_status(app: &AppHandle) {
     }
 }
 
+/// Navigate the main window back to Google Meet home
+#[tauri::command]
+fn navigate_home(app: AppHandle) -> Result<(), String> {
+    navigate_to_meet_home(&app)
+}
+
 /// Open the settings window
 #[tauri::command]
 fn open_settings_window(app: AppHandle) -> Result<(), String> {
@@ -1581,18 +1587,8 @@ pub fn run() {
                         }
                     }
                     "app-refresh-home" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let script = r#"
-                                    document.dispatchEvent(new KeyboardEvent("keydown", {
-                                      key: "r",
-                                      metaKey: true,
-                                      bubbles: true,
-                                      cancelable: true
-                                    }));
-                                "#;
-                            if let Err(e) = window.eval(script) {
-                                eprintln!("Failed to dispatch refresh shortcut: {}", e);
-                            }
+                        if let Err(e) = navigate_to_meet_home(app) {
+                            eprintln!("Failed to refresh homepage: {}", e);
                         }
                     }
                     _ => {}
@@ -1681,6 +1677,7 @@ pub fn run() {
             meeting_joined,
             meeting_closed,
             open_settings_window,
+            navigate_home,
             get_update_info,
             get_update_prompt_preference,
             set_update_prompt_preference,

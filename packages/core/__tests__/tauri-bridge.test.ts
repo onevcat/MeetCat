@@ -12,6 +12,7 @@ import {
   getUpdateInfo,
   onUpdateAvailable,
   openUpdateDialog,
+  requestNavigateHome,
   getUpdatePromptPreference,
   setUpdatePromptPreference,
   onUpdatePromptPreferenceChanged,
@@ -272,6 +273,16 @@ describe("Tauri Bridge", () => {
       await openUpdateDialog();
 
       expect(mockInvoke).toHaveBeenCalledWith("open_update_dialog", undefined);
+    });
+  });
+
+  describe("requestNavigateHome", () => {
+    it("should call invoke with navigate_home command", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await requestNavigateHome();
+
+      expect(mockInvoke).toHaveBeenCalledWith("navigate_home", undefined);
     });
   });
 
