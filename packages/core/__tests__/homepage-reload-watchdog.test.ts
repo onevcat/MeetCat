@@ -428,4 +428,119 @@ describe("HomepageReloadWatchdog", () => {
     expect(forced.reason).toBe("force_stale");
     expect(forced.reloadCountToday).toBe(1);
   });
+
+  it("restores backoff state from restoredState config", () => {
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    // Simulate: first watchdog did 2 reloads, then page reloaded
+    const firstWatchdog = createHomepageReloadWatchdog(config);
+    firstWatchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+    firstWatchdog.evaluate({ fingerprint, nowMs: 1_200, isHomepage: true, isForeground: false });
+    firstWatchdog.evaluate({ fingerprint, nowMs: 3_400, isHomepage: true, isForeground: false });
+    const persisted = firstWatchdog.getPersistableState();
+
+    expect(persisted.consecutiveReloadsWithoutChange).toBe(2);
+    expect(persisted.reloadCountToday).toBe(2);
+
+    // Create a new watchdog (simulating page reload) with restored state.
+    // Use continuous wall-clock timestamps: page reloads at ~T=3500
+    const secondWatchdog = createHomepageReloadWatchdog({
+      ...config,
+      restoredState: persisted,
+    });
+    // Init fingerprint at T=3600 (shortly after reload)
+    secondWatchdog.evaluate({ fingerprint, nowMs: 3_600, isHomepage: true, isForeground: false });
+
+    // Backoff should be at level 2 (4_000ms), so cooldown until T=3400+4000=7400
+    const cooldown = secondWatchdog.evaluate({
+      fingerprint,
+      nowMs: 7_000,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(cooldown.reason).toBe("cooldown");
+    expect(cooldown.backoffMs).toBe(4_000);
+
+    // After full backoff, should reload and increment to 3
+    const reloaded = secondWatchdog.evaluate({
+      fingerprint,
+      nowMs: 7_500,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(reloaded.action).toBe("reload");
+    expect(reloaded.consecutiveReloadsWithoutChange).toBe(3);
+    expect(reloaded.reloadCountToday).toBe(3);
+  });
+
+  it("getPersistableState returns only persistable fields", () => {
+    const watchdog = createHomepageReloadWatchdog(config);
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+    watchdog.evaluate({ fingerprint, nowMs: 1_200, isHomepage: true, isForeground: false });
+
+    const persisted = watchdog.getPersistableState();
+    const keys = Object.keys(persisted).sort();
+    expect(keys).toEqual([
+      "consecutiveReloadsWithoutChange",
+      "lastReloadAtMs",
+      "reloadCountToday",
+      "reloadDayKey",
+    ]);
+    expect(persisted.consecutiveReloadsWithoutChange).toBe(1);
+    expect(persisted.reloadCountToday).toBe(1);
+    expect(persisted.lastReloadAtMs).toBe(1_200);
+    // Should NOT contain fingerprint or pendingReload
+    expect(persisted).not.toHaveProperty("lastFingerprint");
+    expect(persisted).not.toHaveProperty("pendingReload");
+  });
+
+  it("restored daily counter resets when day changes", () => {
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    const watchdog = createHomepageReloadWatchdog({
+      ...config,
+      restoredState: {
+        consecutiveReloadsWithoutChange: 2,
+        lastReloadAtMs: 5_000,
+        reloadCountToday: 3,
+        reloadDayKey: "day-a", // getDayKey returns "day-b" for nowMs >= 10_000
+      },
+    });
+
+    // Init at T=10_000 → new day ("day-b"), daily counter should reset
+    watchdog.evaluate({ fingerprint, nowMs: 10_000, isHomepage: true, isForeground: false });
+
+    const result = watchdog.evaluate({
+      fingerprint,
+      nowMs: 15_000,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(result.action).toBe("reload");
+    expect(result.reloadCountToday).toBe(1); // reset from 3 to 0, then +1
+    // backoff level should still be preserved
+    expect(result.backoffMs).toBe(4_000); // level 2
+  });
+
+  it("ignores invalid restoredState gracefully", () => {
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    // Partial/invalid restored state — should not crash
+    const watchdog = createHomepageReloadWatchdog({
+      ...config,
+      restoredState: undefined,
+    });
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    const result = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(result.action).toBe("reload");
+    expect(result.consecutiveReloadsWithoutChange).toBe(1); // fresh start
+  });
 });
