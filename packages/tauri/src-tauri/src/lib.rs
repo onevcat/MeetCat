@@ -718,8 +718,12 @@ fn refresh_tray_status(app: &AppHandle) {
 
 /// Navigate the main window back to Google Meet home
 #[tauri::command]
-fn navigate_home(app: AppHandle) -> Result<(), String> {
-    navigate_to_meet_home(&app)
+fn navigate_home(app: AppHandle, focus: Option<bool>) -> Result<(), String> {
+    if focus.unwrap_or(true) {
+        navigate_to_meet_home(&app)
+    } else {
+        navigate_to_meet_home_silent(&app)
+    }
 }
 
 /// Open the settings window
@@ -1045,6 +1049,15 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
     window.navigate(url).map_err(|e| e.to_string())?;
     let _ = window.show();
     let _ = window.set_focus();
+    Ok(())
+}
+
+fn navigate_to_meet_home_silent(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+    let url = Url::parse(MEET_HOME_URL).map_err(|e| e.to_string())?;
+    window.navigate(url).map_err(|e| e.to_string())?;
     Ok(())
 }
 

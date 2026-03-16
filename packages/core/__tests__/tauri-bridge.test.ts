@@ -282,7 +282,15 @@ describe("Tauri Bridge", () => {
 
       await requestNavigateHome();
 
-      expect(mockInvoke).toHaveBeenCalledWith("navigate_home", undefined);
+      expect(mockInvoke).toHaveBeenCalledWith("navigate_home", { focus: undefined });
+    });
+
+    it("should pass focus parameter when specified", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await requestNavigateHome(false);
+
+      expect(mockInvoke).toHaveBeenCalledWith("navigate_home", { focus: false });
     });
   });
 

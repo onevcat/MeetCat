@@ -89,7 +89,7 @@ let homepageReloadWatchdog = createHomepageReloadWatchdog();
 let wakeDetector: WakeDetector | null = null;
 let reloadInFlight = false;
 
-async function safeNavigateHome(source: string): Promise<void> {
+async function safeNavigateHome(source: string, focus = false): Promise<void> {
   if (reloadInFlight) {
     logToDisk("debug", "homepage", "reload.deduplicated",
       "Reload already in-flight, skipping", { source });
@@ -97,9 +97,9 @@ async function safeNavigateHome(source: string): Promise<void> {
   }
   reloadInFlight = true;
   logToDisk("info", "homepage", "reload.navigate_home",
-    "Navigating home via Rust bridge", { source });
+    "Navigating home via Rust bridge", { source, focus });
   try {
-    await requestNavigateHome();
+    await requestNavigateHome(focus);
   } catch (e) {
     logToDisk("warn", "homepage", "reload.navigate_home_failed",
       "Navigate home failed, falling back to location.reload", {
@@ -823,7 +823,7 @@ function attachHomepageShortcuts(): void {
     event.preventDefault();
     event.stopPropagation();
     logToDisk("info", "homepage", "shortcut.reload", "Homepage reload triggered");
-    void safeNavigateHome("shortcut");
+    void safeNavigateHome("shortcut", true);
   };
 
   document.addEventListener("keydown", homepageKeydownHandler, true);
