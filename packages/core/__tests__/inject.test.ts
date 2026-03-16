@@ -479,3 +479,65 @@ describe("safeNavigateHome behavior", () => {
     module2.cleanup();
   });
 });
+
+describe("watchdog sessionStorage persistence", () => {
+  const STORAGE_KEY = "__meetcat_reload_watchdog";
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    tauriMocks.isTauriEnvironment.mockReturnValue(false);
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    document.body.innerHTML = "<div></div>";
+    window.history.pushState({}, "", "/");
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    sessionStorage.clear();
+  });
+
+  it("restores watchdog state from sessionStorage on init", async () => {
+    // Pre-seed sessionStorage with persisted state
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        consecutiveReloadsWithoutChange: 3,
+        lastReloadAtMs: Date.now() - 1000,
+        reloadCountToday: 5,
+        reloadDayKey: new Date().toISOString().slice(0, 10),
+      })
+    );
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    // sessionStorage item should be consumed (removed) after restore
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    module.cleanup();
+  });
+
+  it("handles corrupt sessionStorage data gracefully", async () => {
+    sessionStorage.setItem(STORAGE_KEY, "not valid json{{{");
+
+    // Should not throw — just start with fresh state
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    module.cleanup();
+  });
+
+  it("handles sessionStorage with missing fields gracefully", async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: "bar" }));
+
+    // Missing required fields — should discard and start fresh
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    module.cleanup();
+  });
+});
