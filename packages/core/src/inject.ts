@@ -61,6 +61,7 @@ import { initI18n, changeLanguage, type LanguageSetting } from "@meetcat/i18n";
 import {
   createHomepageReloadWatchdog,
   createMeetingsFingerprint,
+  type HomepageReloadPersistableState,
 } from "./utils/homepage-reload-watchdog.js";
 import { createWakeDetector, type WakeDetector } from "./utils/wake-detector.js";
 
@@ -84,7 +85,39 @@ let meetingEntryObserver: MutationObserver | null = null;
 let homepageVisibilityHandler: (() => void) | null = null;
 let homepageBlurHandler: (() => void) | null = null;
 let lastHomepageRecoveryLogKey: string | null = null;
-let homepageReloadWatchdog = createHomepageReloadWatchdog();
+const WATCHDOG_STORAGE_KEY = "__meetcat_reload_watchdog";
+
+function restoreWatchdogState(): HomepageReloadPersistableState | undefined {
+  try {
+    const raw = sessionStorage.getItem(WATCHDOG_STORAGE_KEY);
+    if (!raw) return undefined;
+    sessionStorage.removeItem(WATCHDOG_STORAGE_KEY);
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === "object" && parsed !== null &&
+      typeof parsed.consecutiveReloadsWithoutChange === "number" &&
+      typeof parsed.reloadCountToday === "number"
+    ) {
+      return parsed as HomepageReloadPersistableState;
+    }
+  } catch {
+    // sessionStorage unavailable or corrupted — start fresh
+  }
+  return undefined;
+}
+
+function saveWatchdogState(): void {
+  try {
+    const state = homepageReloadWatchdog.getPersistableState();
+    sessionStorage.setItem(WATCHDOG_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // sessionStorage unavailable — backoff state will be lost
+  }
+}
+
+let homepageReloadWatchdog = createHomepageReloadWatchdog({
+  restoredState: restoreWatchdogState(),
+});
 let wakeDetector: WakeDetector | null = null;
 
 // Icon URL for overlays
@@ -766,6 +799,7 @@ function evaluateHomepageRecovery(
   logHomepageRecovery(source, fingerprint, evaluation);
   if (evaluation.action !== "reload") return false;
 
+  saveWatchdogState();
   location.reload();
   return true;
 }
@@ -801,6 +835,7 @@ function attachHomepageShortcuts(): void {
     event.preventDefault();
     event.stopPropagation();
     logToDisk("info", "homepage", "shortcut.reload", "Homepage reload triggered");
+    saveWatchdogState();
     location.reload();
   };
 
@@ -848,6 +883,7 @@ function startWakeDetector(): void {
     });
     setTimeout(() => {
       logToDisk("info", "homepage", "wake.reload", "Reloading after system wake");
+      saveWatchdogState();
       location.reload();
     }, WAKE_RELOAD_DELAY_MS);
   });

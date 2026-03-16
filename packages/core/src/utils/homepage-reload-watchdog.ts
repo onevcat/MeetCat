@@ -23,12 +23,20 @@ export type HomepageReloadReason =
   | "force_stale"
   | "reload";
 
+export interface HomepageReloadPersistableState {
+  consecutiveReloadsWithoutChange: number;
+  lastReloadAtMs: number | null;
+  reloadCountToday: number;
+  reloadDayKey: string | null;
+}
+
 export interface HomepageReloadWatchdogConfig {
   staleThresholdMs?: number;
   forceStaleThresholdMs?: number;
   backoffScheduleMs?: number[];
   dailyReloadLimit?: number;
   getDayKey?: (nowMs: number) => string;
+  restoredState?: HomepageReloadPersistableState;
 }
 
 export interface HomepageReloadWatchdogInput {
@@ -134,14 +142,15 @@ export class HomepageReloadWatchdog {
       config.dailyReloadLimit ?? DEFAULT_HOMEPAGE_DAILY_RELOAD_LIMIT
     );
     this.getDayKey = config.getDayKey ?? defaultDayKey;
+    const restored = config.restoredState;
     this.state = {
       lastFingerprint: null,
       lastFingerprintChangedAtMs: null,
-      consecutiveReloadsWithoutChange: 0,
-      lastReloadAtMs: null,
+      consecutiveReloadsWithoutChange: restored?.consecutiveReloadsWithoutChange ?? 0,
+      lastReloadAtMs: restored?.lastReloadAtMs ?? null,
       pendingReload: false,
-      reloadCountToday: 0,
-      reloadDayKey: null,
+      reloadCountToday: restored?.reloadCountToday ?? 0,
+      reloadDayKey: restored?.reloadDayKey ?? null,
     };
   }
 
@@ -151,6 +160,15 @@ export class HomepageReloadWatchdog {
 
   getState(): HomepageReloadWatchdogState {
     return { ...this.state };
+  }
+
+  getPersistableState(): HomepageReloadPersistableState {
+    return {
+      consecutiveReloadsWithoutChange: this.state.consecutiveReloadsWithoutChange,
+      lastReloadAtMs: this.state.lastReloadAtMs,
+      reloadCountToday: this.state.reloadCountToday,
+      reloadDayKey: this.state.reloadDayKey,
+    };
   }
 
   evaluate(input: HomepageReloadWatchdogInput): HomepageReloadWatchdogEvaluation {

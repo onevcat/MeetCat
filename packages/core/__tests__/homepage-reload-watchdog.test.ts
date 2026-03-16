@@ -428,4 +428,48 @@ describe("HomepageReloadWatchdog", () => {
     expect(forced.reason).toBe("force_stale");
     expect(forced.reloadCountToday).toBe(1);
   });
+
+  it("restores backoff state from restoredState config", () => {
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    // Simulate: first watchdog did 2 reloads, then page reloaded
+    const firstWatchdog = createHomepageReloadWatchdog(config);
+    firstWatchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+    firstWatchdog.evaluate({ fingerprint, nowMs: 1_200, isHomepage: true, isForeground: false });
+    firstWatchdog.evaluate({ fingerprint, nowMs: 3_400, isHomepage: true, isForeground: false });
+    const persisted = firstWatchdog.getPersistableState();
+
+    expect(persisted.consecutiveReloadsWithoutChange).toBe(2);
+    expect(persisted.reloadCountToday).toBe(2);
+
+    // Create a new watchdog (simulating page reload) with restored state.
+    // Use continuous wall-clock timestamps: page reloads at ~T=3500
+    const secondWatchdog = createHomepageReloadWatchdog({
+      ...config,
+      restoredState: persisted,
+    });
+    // Init fingerprint at T=3600 (shortly after reload)
+    secondWatchdog.evaluate({ fingerprint, nowMs: 3_600, isHomepage: true, isForeground: false });
+
+    // Backoff should be at level 2 (4_000ms), so cooldown until T=3400+4000=7400
+    const cooldown = secondWatchdog.evaluate({
+      fingerprint,
+      nowMs: 7_000,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(cooldown.reason).toBe("cooldown");
+    expect(cooldown.backoffMs).toBe(4_000);
+
+    // After full backoff, should reload and increment to 3
+    const reloaded = secondWatchdog.evaluate({
+      fingerprint,
+      nowMs: 7_500,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(reloaded.action).toBe("reload");
+    expect(reloaded.consecutiveReloadsWithoutChange).toBe(3);
+    expect(reloaded.reloadCountToday).toBe(3);
+  });
 });
