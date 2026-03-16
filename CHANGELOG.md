@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8]
+
+Improved overnight reliability and reduced disruptive background refreshes.
+
+### Fixed
+
+- Fixed white screen after overnight sleep that required a restart to recover.
+- Fixed background page refresh stealing window focus from other apps.
+- Fixed unnecessary page refreshes every 30 minutes for users with few or no meetings.
+
 ## [0.0.7] - 2026-03-11
 
 - Fixed update install button not reflecting correct state after triggering an update from the tray menu.
