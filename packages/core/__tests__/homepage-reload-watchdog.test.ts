@@ -472,4 +472,75 @@ describe("HomepageReloadWatchdog", () => {
     expect(reloaded.consecutiveReloadsWithoutChange).toBe(3);
     expect(reloaded.reloadCountToday).toBe(3);
   });
+
+  it("getPersistableState returns only persistable fields", () => {
+    const watchdog = createHomepageReloadWatchdog(config);
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+    watchdog.evaluate({ fingerprint, nowMs: 1_200, isHomepage: true, isForeground: false });
+
+    const persisted = watchdog.getPersistableState();
+    const keys = Object.keys(persisted).sort();
+    expect(keys).toEqual([
+      "consecutiveReloadsWithoutChange",
+      "lastReloadAtMs",
+      "reloadCountToday",
+      "reloadDayKey",
+    ]);
+    expect(persisted.consecutiveReloadsWithoutChange).toBe(1);
+    expect(persisted.reloadCountToday).toBe(1);
+    expect(persisted.lastReloadAtMs).toBe(1_200);
+    // Should NOT contain fingerprint or pendingReload
+    expect(persisted).not.toHaveProperty("lastFingerprint");
+    expect(persisted).not.toHaveProperty("pendingReload");
+  });
+
+  it("restored daily counter resets when day changes", () => {
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    const watchdog = createHomepageReloadWatchdog({
+      ...config,
+      restoredState: {
+        consecutiveReloadsWithoutChange: 2,
+        lastReloadAtMs: 5_000,
+        reloadCountToday: 3,
+        reloadDayKey: "day-a", // getDayKey returns "day-b" for nowMs >= 10_000
+      },
+    });
+
+    // Init at T=10_000 → new day ("day-b"), daily counter should reset
+    watchdog.evaluate({ fingerprint, nowMs: 10_000, isHomepage: true, isForeground: false });
+
+    const result = watchdog.evaluate({
+      fingerprint,
+      nowMs: 15_000,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(result.action).toBe("reload");
+    expect(result.reloadCountToday).toBe(1); // reset from 3 to 0, then +1
+    // backoff level should still be preserved
+    expect(result.backoffMs).toBe(4_000); // level 2
+  });
+
+  it("ignores invalid restoredState gracefully", () => {
+    const fingerprint = createMeetingsFingerprint([meeting()]);
+
+    // Partial/invalid restored state — should not crash
+    const watchdog = createHomepageReloadWatchdog({
+      ...config,
+      restoredState: undefined,
+    });
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    const result = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(result.action).toBe("reload");
+    expect(result.consecutiveReloadsWithoutChange).toBe(1); // fresh start
+  });
 });
