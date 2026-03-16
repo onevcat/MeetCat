@@ -87,6 +87,7 @@ let homepageBlurHandler: (() => void) | null = null;
 let lastHomepageRecoveryLogKey: string | null = null;
 let homepageReloadWatchdog = createHomepageReloadWatchdog();
 let wakeDetector: WakeDetector | null = null;
+let wakeReloadTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let reloadInFlight = false;
 
 async function safeNavigateHome(source: string, focus = false): Promise<void> {
@@ -868,7 +869,8 @@ function startWakeDetector(): void {
       thresholdMs: event.thresholdMs,
       delayMs: WAKE_RELOAD_DELAY_MS,
     });
-    setTimeout(() => {
+    wakeReloadTimeoutId = setTimeout(() => {
+      wakeReloadTimeoutId = null;
       logToDisk("info", "homepage", "wake.reload", "Reloading after system wake");
       void safeNavigateHome("wake");
     }, WAKE_RELOAD_DELAY_MS);
@@ -878,6 +880,10 @@ function startWakeDetector(): void {
 }
 
 function stopWakeDetector(): void {
+  if (wakeReloadTimeoutId !== null) {
+    clearTimeout(wakeReloadTimeoutId);
+    wakeReloadTimeoutId = null;
+  }
   if (!wakeDetector) return;
   wakeDetector.stop();
   wakeDetector = null;
