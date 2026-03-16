@@ -43,6 +43,7 @@ import {
   onUpdateAvailable,
   onUpdatePromptPreferenceChanged,
   openUpdateDialog,
+  requestNavigateHome,
   reportJoined,
   reportMeetingClosed,
   getJoinedMeetings,
@@ -86,6 +87,28 @@ let homepageBlurHandler: (() => void) | null = null;
 let lastHomepageRecoveryLogKey: string | null = null;
 let homepageReloadWatchdog = createHomepageReloadWatchdog();
 let wakeDetector: WakeDetector | null = null;
+let wakeReloadTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let reloadInFlight = false;
+
+async function safeNavigateHome(source: string, focus = false): Promise<void> {
+  if (reloadInFlight) {
+    logToDisk("debug", "homepage", "reload.deduplicated",
+      "Reload already in-flight, skipping", { source });
+    return;
+  }
+  reloadInFlight = true;
+  logToDisk("info", "homepage", "reload.navigate_home",
+    "Navigating home via Rust bridge", { source, focus });
+  try {
+    await requestNavigateHome(focus);
+  } catch (e) {
+    logToDisk("warn", "homepage", "reload.navigate_home_failed",
+      "Navigate home failed, falling back to location.reload", {
+        source, error: e instanceof Error ? e.message : String(e),
+      });
+    location.reload();
+  }
+}
 
 // Icon URL for overlays
 const ICON_URL =
@@ -766,7 +789,7 @@ function evaluateHomepageRecovery(
   logHomepageRecovery(source, fingerprint, evaluation);
   if (evaluation.action !== "reload") return false;
 
-  location.reload();
+  void safeNavigateHome("homepage-recovery:" + source);
   return true;
 }
 
@@ -801,7 +824,7 @@ function attachHomepageShortcuts(): void {
     event.preventDefault();
     event.stopPropagation();
     logToDisk("info", "homepage", "shortcut.reload", "Homepage reload triggered");
-    location.reload();
+    void safeNavigateHome("shortcut", true);
   };
 
   document.addEventListener("keydown", homepageKeydownHandler, true);
@@ -846,9 +869,10 @@ function startWakeDetector(): void {
       thresholdMs: event.thresholdMs,
       delayMs: WAKE_RELOAD_DELAY_MS,
     });
-    setTimeout(() => {
+    wakeReloadTimeoutId = setTimeout(() => {
+      wakeReloadTimeoutId = null;
       logToDisk("info", "homepage", "wake.reload", "Reloading after system wake");
-      location.reload();
+      void safeNavigateHome("wake");
     }, WAKE_RELOAD_DELAY_MS);
   });
 
@@ -856,6 +880,10 @@ function startWakeDetector(): void {
 }
 
 function stopWakeDetector(): void {
+  if (wakeReloadTimeoutId !== null) {
+    clearTimeout(wakeReloadTimeoutId);
+    wakeReloadTimeoutId = null;
+  }
   if (!wakeDetector) return;
   wakeDetector.stop();
   wakeDetector = null;
@@ -1137,6 +1165,7 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
   }
 
   lastHomepageRecoveryLogKey = null;
+  reloadInFlight = false;
 }
 
 // Initialize on DOMContentLoaded or immediately if already loaded

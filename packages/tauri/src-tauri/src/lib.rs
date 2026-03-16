@@ -716,6 +716,16 @@ fn refresh_tray_status(app: &AppHandle) {
     }
 }
 
+/// Navigate the main window back to Google Meet home
+#[tauri::command]
+fn navigate_home(app: AppHandle, focus: Option<bool>) -> Result<(), String> {
+    if focus.unwrap_or(true) {
+        navigate_to_meet_home(&app)
+    } else {
+        navigate_to_meet_home_silent(&app)
+    }
+}
+
 /// Open the settings window
 #[tauri::command]
 fn open_settings_window(app: AppHandle) -> Result<(), String> {
@@ -1039,6 +1049,15 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
     window.navigate(url).map_err(|e| e.to_string())?;
     let _ = window.show();
     let _ = window.set_focus();
+    Ok(())
+}
+
+fn navigate_to_meet_home_silent(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+    let url = Url::parse(MEET_HOME_URL).map_err(|e| e.to_string())?;
+    window.navigate(url).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1581,18 +1600,8 @@ pub fn run() {
                         }
                     }
                     "app-refresh-home" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let script = r#"
-                                    document.dispatchEvent(new KeyboardEvent("keydown", {
-                                      key: "r",
-                                      metaKey: true,
-                                      bubbles: true,
-                                      cancelable: true
-                                    }));
-                                "#;
-                            if let Err(e) = window.eval(script) {
-                                eprintln!("Failed to dispatch refresh shortcut: {}", e);
-                            }
+                        if let Err(e) = navigate_to_meet_home(app) {
+                            eprintln!("Failed to refresh homepage: {}", e);
                         }
                     }
                     _ => {}
@@ -1681,6 +1690,7 @@ pub fn run() {
             meeting_joined,
             meeting_closed,
             open_settings_window,
+            navigate_home,
             get_update_info,
             get_update_prompt_preference,
             set_update_prompt_preference,
