@@ -1,6 +1,6 @@
 {
   "name": "@meetcat/extension",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "private": true,
   "description": "MeetCat Chrome Extension",
   "type": "module",
