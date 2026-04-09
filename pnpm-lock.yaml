@@ -36,7 +36,7 @@ importers:
         version: 26.1.0
       tsup:
         specifier: ^8.3.5
-        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+        version: 8.5.1(postcss@8.5.9)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -91,7 +91,7 @@ importers:
         version: 26.1.0
       tsup:
         specifier: ^8.3.5
-        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+        version: 8.5.1(postcss@8.5.9)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -119,7 +119,7 @@ importers:
         version: 19.2.4
       tsup:
         specifier: ^8.3.5
-        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+        version: 8.5.1(postcss@8.5.9)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -135,7 +135,7 @@ importers:
         version: 3.2.4(vitest@3.2.4(@types/node@22.19.7)(jsdom@26.1.0))
       tsup:
         specifier: ^8.3.5
-        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+        version: 8.5.1(postcss@8.5.9)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -175,7 +175,7 @@ importers:
         version: 19.2.4(react@19.2.4)
       tsup:
         specifier: ^8.3.5
-        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+        version: 8.5.1(postcss@8.5.9)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -1615,6 +1615,10 @@ packages:
     resolution: {integrity: sha512-OW/rX8O/jXnm82Ey1k44pObPtdblfiuWnrd8X7GJ7emImCOstunGbXUpp7HdBrFQX6rJzn3sPT397Wp5aCwCHg==}
     engines: {node: ^10 || ^12 || >=14}
 
+  postcss@8.5.9:
+    resolution: {integrity: sha512-7a70Nsot+EMX9fFU3064K/kdHWZqGVY+BADLyXc8Dfv+mTLLVl6JzJpPaCZ2kQL9gIJvKXSLMHhqdRRjwQeFtw==}
+    engines: {node: ^10 || ^12 || >=14}
+
   pretty-format@27.5.1:
     resolution: {integrity: sha512-Qb1gy5OrP5+zDf2Bvnzdl3jsTf1qXVMazbvCoKhtKqVs4/YK4ozX4gKQJJVyNe+cajNPn0KoC0MC3FUmaHWEmQ==}
     engines: {node: ^10.13.0 || ^12.13.0 || ^14.15.0 || >=15.0.0}
@@ -1782,6 +1786,10 @@ packages:
 
   tinyglobby@0.2.15:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
+    engines: {node: '>=12.0.0'}
+
+  tinyglobby@0.2.16:
+    resolution: {integrity: sha512-pn99VhoACYR8nFHhxqix+uvsbXineAasWm5ojXoN8xEwK5Kd3/TrhNn1wByuD52UxWRLy8pu+kRMniEi6Eq9Zg==}
     engines: {node: '>=12.0.0'}
 
   tinypool@1.1.1:
@@ -3180,13 +3188,19 @@ snapshots:
       mlly: 1.8.0
       pathe: 2.0.3
 
-  postcss-load-config@6.0.1(postcss@8.5.8):
+  postcss-load-config@6.0.1(postcss@8.5.9):
     dependencies:
       lilconfig: 3.1.3
     optionalDependencies:
-      postcss: 8.5.8
+      postcss: 8.5.9
 
   postcss@8.5.8:
+    dependencies:
+      nanoid: 3.3.11
+      picocolors: 1.1.1
+      source-map-js: 1.2.1
+
+  postcss@8.5.9:
     dependencies:
       nanoid: 3.3.11
       picocolors: 1.1.1
@@ -3390,6 +3404,11 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
 
+  tinyglobby@0.2.16:
+    dependencies:
+      fdir: 6.5.0(picomatch@4.0.4)
+      picomatch: 4.0.4
+
   tinypool@1.1.1: {}
 
   tinyrainbow@2.0.0: {}
@@ -3414,7 +3433,7 @@ snapshots:
 
   ts-interface-checker@0.1.13: {}
 
-  tsup@8.5.1(postcss@8.5.8)(typescript@5.9.3):
+  tsup@8.5.1(postcss@8.5.9)(typescript@5.9.3):
     dependencies:
       bundle-require: 5.1.0(esbuild@0.27.2)
       cac: 6.7.14
@@ -3425,7 +3444,7 @@ snapshots:
       fix-dts-default-cjs-exports: 1.0.1
       joycon: 3.1.1
       picocolors: 1.1.1
-      postcss-load-config: 6.0.1(postcss@8.5.8)
+      postcss-load-config: 6.0.1(postcss@8.5.9)
       resolve-from: 5.0.0
       rollup: 4.56.0
       source-map: 0.7.6
@@ -3434,7 +3453,7 @@ snapshots:
       tinyglobby: 0.2.15
       tree-kill: 1.2.2
     optionalDependencies:
-      postcss: 8.5.8
+      postcss: 8.5.9
       typescript: 5.9.3
     transitivePeerDependencies:
       - jiti
@@ -3492,9 +3511,9 @@ snapshots:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.4)
       picomatch: 4.0.4
-      postcss: 8.5.8
+      postcss: 8.5.9
       rollup: 4.60.1
-      tinyglobby: 0.2.15
+      tinyglobby: 0.2.16
     optionalDependencies:
       '@types/node': 22.19.7
       fsevents: 2.3.3
