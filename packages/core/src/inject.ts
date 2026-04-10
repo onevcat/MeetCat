@@ -121,15 +121,23 @@ let homepageReloadWatchdog = createHomepageReloadWatchdog({
 });
 let wakeDetector: WakeDetector | null = null;
 let wakeReloadTimeoutId: ReturnType<typeof setTimeout> | null = null;
-let reloadInFlight = false;
+let reloadInFlightSince: number | null = null;
+const RELOAD_IN_FLIGHT_TTL_MS = 30_000;
 
 async function safeNavigateHome(source: string, focus = false): Promise<void> {
-  if (reloadInFlight) {
-    logToDisk("debug", "homepage", "reload.deduplicated",
-      "Reload already in-flight, skipping", { source });
-    return;
+  if (reloadInFlightSince !== null) {
+    const elapsed = Date.now() - reloadInFlightSince;
+    if (elapsed < RELOAD_IN_FLIGHT_TTL_MS) {
+      logToDisk("debug", "homepage", "reload.deduplicated",
+        "Reload already in-flight, skipping", { source });
+      return;
+    }
+    logToDisk("warn", "homepage", "reload.expired",
+      "Previous reload did not complete within timeout, resetting",
+      { source, elapsedMs: elapsed });
+    reloadInFlightSince = null;
   }
-  reloadInFlight = true;
+  reloadInFlightSince = Date.now();
   logToDisk("info", "homepage", "reload.navigate_home",
     "Navigating home via Rust bridge", { source, focus });
   try {
@@ -617,6 +625,11 @@ async function checkAndReportMeetings(meta: {
   source?: "init" | "check-meetings" | "fallback-interval";
   checkId?: number;
 } = {}): Promise<void> {
+  // Ensure wake detector is running — it may have been stopped by a failed reload
+  if (!wakeDetector?.isRunning()) {
+    startWakeDetector();
+  }
+
   const result = parseMeetingCards(document);
   lastMeetings = result.meetings;
 
@@ -1201,7 +1214,7 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
   }
 
   lastHomepageRecoveryLogKey = null;
-  reloadInFlight = false;
+  reloadInFlightSince = null;
 }
 
 // Initialize on DOMContentLoaded or immediately if already loaded
