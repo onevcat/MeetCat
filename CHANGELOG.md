@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-04-11
+
+Stability fix for homepage reload getting permanently stuck.
+
+### Fixed
+
+- Fixed homepage reload getting permanently locked when the reload flag was never cleared, requiring a restart to recover.
+
 ## [0.0.8] - 2026-03-18
 
 Improved overnight reliability and reduced disruptive background refreshes.
