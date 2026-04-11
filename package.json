@@ -23,6 +23,7 @@
     "clean:all": "pnpm -r clean && rm -rf node_modules .turbo packages/tauri/src-tauri/target && find packages -name node_modules -type d -prune -exec rm -rf {} +"
   },
   "devDependencies": {
+    "chrome-webstore-upload-cli": "^3.5.0",
     "typescript": "^5.7.3"
   },
   "engines": {
