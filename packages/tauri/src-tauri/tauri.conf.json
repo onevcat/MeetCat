@@ -54,6 +54,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["meetcat"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxQjQ4NjA2OEEzNDE2NjgKUldSb0ZqU0tCb2EwZ1ZBT1VVV3VSSEVESVNlWUVYTzVCTE54U0NXY21nRHBkeW8zVHgvT3JLakMK",
       "endpoints": [

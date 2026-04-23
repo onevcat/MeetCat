@@ -8,6 +8,7 @@ pub mod i18n;
 mod logging;
 mod settings;
 mod tray;
+mod url_scheme;
 
 use daemon::{DaemonState, Meeting};
 use logging::{now_ms, LogEventInput, LogManager};
@@ -24,8 +25,11 @@ use tauri::async_runtime::JoinHandle;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
+
+use url_scheme::DeepLinkAction;
 
 const MEET_HOME_URL: &str = "https://meet.google.com/";
 const UPDATE_CHECK_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
@@ -666,6 +670,40 @@ fn log_update_error(err: &impl StdError) {
     }
 }
 
+fn setup_deep_link_handler(app: &AppHandle) {
+    // Drain any URL that triggered the launch before we registered the listener.
+    if let Ok(Some(urls)) = app.deep_link().get_current() {
+        for url in urls {
+            handle_deep_link_url(app, &url);
+        }
+    }
+
+    let app_handle = app.clone();
+    app.deep_link().on_open_url(move |event| {
+        for url in event.urls() {
+            handle_deep_link_url(&app_handle, &url);
+        }
+    });
+}
+
+fn handle_deep_link_url(app: &AppHandle, url: &Url) {
+    let url_str = url.to_string();
+    match url_scheme::parse(url) {
+        Some(action) => dispatch_deep_link(app, action),
+        None => {
+            log_app_event(
+                app,
+                LogLevel::Warn,
+                "deep_link",
+                "parse.unknown",
+                None,
+                Some(json!({ "url": url_str })),
+            );
+            focus_main_window(app);
+        }
+    }
+}
+
 fn setup_update_checker(app: &AppHandle) {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -1059,6 +1097,116 @@ fn navigate_to_meet_home_silent(app: &AppHandle) -> Result<(), String> {
     let url = Url::parse(MEET_HOME_URL).map_err(|e| e.to_string())?;
     window.navigate(url).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn focus_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn navigate_main_window(app: &AppHandle, url: Url) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+    window.navigate(url).map_err(|e| e.to_string())?;
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    Ok(())
+}
+
+fn dispatch_deep_link(app: &AppHandle, action: DeepLinkAction) {
+    log_app_event(
+        app,
+        LogLevel::Info,
+        "deep_link",
+        "action.dispatch",
+        None,
+        Some(json!({ "action": format!("{:?}", action) })),
+    );
+
+    match action {
+        DeepLinkAction::Home => {
+            if let Err(e) = navigate_to_meet_home(app) {
+                eprintln!("[MeetCat] deep_link home failed: {}", e);
+            }
+        }
+        DeepLinkAction::Settings => {
+            if let Err(e) = ensure_settings_window(app) {
+                eprintln!("[MeetCat] deep_link settings failed: {}", e);
+            }
+        }
+        DeepLinkAction::NewMeeting => {
+            let url = match Url::parse("https://meet.google.com/new") {
+                Ok(u) => u,
+                Err(e) => {
+                    eprintln!("[MeetCat] deep_link new url parse failed: {}", e);
+                    return;
+                }
+            };
+            if let Err(e) = navigate_main_window(app, url) {
+                eprintln!("[MeetCat] deep_link new navigate failed: {}", e);
+            }
+        }
+        DeepLinkAction::CheckUpdate => {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) =
+                    check_for_update_with_source(app_handle, "deep_link").await
+                {
+                    eprintln!("[MeetCat] deep_link check-update failed: {}", e);
+                }
+            });
+        }
+        DeepLinkAction::JoinMeeting {
+            code,
+            skip_preview,
+        } => {
+            dispatch_join_meeting(app, &code, skip_preview);
+        }
+    }
+}
+
+fn dispatch_join_meeting(app: &AppHandle, code: &str, skip_preview: bool) {
+    let target = format!("https://meet.google.com/{}", code);
+    let url = match Url::parse(&target) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("[MeetCat] deep_link join url parse failed: {}", e);
+            return;
+        }
+    };
+
+    // Focus the window either way so the user sees the result.
+    focus_main_window(app);
+
+    if !skip_preview {
+        if let Err(e) = navigate_main_window(app, url) {
+            eprintln!("[MeetCat] deep_link join navigate failed: {}", e);
+        }
+        return;
+    }
+
+    // skipPreview: reuse the daemon's navigate-and-join channel with a per-call
+    // settings override so the inject script auto-clicks Join immediately.
+    let Some(state) = app.try_state::<AppState>() else {
+        eprintln!("[MeetCat] deep_link join skipPreview: AppState unavailable");
+        return;
+    };
+    let mut settings_override = state.settings.lock().unwrap().clone();
+    settings_override.auto_click_join = true;
+    settings_override.join_countdown_seconds = 0;
+
+    let cmd = NavigateAndJoinCommand {
+        url: target,
+        settings: settings_override,
+    };
+    if let Err(e) = app.emit("navigate-and-join", &cmd) {
+        eprintln!("[MeetCat] deep_link join skipPreview emit failed: {}", e);
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1535,6 +1683,7 @@ mod tests {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
@@ -1676,6 +1825,8 @@ pub fn run() {
 
             setup_update_checker(app.handle());
 
+            setup_deep_link_handler(app.handle());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1705,11 +1856,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
             tauri::RunEvent::Reopen { .. } => {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
+                focus_main_window(app_handle);
             }
             tauri::RunEvent::ExitRequested { .. } => {}
             _ => {}
