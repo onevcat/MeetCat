@@ -25,7 +25,6 @@ use tauri::async_runtime::JoinHandle;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -669,22 +668,6 @@ fn log_update_error(err: &impl StdError) {
         source = cause.source();
         index += 1;
     }
-}
-
-fn setup_deep_link_handler(app: &AppHandle) {
-    // Drain any URL that triggered the launch before we registered the listener.
-    if let Ok(Some(urls)) = app.deep_link().get_current() {
-        for url in urls {
-            handle_deep_link_url(app, &url);
-        }
-    }
-
-    let app_handle = app.clone();
-    app.deep_link().on_open_url(move |event| {
-        for url in event.urls() {
-            handle_deep_link_url(&app_handle, &url);
-        }
-    });
 }
 
 fn handle_deep_link_url(app: &AppHandle, url: &Url) {
@@ -1840,8 +1823,6 @@ pub fn run() {
 
             setup_update_checker(app.handle());
 
-            setup_deep_link_handler(app.handle());
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1870,6 +1851,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
+            tauri::RunEvent::Opened { urls } => {
+                for url in urls {
+                    handle_deep_link_url(app_handle, &url);
+                }
+            }
             tauri::RunEvent::Reopen { .. } => {
                 focus_main_window(app_handle);
             }
