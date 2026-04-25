@@ -782,7 +782,9 @@ fn open_settings_window(app: AppHandle) -> Result<(), String> {
 pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
     // Check if settings window already exists
     if let Some(window) = app.get_webview_window("settings") {
-        bring_window_to_front(&window);
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
         return Ok(());
     }
 
@@ -794,12 +796,19 @@ pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    bring_window_to_front(&window);
+    let _ = window.show();
+    let _ = window.set_focus();
 
     Ok(())
 }
 
-fn bring_window_to_front(window: &WebviewWindow) {
+/// Force a window above any sibling window by briefly toggling always-on-top.
+///
+/// Used by the deep-link Settings action so the Settings window surfaces above
+/// the main Meet window even when the app was already focused. Other Settings
+/// entry points (menu, ⌘,, frontend command) keep the lighter `show + focus`
+/// path to avoid an always-on-top flicker on every open.
+fn promote_window_to_front(window: &WebviewWindow) {
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_always_on_top(true);
@@ -1160,6 +1169,8 @@ fn dispatch_deep_link(app: &AppHandle, action: DeepLinkAction) {
         DeepLinkAction::Settings => {
             if let Err(e) = ensure_settings_window(app) {
                 eprintln!("[MeetCat] deep_link settings failed: {}", e);
+            } else if let Some(window) = app.get_webview_window("settings") {
+                promote_window_to_front(&window);
             }
         }
         DeepLinkAction::NewMeeting => {
