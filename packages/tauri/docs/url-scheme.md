@@ -16,22 +16,12 @@ apps, shortcuts, scripts, and launchers (Alfred, Raycast, etc.) can drive it.
 | --- | --- | --- |
 | `meetcat://meet.google.com/<code>` | Open meeting `<code>` | "Replace `https` with `meetcat`" mirror form. `<code>` must match `xxx-xxxx-xxx`. |
 | `meetcat://meet.google.com/lookup/<id>` | Join via Meet lookup link | `<id>` allows `[A-Za-z0-9_-]`. |
-| `meetcat://join?id=<code>` | Open meeting `<code>` (query form) | `code=<code>` is accepted as an alias for `id=`. |
+| `meetcat://join?id=<code>` | Open meeting `<code>` (query form) | Canonical query form. |
 | `meetcat://join/<code>` | Open meeting `<code>` (path form) | Convenient for launchers. |
 | `meetcat://home` | Navigate main window to Google Meet home | Equivalent to the *Back to Google Meet Home* menu item. |
 | `meetcat://settings` | Open the Settings window | Equivalent to `⌘,`. |
 | `meetcat://new` | Start a new instant meeting | Navigates to `https://meet.google.com/new`; Google creates the room. |
 | `meetcat://check-update` | Trigger a manual update check | Same code path as the Settings → Check for Updates button. |
-
-**Aliases.** The `join` host also accepts `open` and `openMeet` for
-readability in handwritten links or third-party integrations:
-
-```
-meetcat://open?id=xrs-dpxg-hsw
-meetcat://openMeet?id=xrs-dpxg-hsw
-```
-
-The `check-update` action also accepts `checkupdate` (no dash).
 
 ---
 
@@ -98,20 +88,21 @@ await shell.openExternal("meetcat://join?id=xrs-dpxg-hsw");
 
 ## Behavior details
 
-- **Focus**: any valid URL shows, unminimizes, and focuses the main window
-  before applying its action. Invalid URLs only focus the window (so the
-  user sees something happened) and log a warning under `deep_link.parse.unknown`.
-- **Cold start**: if the app is launched *by* a URL, MeetCat drains the
-  pending URL from the deep-link plugin as soon as the handler is registered
-  during setup, so the action runs once the window is ready.
+- **Focus**: valid URLs show, unminimize, and focus the target window before
+  applying their action. Settings is brought above the main window when opened
+  by URL Scheme.
+- **Cold start**: if the app is launched *by* a URL, MeetCat handles the
+  `RunEvent::Opened` URL after the app is ready, so the action is not dropped
+  before the WebView can receive it.
 - **Warm activation**: if the app is already running, macOS routes the URL
-  through the standard `on_open_url` callback.
+  through the same `RunEvent::Opened` path.
 - **Join actions**: `meetcat://join...` and `meetcat://meet.google.com...`
   only navigate the main window to the equivalent `https://meet.google.com/...`
   URL. When Auto-click Join is enabled, the URL includes `meetcatAuto=1` so
   the existing preview-page countdown can run after Google Meet loads.
 - **Invalid meeting codes**: rejected at parse time; no navigation happens.
-- **Unknown hosts** (e.g. `meetcat://foo`): logged and ignored, window is focused.
+- **Unknown hosts** (e.g. `meetcat://foo`): logged and ignored, then the main
+  window is focused so the user sees something happened.
 
 ---
 

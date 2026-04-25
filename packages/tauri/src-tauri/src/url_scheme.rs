@@ -37,8 +37,8 @@ pub fn parse(url: &Url) -> Option<DeepLinkAction> {
         "home" => Some(DeepLinkAction::Home),
         "settings" => Some(DeepLinkAction::Settings),
         "new" => Some(DeepLinkAction::NewMeeting),
-        "check-update" | "checkupdate" => Some(DeepLinkAction::CheckUpdate),
-        "join" | "open" | "openmeet" => {
+        "check-update" => Some(DeepLinkAction::CheckUpdate),
+        "join" => {
             let code = code_from_join(url, trimmed_path)?;
             Some(DeepLinkAction::JoinMeeting { code })
         }
@@ -55,7 +55,7 @@ fn code_from_join(url: &Url, trimmed_path: &str) -> Option<String> {
         return is_meeting_code(trimmed_path).then(|| trimmed_path.to_string());
     }
     for (key, value) in url.query_pairs() {
-        if key.eq_ignore_ascii_case("id") || key.eq_ignore_ascii_case("code") {
+        if key.eq_ignore_ascii_case("id") {
             let v = value.trim();
             if is_meeting_code(v) {
                 return Some(v.to_string());
@@ -169,13 +169,8 @@ mod tests {
     }
 
     #[test]
-    fn join_query_form_code_alias() {
-        assert_eq!(
-            parse_str("meetcat://join?code=xrs-dpxg-hsw"),
-            Some(DeepLinkAction::JoinMeeting {
-                code: "xrs-dpxg-hsw".to_string(),
-            })
-        );
+    fn join_query_form_rejects_code_alias() {
+        assert_eq!(parse_str("meetcat://join?code=xrs-dpxg-hsw"), None);
     }
 
     #[test]
@@ -189,15 +184,9 @@ mod tests {
     }
 
     #[test]
-    fn join_alias_hosts() {
-        assert!(matches!(
-            parse_str("meetcat://open?id=xrs-dpxg-hsw"),
-            Some(DeepLinkAction::JoinMeeting { .. })
-        ));
-        assert!(matches!(
-            parse_str("meetcat://openMeet?id=xrs-dpxg-hsw"),
-            Some(DeepLinkAction::JoinMeeting { .. })
-        ));
+    fn join_rejects_alias_hosts() {
+        assert_eq!(parse_str("meetcat://open?id=xrs-dpxg-hsw"), None);
+        assert_eq!(parse_str("meetcat://openMeet?id=xrs-dpxg-hsw"), None);
     }
 
     #[test]
@@ -242,10 +231,7 @@ mod tests {
             parse_str("meetcat://check-update"),
             Some(DeepLinkAction::CheckUpdate)
         );
-        assert_eq!(
-            parse_str("meetcat://checkupdate"),
-            Some(DeepLinkAction::CheckUpdate)
-        );
+        assert_eq!(parse_str("meetcat://checkupdate"), None);
     }
 
     #[test]
