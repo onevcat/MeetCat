@@ -24,7 +24,10 @@ use tauri::async_runtime::JoinHandle;
 #[cfg(target_os = "macos")]
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
+};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -757,20 +760,34 @@ fn open_settings_window(app: AppHandle) -> Result<(), String> {
 pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
     // Check if settings window already exists
     if let Some(window) = app.get_webview_window("settings") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        bring_window_to_front(&window);
         return Ok(());
     }
 
     // Create new settings window
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
         .title("MeetCat Settings")
         .inner_size(420.0, 640.0)
         .resizable(false)
         .build()
         .map_err(|e| e.to_string())?;
 
+    bring_window_to_front(&window);
+
     Ok(())
+}
+
+fn bring_window_to_front(window: &WebviewWindow) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_focus();
+
+    let window = window.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let _ = window.set_always_on_top(false);
+    });
 }
 
 // =============================================================================
