@@ -32,6 +32,7 @@ use tauri_plugin_updater::UpdaterExt;
 use url_scheme::DeepLinkAction;
 
 const MEET_HOME_URL: &str = "https://meet.google.com/";
+const MEETCAT_AUTO_JOIN_PARAM: &str = "meetcatAuto";
 const UPDATE_CHECK_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
 const UPDATE_PROMPT_PREFERENCE_FILE: &str = "update-prompt-preference.json";
 
@@ -1166,8 +1167,12 @@ fn dispatch_deep_link(app: &AppHandle, action: DeepLinkAction) {
 }
 
 fn dispatch_join_meeting(app: &AppHandle, code: &str) {
-    let target = format!("https://meet.google.com/{}", code);
-    let url = match Url::parse(&target) {
+    let auto_join = app
+        .try_state::<AppState>()
+        .map(|state| state.settings.lock().unwrap().auto_click_join)
+        .unwrap_or(false);
+
+    let url = match build_join_meeting_url(code, auto_join) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("[MeetCat] deep_link join url parse failed: {}", e);
@@ -1178,6 +1183,16 @@ fn dispatch_join_meeting(app: &AppHandle, code: &str) {
     if let Err(e) = navigate_main_window(app, url) {
         eprintln!("[MeetCat] deep_link join navigate failed: {}", e);
     }
+}
+
+fn build_join_meeting_url(code: &str, auto_join: bool) -> Result<Url, String> {
+    let target = format!("https://meet.google.com/{}", code);
+    let mut url = Url::parse(&target).map_err(|e| e.to_string())?;
+    if auto_join {
+        url.query_pairs_mut()
+            .append_pair(MEETCAT_AUTO_JOIN_PARAM, "1");
+    }
+    Ok(url)
 }
 
 #[cfg(target_os = "macos")]
@@ -1597,7 +1612,9 @@ fn should_open_external(current_url: &Url, target_url: &Url) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_meeting_path, is_meeting_url, should_open_external};
+    use super::{
+        build_join_meeting_url, is_meeting_path, is_meeting_url, should_open_external,
+    };
     use tauri::Url;
 
     #[test]
@@ -1648,6 +1665,33 @@ mod tests {
         let external_target = Url::parse("https://example.com/").unwrap();
 
         assert!(!should_open_external(&current, &external_target));
+    }
+
+    #[test]
+    fn test_build_join_meeting_url_without_auto_join_marker() {
+        let url = build_join_meeting_url("abc-defg-hij", false).unwrap();
+
+        assert_eq!(url.as_str(), "https://meet.google.com/abc-defg-hij");
+    }
+
+    #[test]
+    fn test_build_join_meeting_url_with_auto_join_marker() {
+        let url = build_join_meeting_url("abc-defg-hij", true).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://meet.google.com/abc-defg-hij?meetcatAuto=1"
+        );
+    }
+
+    #[test]
+    fn test_build_join_lookup_url_with_auto_join_marker() {
+        let url = build_join_meeting_url("lookup/ab_cd-EF12", true).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://meet.google.com/lookup/ab_cd-EF12?meetcatAuto=1"
+        );
     }
 }
 

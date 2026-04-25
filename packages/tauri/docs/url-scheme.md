@@ -42,8 +42,17 @@ For example, `meetcat://join?id=xrs-dpxg-hsw` navigates to
 `https://meet.google.com/xrs-dpxg-hsw`.
 
 This keeps deep links reliable across cold start, warm activation, Google
-account selection, and sign-in redirects. URL Scheme joins do not request
-MeetCat auto-join or bypass the Google Meet preview page.
+account selection, and sign-in redirects.
+
+If MeetCat's **Auto-click Join** setting is enabled, URL Scheme joins append
+the same `meetcatAuto=1` marker used by scheduled joins. Once Google Meet's
+preview page loads, the existing MeetCat injection applies the configured
+mic/camera defaults and starts the configured join countdown. If Auto-click
+Join is disabled, MeetCat opens the meeting without the marker and leaves the
+user on the preview page.
+
+URL Scheme joins do not support a per-link `skipPreview` override and do not
+bypass the Google Meet preview page directly.
 
 ---
 
@@ -99,7 +108,8 @@ await shell.openExternal("meetcat://join?id=xrs-dpxg-hsw");
   through the standard `on_open_url` callback.
 - **Join actions**: `meetcat://join...` and `meetcat://meet.google.com...`
   only navigate the main window to the equivalent `https://meet.google.com/...`
-  URL. They do not use MeetCat's auto-join event channel.
+  URL. When Auto-click Join is enabled, the URL includes `meetcatAuto=1` so
+  the existing preview-page countdown can run after Google Meet loads.
 - **Invalid meeting codes**: rejected at parse time; no navigation happens.
 - **Unknown hosts** (e.g. `meetcat://foo`): logged and ignored, window is focused.
 
