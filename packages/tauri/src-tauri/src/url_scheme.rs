@@ -1,14 +1,14 @@
 //! Parser for MeetCat's `meetcat://` URL scheme.
 //!
 //! Supported forms:
-//! - `meetcat://meet.google.com/<code>[?skipPreview=1]`    — Google Meet mirror
-//! - `meetcat://meet.google.com/lookup/<id>[?skipPreview=1]`
-//! - `meetcat://join?id=<code>[&skipPreview=1]`            — query form
-//! - `meetcat://join/<code>[?skipPreview=1]`               — path form
-//! - `meetcat://home`                                      — navigate to Meet home
-//! - `meetcat://settings`                                  — open settings window
-//! - `meetcat://new`                                       — start a new instant meeting
-//! - `meetcat://check-update`                              — trigger manual update check
+//! - `meetcat://meet.google.com/<code>`       — Google Meet mirror
+//! - `meetcat://meet.google.com/lookup/<id>`
+//! - `meetcat://join?id=<code>`               — query form
+//! - `meetcat://join/<code>`                  — path form
+//! - `meetcat://home`                         — navigate to Meet home
+//! - `meetcat://settings`                     — open settings window
+//! - `meetcat://new`                          — start a new instant meeting
+//! - `meetcat://check-update`                 — trigger manual update check
 
 use tauri::Url;
 
@@ -16,7 +16,9 @@ use tauri::Url;
 pub enum DeepLinkAction {
     /// Join a Google Meet meeting. `code` is the path segment appended to
     /// `https://meet.google.com/`, e.g. `"abc-defg-hij"` or `"lookup/xxxx"`.
-    JoinMeeting { code: String, skip_preview: bool },
+    JoinMeeting {
+        code: String,
+    },
     Home,
     Settings,
     NewMeeting,
@@ -38,17 +40,11 @@ pub fn parse(url: &Url) -> Option<DeepLinkAction> {
         "check-update" | "checkupdate" => Some(DeepLinkAction::CheckUpdate),
         "join" | "open" | "openmeet" => {
             let code = code_from_join(url, trimmed_path)?;
-            Some(DeepLinkAction::JoinMeeting {
-                code,
-                skip_preview: has_skip_preview(url),
-            })
+            Some(DeepLinkAction::JoinMeeting { code })
         }
         "meet.google.com" => {
             let code = code_from_meet_path(trimmed_path)?;
-            Some(DeepLinkAction::JoinMeeting {
-                code,
-                skip_preview: has_skip_preview(url),
-            })
+            Some(DeepLinkAction::JoinMeeting { code })
         }
         _ => None,
     }
@@ -107,32 +103,6 @@ fn is_safe_path_segment(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
 
-fn has_skip_preview(url: &Url) -> bool {
-    for (key, value) in url.query_pairs() {
-        let normalized: String = key
-            .as_ref()
-            .chars()
-            .filter(|c| c.is_ascii_alphanumeric())
-            .flat_map(|c| c.to_lowercase())
-            .collect();
-        if normalized == "skippreview" {
-            return is_truthy(&value);
-        }
-    }
-    false
-}
-
-fn is_truthy(value: &str) -> bool {
-    let v = value.trim();
-    if v.is_empty() {
-        return true;
-    }
-    matches!(
-        v.to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on" | "y"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,7 +117,6 @@ mod tests {
             parse_str("meetcat://meet.google.com/xrs-dpxg-hsw"),
             Some(DeepLinkAction::JoinMeeting {
                 code: "xrs-dpxg-hsw".to_string(),
-                skip_preview: false,
             })
         );
     }
@@ -158,18 +127,16 @@ mod tests {
             parse_str("meetcat://meet.google.com/xrs-dpxg-hsw/"),
             Some(DeepLinkAction::JoinMeeting {
                 code: "xrs-dpxg-hsw".to_string(),
-                skip_preview: false,
             })
         );
     }
 
     #[test]
-    fn join_meet_mirror_skip_preview() {
+    fn join_meet_mirror_ignores_skip_preview() {
         assert_eq!(
             parse_str("meetcat://meet.google.com/xrs-dpxg-hsw?skipPreview=1"),
             Some(DeepLinkAction::JoinMeeting {
                 code: "xrs-dpxg-hsw".to_string(),
-                skip_preview: true,
             })
         );
     }
@@ -180,7 +147,6 @@ mod tests {
             parse_str("meetcat://meet.google.com/lookup/ab_cd-EF12"),
             Some(DeepLinkAction::JoinMeeting {
                 code: "lookup/ab_cd-EF12".to_string(),
-                skip_preview: false,
             })
         );
     }
@@ -198,7 +164,6 @@ mod tests {
             parse_str("meetcat://join?id=xrs-dpxg-hsw"),
             Some(DeepLinkAction::JoinMeeting {
                 code: "xrs-dpxg-hsw".to_string(),
-                skip_preview: false,
             })
         );
     }
@@ -209,7 +174,6 @@ mod tests {
             parse_str("meetcat://join?code=xrs-dpxg-hsw"),
             Some(DeepLinkAction::JoinMeeting {
                 code: "xrs-dpxg-hsw".to_string(),
-                skip_preview: false,
             })
         );
     }
@@ -220,7 +184,6 @@ mod tests {
             parse_str("meetcat://join/xrs-dpxg-hsw"),
             Some(DeepLinkAction::JoinMeeting {
                 code: "xrs-dpxg-hsw".to_string(),
-                skip_preview: false,
             })
         );
     }
@@ -238,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn join_skip_preview_variants() {
+    fn join_query_ignores_skip_preview_variants() {
         for url in [
             "meetcat://join?id=xrs-dpxg-hsw&skipPreview=1",
             "meetcat://join?id=xrs-dpxg-hsw&skipPreview=true",
@@ -246,29 +209,18 @@ mod tests {
             "meetcat://join?id=xrs-dpxg-hsw&skip_preview=1",
             "meetcat://join?id=xrs-dpxg-hsw&skippreview=on",
             "meetcat://join?id=xrs-dpxg-hsw&skipPreview",
-        ] {
-            match parse_str(url) {
-                Some(DeepLinkAction::JoinMeeting { skip_preview, .. }) => {
-                    assert!(skip_preview, "expected skip_preview=true for {}", url);
-                }
-                other => panic!("unexpected parse for {}: {:?}", url, other),
-            }
-        }
-    }
-
-    #[test]
-    fn join_skip_preview_false() {
-        for url in [
             "meetcat://join?id=xrs-dpxg-hsw&skipPreview=0",
             "meetcat://join?id=xrs-dpxg-hsw&skipPreview=false",
             "meetcat://join?id=xrs-dpxg-hsw&skipPreview=no",
         ] {
-            match parse_str(url) {
-                Some(DeepLinkAction::JoinMeeting { skip_preview, .. }) => {
-                    assert!(!skip_preview, "expected skip_preview=false for {}", url);
-                }
-                other => panic!("unexpected parse for {}: {:?}", url, other),
-            }
+            assert_eq!(
+                parse_str(url),
+                Some(DeepLinkAction::JoinMeeting {
+                    code: "xrs-dpxg-hsw".to_string(),
+                }),
+                "expected skipPreview to be ignored for {}",
+                url
+            );
         }
     }
 

@@ -14,10 +14,10 @@ apps, shortcuts, scripts, and launchers (Alfred, Raycast, etc.) can drive it.
 
 | URL | Action | Notes |
 | --- | --- | --- |
-| `meetcat://meet.google.com/<code>` | Join meeting `<code>` | "Replace `https` with `meetcat`" mirror form. `<code>` must match `xxx-xxxx-xxx`. |
+| `meetcat://meet.google.com/<code>` | Open meeting `<code>` | "Replace `https` with `meetcat`" mirror form. `<code>` must match `xxx-xxxx-xxx`. |
 | `meetcat://meet.google.com/lookup/<id>` | Join via Meet lookup link | `<id>` allows `[A-Za-z0-9_-]`. |
-| `meetcat://join?id=<code>` | Join meeting `<code>` (query form) | `code=<code>` is accepted as an alias for `id=`. |
-| `meetcat://join/<code>` | Join meeting `<code>` (path form) | Convenient for launchers. |
+| `meetcat://join?id=<code>` | Open meeting `<code>` (query form) | `code=<code>` is accepted as an alias for `id=`. |
+| `meetcat://join/<code>` | Open meeting `<code>` (path form) | Convenient for launchers. |
 | `meetcat://home` | Navigate main window to Google Meet home | Equivalent to the *Back to Google Meet Home* menu item. |
 | `meetcat://settings` | Open the Settings window | Equivalent to `⌘,`. |
 | `meetcat://new` | Start a new instant meeting | Navigates to `https://meet.google.com/new`; Google creates the room. |
@@ -35,28 +35,15 @@ The `check-update` action also accepts `checkupdate` (no dash).
 
 ---
 
-## Query parameters
+## Join behavior
 
-### `skipPreview`
+Join URLs are normalized to Google Meet URLs and loaded in the main window.
+For example, `meetcat://join?id=xrs-dpxg-hsw` navigates to
+`https://meet.google.com/xrs-dpxg-hsw`.
 
-Only meaningful on join actions. Controls whether MeetCat stops on Google
-Meet's green-room / preview page or jumps straight into the meeting.
-
-| Value | Meaning |
-| --- | --- |
-| absent (default) | Navigate to the preview page so the user can confirm mic/camera. |
-| `1`, `true`, `yes`, `on`, `y`, or empty (`?skipPreview`) | Skip the preview and auto-join immediately. |
-| `0`, `false`, `no` | Explicitly disabled (same as absent). |
-
-Parsing is lenient:
-
-- Case-insensitive on both the key and the value (`SkipPreview=TRUE` works).
-- `skip_preview` (snake_case) and `skippreview` (no separator) are also accepted.
-
-Under the hood, `skipPreview=1` reuses the daemon's `navigate-and-join`
-event channel with a per-call settings override (`autoClickJoin=true`,
-`joinCountdownSeconds=0`). The user's persisted settings are **not**
-modified.
+This keeps deep links reliable across cold start, warm activation, Google
+account selection, and sign-in redirects. URL Scheme joins do not request
+MeetCat auto-join or bypass the Google Meet preview page.
 
 ---
 
@@ -69,15 +56,11 @@ open "meetcat://home"
 # Open the settings window
 open "meetcat://settings"
 
-# Join a meeting, stop on the preview page
+# Open a meeting
 open "meetcat://join?id=xrs-dpxg-hsw"
-
-# Join a meeting, skip the preview page
-open "meetcat://join?id=xrs-dpxg-hsw&skipPreview=1"
 
 # Mirror form
 open "meetcat://meet.google.com/xrs-dpxg-hsw"
-open "meetcat://meet.google.com/xrs-dpxg-hsw?skipPreview=1"
 
 # Path form (nice for shell scripts)
 open "meetcat://join/xrs-dpxg-hsw"
@@ -92,14 +75,14 @@ open "meetcat://check-update"
 In AppleScript / shortcuts:
 
 ```applescript
-do shell script "open 'meetcat://join?id=xrs-dpxg-hsw&skipPreview=1'"
+do shell script "open 'meetcat://join?id=xrs-dpxg-hsw'"
 ```
 
 From another app (Node):
 
 ```ts
 import { shell } from "electron";
-await shell.openExternal("meetcat://join?id=xrs-dpxg-hsw&skipPreview=1");
+await shell.openExternal("meetcat://join?id=xrs-dpxg-hsw");
 ```
 
 ---
@@ -114,6 +97,9 @@ await shell.openExternal("meetcat://join?id=xrs-dpxg-hsw&skipPreview=1");
   during setup, so the action runs once the window is ready.
 - **Warm activation**: if the app is already running, macOS routes the URL
   through the standard `on_open_url` callback.
+- **Join actions**: `meetcat://join...` and `meetcat://meet.google.com...`
+  only navigate the main window to the equivalent `https://meet.google.com/...`
+  URL. They do not use MeetCat's auto-join event channel.
 - **Invalid meeting codes**: rejected at parse time; no navigation happens.
 - **Unknown hosts** (e.g. `meetcat://foo`): logged and ignored, window is focused.
 

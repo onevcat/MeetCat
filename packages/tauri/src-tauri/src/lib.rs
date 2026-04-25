@@ -1154,23 +1154,18 @@ fn dispatch_deep_link(app: &AppHandle, action: DeepLinkAction) {
         DeepLinkAction::CheckUpdate => {
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) =
-                    check_for_update_with_source(app_handle, "deep_link").await
-                {
+                if let Err(e) = check_for_update_with_source(app_handle, "deep_link").await {
                     eprintln!("[MeetCat] deep_link check-update failed: {}", e);
                 }
             });
         }
-        DeepLinkAction::JoinMeeting {
-            code,
-            skip_preview,
-        } => {
-            dispatch_join_meeting(app, &code, skip_preview);
+        DeepLinkAction::JoinMeeting { code } => {
+            dispatch_join_meeting(app, &code);
         }
     }
 }
 
-fn dispatch_join_meeting(app: &AppHandle, code: &str, skip_preview: bool) {
+fn dispatch_join_meeting(app: &AppHandle, code: &str) {
     let target = format!("https://meet.google.com/{}", code);
     let url = match Url::parse(&target) {
         Ok(u) => u,
@@ -1180,32 +1175,8 @@ fn dispatch_join_meeting(app: &AppHandle, code: &str, skip_preview: bool) {
         }
     };
 
-    // Focus the window either way so the user sees the result.
-    focus_main_window(app);
-
-    if !skip_preview {
-        if let Err(e) = navigate_main_window(app, url) {
-            eprintln!("[MeetCat] deep_link join navigate failed: {}", e);
-        }
-        return;
-    }
-
-    // skipPreview: reuse the daemon's navigate-and-join channel with a per-call
-    // settings override so the inject script auto-clicks Join immediately.
-    let Some(state) = app.try_state::<AppState>() else {
-        eprintln!("[MeetCat] deep_link join skipPreview: AppState unavailable");
-        return;
-    };
-    let mut settings_override = state.settings.lock().unwrap().clone();
-    settings_override.auto_click_join = true;
-    settings_override.join_countdown_seconds = 0;
-
-    let cmd = NavigateAndJoinCommand {
-        url: target,
-        settings: settings_override,
-    };
-    if let Err(e) = app.emit("navigate-and-join", &cmd) {
-        eprintln!("[MeetCat] deep_link join skipPreview emit failed: {}", e);
+    if let Err(e) = navigate_main_window(app, url) {
+        eprintln!("[MeetCat] deep_link join navigate failed: {}", e);
     }
 }
 
