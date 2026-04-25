@@ -49,6 +49,7 @@ pub struct AppState {
     pub update_prompt_preference: Mutex<UpdatePromptPreference>,
     pub update_dialog_requested: Mutex<bool>,
     pub update_manual_check_requested: Mutex<bool>,
+    pub suppress_reopen_focus_until_ms: Mutex<u64>,
     pub logger: Mutex<LogManager>,
     #[cfg(target_os = "macos")]
     pub homepage_active: Mutex<Option<bool>>,
@@ -68,6 +69,7 @@ impl Default for AppState {
             update_prompt_preference: Mutex::new(update_prompt_preference),
             update_dialog_requested: Mutex::new(false),
             update_manual_check_requested: Mutex::new(false),
+            suppress_reopen_focus_until_ms: Mutex::new(0),
             logger: Mutex::new(logger),
             #[cfg(target_os = "macos")]
             homepage_active: Mutex::new(None),
@@ -674,6 +676,8 @@ fn log_update_error(err: &impl StdError) {
 }
 
 fn handle_deep_link_url(app: &AppHandle, url: &Url) {
+    suppress_reopen_focus(app);
+
     let url_str = url.to_string();
     match url_scheme::parse(url) {
         Some(action) => dispatch_deep_link(app, action),
@@ -688,6 +692,24 @@ fn handle_deep_link_url(app: &AppHandle, url: &Url) {
             );
             focus_main_window(app);
         }
+    }
+}
+
+fn suppress_reopen_focus(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.suppress_reopen_focus_until_ms.lock().unwrap() = now_ms() + 3_000;
+    }
+}
+
+fn should_suppress_reopen_focus(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|state| now_ms() <= *state.suppress_reopen_focus_until_ms.lock().unwrap())
+        .unwrap_or(false)
+}
+
+fn focus_main_window_after_reopen(app: &AppHandle) {
+    if !should_suppress_reopen_focus(app) {
+        focus_main_window(app);
     }
 }
 
@@ -1874,7 +1896,7 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::Reopen { .. } => {
-                focus_main_window(app_handle);
+                focus_main_window_after_reopen(app_handle);
             }
             tauri::RunEvent::ExitRequested { .. } => {}
             _ => {}
