@@ -1186,12 +1186,12 @@ fn dispatch_deep_link(app: &AppHandle, action: DeepLinkAction) {
             }
         }
         DeepLinkAction::CheckUpdate => {
-            let app_handle = app.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = check_for_update_with_source(app_handle, "deep_link").await {
-                    eprintln!("[MeetCat] deep_link check-update failed: {}", e);
-                }
-            });
+            if let Err(e) = ensure_settings_window(app) {
+                eprintln!("[MeetCat] deep_link check-update settings failed: {}", e);
+            } else if let Some(window) = app.get_webview_window("settings") {
+                promote_window_to_front(&window);
+            }
+            request_manual_update_check(app);
         }
         DeepLinkAction::JoinMeeting { code } => {
             dispatch_join_meeting(app, &code);
