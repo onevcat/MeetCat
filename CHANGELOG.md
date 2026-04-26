@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-26
+
+First beta milestone. Brings a new meetcat:// URL Scheme for automation and tightens mic / camera defaults during cold-start joins.
+
+### Added
+
+- Added the `meetcat://` URL Scheme on macOS for driving MeetCat from other apps, scripts, and launchers like Alfred, Raycast, AppleScript, or Shortcuts. Supports joining meetings, opening the Meet home page, opening Settings, starting a new instant meeting, and triggering a manual update check.
+- Added a Help menu in the macOS app menu bar with a "URL Scheme Guide" entry that opens the localized reference page.
+
+### Fixed
+
+- Fixed mic and camera default states occasionally not taking effect on cold-start joins. MeetCat now verifies the resulting state after each click and retries if needed.
+
+### Changed
+
+- Updated bundled dependencies to clear several known vulnerability advisories.
+
 ## [0.0.9] - 2026-04-11
 
 Stability fix for homepage reload getting permanently stuck.
