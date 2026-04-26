@@ -25,6 +25,21 @@ pub enum DeepLinkAction {
     CheckUpdate,
 }
 
+impl DeepLinkAction {
+    /// Whether dispatching this action navigates the main window. Such actions
+    /// must wait for the main window's first page load to complete on cold
+    /// start, otherwise `webview.navigate(...)` can race with the initial
+    /// `https://meet.google.com/` load and be silently dropped.
+    pub fn requires_main_window_navigation(&self) -> bool {
+        matches!(
+            self,
+            DeepLinkAction::JoinMeeting { .. }
+                | DeepLinkAction::Home
+                | DeepLinkAction::NewMeeting
+        )
+    }
+}
+
 pub fn parse(url: &Url) -> Option<DeepLinkAction> {
     if url.scheme() != "meetcat" {
         return None;
@@ -238,5 +253,20 @@ mod tests {
     fn unknown_scheme_and_host() {
         assert_eq!(parse_str("https://meet.google.com/xrs-dpxg-hsw"), None);
         assert_eq!(parse_str("meetcat://unknown"), None);
+    }
+
+    #[test]
+    fn requires_main_window_navigation_classification() {
+        assert!(DeepLinkAction::Home.requires_main_window_navigation());
+        assert!(DeepLinkAction::NewMeeting.requires_main_window_navigation());
+        assert!(DeepLinkAction::JoinMeeting {
+            code: "abc-defg-hij".to_string(),
+        }
+        .requires_main_window_navigation());
+
+        // Settings / CheckUpdate target the Settings window and do not need
+        // to wait for the main window's first load.
+        assert!(!DeepLinkAction::Settings.requires_main_window_navigation());
+        assert!(!DeepLinkAction::CheckUpdate.requires_main_window_navigation());
     }
 }

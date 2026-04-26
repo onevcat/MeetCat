@@ -18,6 +18,7 @@ use settings::{LogLevel, Settings, TAURI_DEFAULT_CHECK_INTERVAL_SECONDS};
 use std::error::Error as StdError;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
@@ -50,6 +51,13 @@ pub struct AppState {
     pub update_dialog_requested: Mutex<bool>,
     pub update_manual_check_requested: Mutex<bool>,
     pub suppress_reopen_focus_until_ms: Mutex<u64>,
+    /// Set to true the first time the main window finishes loading any
+    /// meet.google.com URL. Until then, deep-link actions that target the
+    /// main window are queued in `pending_deep_link` instead of being
+    /// dispatched immediately, to avoid racing with the cold-start initial
+    /// load (which intermittently swallows our `webview.navigate(...)`).
+    pub main_first_load_done: AtomicBool,
+    pub pending_deep_link: Mutex<Option<DeepLinkAction>>,
     pub logger: Mutex<LogManager>,
     #[cfg(target_os = "macos")]
     pub homepage_active: Mutex<Option<bool>>,
@@ -70,6 +78,8 @@ impl Default for AppState {
             update_dialog_requested: Mutex::new(false),
             update_manual_check_requested: Mutex::new(false),
             suppress_reopen_focus_until_ms: Mutex::new(0),
+            main_first_load_done: AtomicBool::new(false),
+            pending_deep_link: Mutex::new(None),
             logger: Mutex::new(logger),
             #[cfg(target_os = "macos")]
             homepage_active: Mutex::new(None),
@@ -680,7 +690,16 @@ fn handle_deep_link_url(app: &AppHandle, url: &Url) {
 
     let url_str = url.to_string();
     match url_scheme::parse(url) {
-        Some(action) => dispatch_deep_link(app, action),
+        Some(action) => {
+            if action.requires_main_window_navigation() && !is_main_first_load_done(app) {
+                queue_pending_deep_link(app, action);
+                // Bring the main window forward so the user sees something
+                // happen while we wait for the initial load to finish.
+                focus_main_window(app);
+            } else {
+                dispatch_deep_link(app, action);
+            }
+        }
         None => {
             log_app_event(
                 app,
@@ -692,6 +711,51 @@ fn handle_deep_link_url(app: &AppHandle, url: &Url) {
             );
             focus_main_window(app);
         }
+    }
+}
+
+fn is_main_first_load_done(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|state| state.main_first_load_done.load(Ordering::Acquire))
+        .unwrap_or(true)
+}
+
+fn queue_pending_deep_link(app: &AppHandle, action: DeepLinkAction) {
+    let Some(state) = app.try_state::<AppState>() else {
+        // No state means the app is in an unusual lifecycle stage; fall back
+        // to immediate dispatch rather than dropping the action silently.
+        dispatch_deep_link(app, action);
+        return;
+    };
+    log_app_event(
+        app,
+        LogLevel::Info,
+        "deep_link",
+        "action.queued",
+        None,
+        Some(json!({
+            "action": format!("{:?}", action),
+            "reason": "main_first_load_pending",
+        })),
+    );
+    *state.pending_deep_link.lock().unwrap() = Some(action);
+}
+
+fn drain_pending_deep_link(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let action = state.pending_deep_link.lock().unwrap().take();
+    if let Some(action) = action {
+        log_app_event(
+            app,
+            LogLevel::Info,
+            "deep_link",
+            "action.drained",
+            None,
+            Some(json!({ "action": format!("{:?}", action) })),
+        );
+        dispatch_deep_link(app, action);
     }
 }
 
@@ -1752,6 +1816,15 @@ pub fn run() {
             let url = payload.url();
             if url.host_str() != Some("meet.google.com") {
                 return;
+            }
+
+            // First time meet.google.com finishes loading on the main window:
+            // drain any deep-link action that was queued during cold start.
+            let app_handle = webview.app_handle().clone();
+            if let Some(state) = app_handle.try_state::<AppState>() {
+                if !state.main_first_load_done.swap(true, Ordering::AcqRel) {
+                    drain_pending_deep_link(&app_handle);
+                }
             }
 
             let webview = webview.clone();
