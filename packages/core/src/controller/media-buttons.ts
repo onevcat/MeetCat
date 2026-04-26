@@ -1,4 +1,9 @@
-import type { MediaButtons, MediaStateResult } from "../types.js";
+import type {
+  MediaApplyResult,
+  MediaApplyOptions,
+  MediaButtons,
+  MediaStateResult,
+} from "../types.js";
 
 /**
  * Selector for media toggle buttons (mic/camera)
@@ -97,4 +102,84 @@ export function setCameraState(
   }
 
   return { success: true, changed: false };
+}
+
+const DEFAULT_APPLY_OPTIONS: Required<MediaApplyOptions> = {
+  maxAttempts: 3,
+  verifyDelayMs: 200,
+};
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function applyMediaButton(
+  container: Document | Element,
+  kind: "mic" | "camera",
+  enabled: boolean,
+  options: MediaApplyOptions
+): Promise<MediaApplyResult> {
+  const { maxAttempts, verifyDelayMs } = { ...DEFAULT_APPLY_OPTIONS, ...options };
+  const desiredOff = !enabled;
+  let clicks = 0;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const { micButton, cameraButton } = findMediaButtons(container);
+    const button = kind === "mic" ? micButton : cameraButton;
+    if (!button) {
+      return { success: false, clicks, attempts: attempt };
+    }
+    const currentlyOff = isMuted(button);
+    if (currentlyOff === null) {
+      return { success: false, clicks, attempts: attempt };
+    }
+    if (currentlyOff === desiredOff) {
+      return { success: true, clicks, attempts: attempt };
+    }
+    (button as HTMLElement).click();
+    clicks++;
+    await delay(verifyDelayMs);
+  }
+
+  // Final verification after the last click
+  const { micButton, cameraButton } = findMediaButtons(container);
+  const button = kind === "mic" ? micButton : cameraButton;
+  if (!button) {
+    return { success: false, clicks, attempts: maxAttempts };
+  }
+  const currentlyOff = isMuted(button);
+  if (currentlyOff === null) {
+    return { success: false, clicks, attempts: maxAttempts };
+  }
+  return {
+    success: currentlyOff === desiredOff,
+    clicks,
+    attempts: maxAttempts,
+  };
+}
+
+/**
+ * Set the mic state with verification and retry.
+ *
+ * Useful when Meet's preview page has rendered the button DOM but its event
+ * handlers aren't fully wired yet — a single `setMicState` click may be
+ * silently dropped, leaving the user with the wrong mic state.
+ */
+export function applyMicState(
+  container: Document | Element,
+  enabled: boolean,
+  options: MediaApplyOptions = {}
+): Promise<MediaApplyResult> {
+  return applyMediaButton(container, "mic", enabled, options);
+}
+
+/**
+ * Set the camera state with verification and retry.
+ */
+export function applyCameraState(
+  container: Document | Element,
+  enabled: boolean,
+  options: MediaApplyOptions = {}
+): Promise<MediaApplyResult> {
+  return applyMediaButton(container, "camera", enabled, options);
 }

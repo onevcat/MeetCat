@@ -5,6 +5,8 @@ import {
   isMuted,
   setMicState,
   setCameraState,
+  applyMicState,
+  applyCameraState,
   MEDIA_BUTTON_SELECTOR,
 } from "../src/controller/media-buttons.js";
 import {
@@ -183,6 +185,109 @@ describe("Controller - Media Buttons", () => {
 
       expect(result.success).toBe(false);
       expect(result.changed).toBe(false);
+    });
+  });
+
+  describe("applyMicState (verify + retry)", () => {
+    function attachClickThatFlips(button: HTMLElement): void {
+      button.addEventListener("click", () => {
+        const next = button.dataset.isMuted === "true" ? "false" : "true";
+        button.dataset.isMuted = next;
+      });
+    }
+
+    it("returns success without click when state already matches", async () => {
+      const micBtn = createMediaButton(true); // muted
+      const camBtn = createMediaButton(true);
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      const clickSpy = vi.spyOn(micBtn, "click");
+      const result = await applyMicState(document, false);
+
+      expect(result).toEqual({ success: true, clicks: 0, attempts: 1 });
+      expect(clickSpy).not.toHaveBeenCalled();
+    });
+
+    it("clicks once when first attempt flips the state", async () => {
+      const micBtn = createMediaButton(false); // unmuted
+      const camBtn = createMediaButton(true);
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+      attachClickThatFlips(micBtn);
+
+      const result = await applyMicState(document, false, { verifyDelayMs: 0 });
+
+      expect(result.success).toBe(true);
+      expect(result.clicks).toBe(1);
+      expect(micBtn.dataset.isMuted).toBe("true");
+    });
+
+    it("retries when click is silently dropped, succeeds when handler attaches", async () => {
+      const micBtn = createMediaButton(false); // unmuted
+      const camBtn = createMediaButton(true);
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      let clickCount = 0;
+      micBtn.addEventListener("click", () => {
+        clickCount++;
+        if (clickCount >= 2) {
+          micBtn.dataset.isMuted = "true";
+        }
+      });
+
+      const result = await applyMicState(document, false, {
+        maxAttempts: 3,
+        verifyDelayMs: 0,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.clicks).toBeGreaterThanOrEqual(2);
+      expect(micBtn.dataset.isMuted).toBe("true");
+    });
+
+    it("reports failure when no click ever takes effect", async () => {
+      const micBtn = createMediaButton(false); // unmuted, click is no-op
+      const camBtn = createMediaButton(true);
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      const clickSpy = vi.spyOn(micBtn, "click");
+      const result = await applyMicState(document, false, {
+        maxAttempts: 3,
+        verifyDelayMs: 0,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.clicks).toBe(3);
+      expect(result.attempts).toBe(3);
+      expect(clickSpy).toHaveBeenCalledTimes(3);
+    });
+
+    it("reports failure when button is missing", async () => {
+      const result = await applyMicState(document, false, { verifyDelayMs: 0 });
+      expect(result.success).toBe(false);
+      expect(result.clicks).toBe(0);
+    });
+  });
+
+  describe("applyCameraState (verify + retry)", () => {
+    it("clicks once when first attempt flips the state", async () => {
+      const micBtn = createMediaButton(true);
+      const camBtn = createMediaButton(true); // off
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      camBtn.addEventListener("click", () => {
+        camBtn.dataset.isMuted = "false";
+      });
+
+      const result = await applyCameraState(document, true, { verifyDelayMs: 0 });
+
+      expect(result.success).toBe(true);
+      expect(result.clicks).toBe(1);
+      expect(camBtn.dataset.isMuted).toBe("false");
     });
   });
 });

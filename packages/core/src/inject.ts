@@ -15,8 +15,8 @@ declare global {
 
 import { parseMeetingCards, getNextJoinableMeeting } from "./parser/index.js";
 import {
-  setMicState,
-  setCameraState,
+  applyMicState,
+  applyCameraState,
   clickJoinButton,
   getMeetingCodeFromPath,
   findJoinButton,
@@ -989,7 +989,7 @@ async function initMeetingPage(): Promise<void> {
   await waitForMediaButtons();
 
   // Apply media settings
-  applyMediaSettings();
+  await applyMediaSettings();
 
   if (!isAutoJoinRequested) {
     logToConsole("info", "[MeetCat] Skip auto-join: meeting not opened by MeetCat");
@@ -1043,16 +1043,19 @@ async function waitForMediaButtons(
 }
 
 /**
- * Apply media settings based on configuration
+ * Apply media settings based on configuration.
+ *
+ * Uses verify+retry helpers because Meet's preview page may render the button
+ * DOM before its event handlers are wired, which silently drops a single click.
  */
-function applyMediaSettings(): void {
+async function applyMediaSettings(): Promise<void> {
   if (mediaApplied || !settings) return;
 
   const micEnabled = settings.defaultMicState === "unmuted";
   const cameraEnabled = settings.defaultCameraState === "unmuted";
 
-  const micResult = setMicState(document, micEnabled);
-  const cameraResult = setCameraState(document, cameraEnabled);
+  const micResult = await applyMicState(document, micEnabled);
+  const cameraResult = await applyCameraState(document, cameraEnabled);
 
   logToConsole("info", "[MeetCat] Media settings applied:", {
     mic: { desired: micEnabled, result: micResult },
@@ -1060,11 +1063,13 @@ function applyMediaSettings(): void {
   });
   logToDisk("info", "meeting", "media_settings.applied", "Media settings applied", {
     micDesired: micEnabled,
-    micChanged: micResult.changed,
     micSuccess: micResult.success,
+    micClicks: micResult.clicks,
+    micAttempts: micResult.attempts,
     cameraDesired: cameraEnabled,
-    cameraChanged: cameraResult.changed,
     cameraSuccess: cameraResult.success,
+    cameraClicks: cameraResult.clicks,
+    cameraAttempts: cameraResult.attempts,
   });
 
   mediaApplied = true;

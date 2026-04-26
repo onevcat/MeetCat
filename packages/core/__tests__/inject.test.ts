@@ -9,8 +9,8 @@ const parserMocks = vi.hoisted(() => ({
 }));
 
 const controllerMocks = vi.hoisted(() => ({
-  setMicState: vi.fn(() => ({ changed: false, success: false })),
-  setCameraState: vi.fn(() => ({ changed: false, success: false })),
+  applyMicState: vi.fn(async () => ({ success: false, clicks: 0, attempts: 0 })),
+  applyCameraState: vi.fn(async () => ({ success: false, clicks: 0, attempts: 0 })),
   clickJoinButton: vi.fn(() => false),
   getMeetingCodeFromPath: vi.fn(() => null),
   findJoinButton: vi.fn(() => ({ button: null, matchedText: null })),

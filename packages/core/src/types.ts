@@ -53,6 +53,28 @@ export interface MediaStateResult {
 }
 
 /**
+ * Options for applying media state with verification
+ */
+export interface MediaApplyOptions {
+  /** Maximum click attempts before giving up. Defaults to 3. */
+  maxAttempts?: number;
+  /** Milliseconds to wait before re-reading state after a click. Defaults to 200. */
+  verifyDelayMs?: number;
+}
+
+/**
+ * Result of applying media state with verification + retry
+ */
+export interface MediaApplyResult {
+  /** Whether the button is verified to be in the desired state at the end */
+  success: boolean;
+  /** Number of clicks issued (0 if already in desired state) */
+  clicks: number;
+  /** Number of read-and-click rounds executed */
+  attempts: number;
+}
+
+/**
  * Join button result
  */
 export interface JoinButtonResult {
