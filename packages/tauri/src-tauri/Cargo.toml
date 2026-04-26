@@ -25,6 +25,7 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 sys-locale = "0.3"
 thiserror = "2"
+tauri-plugin-deep-link = "2.4.7"
 
 [profile.release]
 panic = "abort"

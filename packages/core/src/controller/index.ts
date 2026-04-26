@@ -3,6 +3,8 @@ export {
   isMuted,
   setMicState,
   setCameraState,
+  applyMicState,
+  applyCameraState,
   MEDIA_BUTTON_SELECTOR,
 } from "./media-buttons.js";
 

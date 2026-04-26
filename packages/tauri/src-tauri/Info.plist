@@ -15,5 +15,18 @@
     <string>MeetCat needs microphone access for Google Meet calls</string>
     <key>NSCameraUsageDescription</key>
     <string>MeetCat needs camera access for Google Meet video calls</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>cat.onev.meet.desktop.meetcat</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>meetcat</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

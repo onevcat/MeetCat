@@ -8,6 +8,7 @@ pub mod i18n;
 mod logging;
 mod settings;
 mod tray;
+mod url_scheme;
 
 use daemon::{DaemonState, Meeting};
 use logging::{now_ms, LogEventInput, LogManager};
@@ -17,17 +18,24 @@ use settings::{LogLevel, Settings, TAURI_DEFAULT_CHECK_INTERVAL_SECONDS};
 use std::error::Error as StdError;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
 #[cfg(target_os = "macos")]
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
+};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
+use url_scheme::DeepLinkAction;
+
 const MEET_HOME_URL: &str = "https://meet.google.com/";
+const MEETCAT_AUTO_JOIN_PARAM: &str = "meetcatAuto";
 const UPDATE_CHECK_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
 const UPDATE_PROMPT_PREFERENCE_FILE: &str = "update-prompt-preference.json";
 
@@ -42,6 +50,14 @@ pub struct AppState {
     pub update_prompt_preference: Mutex<UpdatePromptPreference>,
     pub update_dialog_requested: Mutex<bool>,
     pub update_manual_check_requested: Mutex<bool>,
+    pub suppress_reopen_focus_until_ms: Mutex<u64>,
+    /// Set to true the first time the main window finishes loading any
+    /// meet.google.com URL. Until then, deep-link actions that target the
+    /// main window are queued in `pending_deep_link` instead of being
+    /// dispatched immediately, to avoid racing with the cold-start initial
+    /// load (which intermittently swallows our `webview.navigate(...)`).
+    pub main_first_load_done: AtomicBool,
+    pub pending_deep_link: Mutex<Option<DeepLinkAction>>,
     pub logger: Mutex<LogManager>,
     #[cfg(target_os = "macos")]
     pub homepage_active: Mutex<Option<bool>>,
@@ -61,6 +77,9 @@ impl Default for AppState {
             update_prompt_preference: Mutex::new(update_prompt_preference),
             update_dialog_requested: Mutex::new(false),
             update_manual_check_requested: Mutex::new(false),
+            suppress_reopen_focus_until_ms: Mutex::new(0),
+            main_first_load_done: AtomicBool::new(false),
+            pending_deep_link: Mutex::new(None),
             logger: Mutex::new(logger),
             #[cfg(target_os = "macos")]
             homepage_active: Mutex::new(None),
@@ -666,6 +685,98 @@ fn log_update_error(err: &impl StdError) {
     }
 }
 
+fn handle_deep_link_url(app: &AppHandle, url: &Url) {
+    suppress_reopen_focus(app);
+
+    let url_str = url.to_string();
+    match url_scheme::parse(url) {
+        Some(action) => {
+            if action.requires_main_window_navigation() && !is_main_first_load_done(app) {
+                queue_pending_deep_link(app, action);
+                // Bring the main window forward so the user sees something
+                // happen while we wait for the initial load to finish.
+                focus_main_window(app);
+            } else {
+                dispatch_deep_link(app, action);
+            }
+        }
+        None => {
+            log_app_event(
+                app,
+                LogLevel::Warn,
+                "deep_link",
+                "parse.unknown",
+                None,
+                Some(json!({ "url": url_str })),
+            );
+            focus_main_window(app);
+        }
+    }
+}
+
+fn is_main_first_load_done(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|state| state.main_first_load_done.load(Ordering::Acquire))
+        .unwrap_or(true)
+}
+
+fn queue_pending_deep_link(app: &AppHandle, action: DeepLinkAction) {
+    let Some(state) = app.try_state::<AppState>() else {
+        // No state means the app is in an unusual lifecycle stage; fall back
+        // to immediate dispatch rather than dropping the action silently.
+        dispatch_deep_link(app, action);
+        return;
+    };
+    log_app_event(
+        app,
+        LogLevel::Info,
+        "deep_link",
+        "action.queued",
+        None,
+        Some(json!({
+            "action": format!("{:?}", action),
+            "reason": "main_first_load_pending",
+        })),
+    );
+    *state.pending_deep_link.lock().unwrap() = Some(action);
+}
+
+fn drain_pending_deep_link(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let action = state.pending_deep_link.lock().unwrap().take();
+    if let Some(action) = action {
+        log_app_event(
+            app,
+            LogLevel::Info,
+            "deep_link",
+            "action.drained",
+            None,
+            Some(json!({ "action": format!("{:?}", action) })),
+        );
+        dispatch_deep_link(app, action);
+    }
+}
+
+fn suppress_reopen_focus(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.suppress_reopen_focus_until_ms.lock().unwrap() = now_ms() + 3_000;
+    }
+}
+
+fn should_suppress_reopen_focus(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|state| now_ms() <= *state.suppress_reopen_focus_until_ms.lock().unwrap())
+        .unwrap_or(false)
+}
+
+fn focus_main_window_after_reopen(app: &AppHandle) {
+    if !should_suppress_reopen_focus(app) {
+        focus_main_window(app);
+    }
+}
+
 fn setup_update_checker(app: &AppHandle) {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -735,20 +846,43 @@ fn open_settings_window(app: AppHandle) -> Result<(), String> {
 pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
     // Check if settings window already exists
     if let Some(window) = app.get_webview_window("settings") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
         return Ok(());
     }
 
     // Create new settings window
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
         .title("MeetCat Settings")
         .inner_size(420.0, 640.0)
         .resizable(false)
         .build()
         .map_err(|e| e.to_string())?;
 
+    let _ = window.show();
+    let _ = window.set_focus();
+
     Ok(())
+}
+
+/// Force a window above any sibling window by briefly toggling always-on-top.
+///
+/// Used by the deep-link Settings action so the Settings window surfaces above
+/// the main Meet window even when the app was already focused. Other Settings
+/// entry points (menu, ⌘,, frontend command) keep the lighter `show + focus`
+/// path to avoid an always-on-top flicker on every open.
+fn promote_window_to_front(window: &WebviewWindow) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_focus();
+
+    let window = window.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let _ = window.set_always_on_top(false);
+    });
 }
 
 // =============================================================================
@@ -1059,6 +1193,103 @@ fn navigate_to_meet_home_silent(app: &AppHandle) -> Result<(), String> {
     let url = Url::parse(MEET_HOME_URL).map_err(|e| e.to_string())?;
     window.navigate(url).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn focus_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn navigate_main_window(app: &AppHandle, url: Url) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+    window.navigate(url).map_err(|e| e.to_string())?;
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    Ok(())
+}
+
+fn dispatch_deep_link(app: &AppHandle, action: DeepLinkAction) {
+    log_app_event(
+        app,
+        LogLevel::Info,
+        "deep_link",
+        "action.dispatch",
+        None,
+        Some(json!({ "action": format!("{:?}", action) })),
+    );
+
+    match action {
+        DeepLinkAction::Home => {
+            if let Err(e) = navigate_to_meet_home(app) {
+                eprintln!("[MeetCat] deep_link home failed: {}", e);
+            }
+        }
+        DeepLinkAction::Settings => {
+            if let Err(e) = ensure_settings_window(app) {
+                eprintln!("[MeetCat] deep_link settings failed: {}", e);
+            } else if let Some(window) = app.get_webview_window("settings") {
+                promote_window_to_front(&window);
+            }
+        }
+        DeepLinkAction::NewMeeting => {
+            let url = match Url::parse("https://meet.google.com/new") {
+                Ok(u) => u,
+                Err(e) => {
+                    eprintln!("[MeetCat] deep_link new url parse failed: {}", e);
+                    return;
+                }
+            };
+            if let Err(e) = navigate_main_window(app, url) {
+                eprintln!("[MeetCat] deep_link new navigate failed: {}", e);
+            }
+        }
+        DeepLinkAction::CheckUpdate => {
+            if let Err(e) = ensure_settings_window(app) {
+                eprintln!("[MeetCat] deep_link check-update settings failed: {}", e);
+            } else if let Some(window) = app.get_webview_window("settings") {
+                promote_window_to_front(&window);
+            }
+            request_manual_update_check(app);
+        }
+        DeepLinkAction::JoinMeeting { code } => {
+            dispatch_join_meeting(app, &code);
+        }
+    }
+}
+
+fn dispatch_join_meeting(app: &AppHandle, code: &str) {
+    let auto_join = app
+        .try_state::<AppState>()
+        .map(|state| state.settings.lock().unwrap().auto_click_join)
+        .unwrap_or(false);
+
+    let url = match build_join_meeting_url(code, auto_join) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("[MeetCat] deep_link join url parse failed: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = navigate_main_window(app, url) {
+        eprintln!("[MeetCat] deep_link join navigate failed: {}", e);
+    }
+}
+
+fn build_join_meeting_url(code: &str, auto_join: bool) -> Result<Url, String> {
+    let target = format!("https://meet.google.com/{}", code);
+    let mut url = Url::parse(&target).map_err(|e| e.to_string())?;
+    if auto_join {
+        url.query_pairs_mut()
+            .append_pair(MEETCAT_AUTO_JOIN_PARAM, "1");
+    }
+    Ok(url)
 }
 
 #[cfg(target_os = "macos")]
@@ -1478,7 +1709,9 @@ fn should_open_external(current_url: &Url, target_url: &Url) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_meeting_path, is_meeting_url, should_open_external};
+    use super::{
+        build_join_meeting_url, is_meeting_path, is_meeting_url, should_open_external,
+    };
     use tauri::Url;
 
     #[test]
@@ -1530,11 +1763,39 @@ mod tests {
 
         assert!(!should_open_external(&current, &external_target));
     }
+
+    #[test]
+    fn test_build_join_meeting_url_without_auto_join_marker() {
+        let url = build_join_meeting_url("abc-defg-hij", false).unwrap();
+
+        assert_eq!(url.as_str(), "https://meet.google.com/abc-defg-hij");
+    }
+
+    #[test]
+    fn test_build_join_meeting_url_with_auto_join_marker() {
+        let url = build_join_meeting_url("abc-defg-hij", true).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://meet.google.com/abc-defg-hij?meetcatAuto=1"
+        );
+    }
+
+    #[test]
+    fn test_build_join_lookup_url_with_auto_join_marker() {
+        let url = build_join_meeting_url("lookup/ab_cd-EF12", true).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://meet.google.com/lookup/ab_cd-EF12?meetcatAuto=1"
+        );
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
@@ -1555,6 +1816,15 @@ pub fn run() {
             let url = payload.url();
             if url.host_str() != Some("meet.google.com") {
                 return;
+            }
+
+            // First time meet.google.com finishes loading on the main window:
+            // drain any deep-link action that was queued during cold start.
+            let app_handle = webview.app_handle().clone();
+            if let Some(state) = app_handle.try_state::<AppState>() {
+                if !state.main_first_load_done.swap(true, Ordering::AcqRel) {
+                    drain_pending_deep_link(&app_handle);
+                }
             }
 
             let webview = webview.clone();
@@ -1704,12 +1974,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
-            tauri::RunEvent::Reopen { .. } => {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
+            tauri::RunEvent::Opened { urls } => {
+                for url in urls {
+                    handle_deep_link_url(app_handle, &url);
                 }
+            }
+            tauri::RunEvent::Reopen { .. } => {
+                focus_main_window_after_reopen(app_handle);
             }
             tauri::RunEvent::ExitRequested { .. } => {}
             _ => {}
