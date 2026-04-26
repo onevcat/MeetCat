@@ -691,6 +691,7 @@ fn handle_deep_link_url(app: &AppHandle, url: &Url) {
     let url_str = url.to_string();
     match url_scheme::parse(url) {
         Some(action) => {
+            preempt_daemon_for_join(app, &action);
             if action.requires_main_window_navigation() && !is_main_first_load_done(app) {
                 queue_pending_deep_link(app, action);
                 // Bring the main window forward so the user sees something
@@ -712,6 +713,35 @@ fn handle_deep_link_url(app: &AppHandle, url: &Url) {
             focus_main_window(app);
         }
     }
+}
+
+/// When a JoinMeeting deep link arrives, mark its target as suppressed in the
+/// daemon. If the brief Meet home flash during cold start lets the inject
+/// script run initHomepage and report meetings before our drain navigates
+/// away, the daemon would otherwise fire navigate-and-join for the same
+/// meeting and reload the preview page a second time. The daemon's
+/// `calculate_next_trigger` filter checks `suppressed_meetings.contains_key`,
+/// so this preempts that race regardless of when meetings_updated arrives.
+fn preempt_daemon_for_join(app: &AppHandle, action: &DeepLinkAction) {
+    let DeepLinkAction::JoinMeeting { code } = action else {
+        return;
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let now = now_ms() as i64;
+    {
+        let mut daemon = state.daemon.lock().unwrap();
+        daemon.mark_suppressed(code, now);
+    }
+    log_app_event(
+        app,
+        LogLevel::Info,
+        "deep_link",
+        "daemon.preempt_suppress",
+        None,
+        Some(json!({ "callId": code })),
+    );
 }
 
 fn is_main_first_load_done(app: &AppHandle) -> bool {
