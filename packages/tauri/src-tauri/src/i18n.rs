@@ -56,6 +56,8 @@ pub mod keys {
     pub const MENU_EDIT: &str = "menu.edit";
     pub const MENU_VIEW: &str = "menu.view";
     pub const MENU_WINDOW: &str = "menu.window";
+    pub const MENU_HELP: &str = "menu.help";
+    pub const MENU_HELP_URL_SCHEME: &str = "menu.help.urlScheme";
 
     // Predefined menu item keys
     pub const MENU_SERVICES: &str = "menu.services";
@@ -117,6 +119,13 @@ fn translations() -> &'static TranslationMap {
             en: "View", zh: "显示", ja: "表示", ko: "보기");
         tr!(keys::MENU_WINDOW,
             en: "Window", zh: "窗口", ja: "ウインドウ", ko: "윈도우");
+        tr!(keys::MENU_HELP,
+            en: "Help", zh: "帮助", ja: "ヘルプ", ko: "도움말");
+        tr!(keys::MENU_HELP_URL_SCHEME,
+            en: "URL Scheme Guide",
+            zh: "URL Scheme 指南",
+            ja: "URL スキーム ガイド",
+            ko: "URL 스킴 가이드");
 
         // Predefined menu items
         tr!(keys::MENU_SERVICES,

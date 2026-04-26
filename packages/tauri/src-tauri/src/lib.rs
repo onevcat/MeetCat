@@ -1410,16 +1410,57 @@ fn apply_macos_menu(app: &AppHandle, refresh_enabled: bool) -> Result<(), String
         .build()
         .map_err(|e| e.to_string())?;
 
+    let url_scheme_help_item = MenuItem::with_id(
+        app,
+        "app-help-url-scheme",
+        i18n::tr(&lang, i18n::keys::MENU_HELP_URL_SCHEME),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let help_menu = SubmenuBuilder::new(app, i18n::tr(&lang, i18n::keys::MENU_HELP))
+        .item(&url_scheme_help_item)
+        .build()
+        .map_err(|e| e.to_string())?;
+
     let menu = MenuBuilder::new(app)
         .item(&app_menu)
         .item(&edit_menu)
         .item(&view_menu)
         .item(&window_menu)
+        .item(&help_menu)
         .build()
         .map_err(|e| e.to_string())?;
 
     app.set_menu(menu).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// URL of the public URL Scheme guide on meet.onev.cat, localized per UI language.
+fn url_scheme_help_url(lang: &i18n::Language) -> &'static str {
+    match lang {
+        i18n::Language::En => "https://meet.onev.cat/url-scheme.html",
+        i18n::Language::Zh => "https://meet.onev.cat/zh/url-scheme.html",
+        i18n::Language::Ja => "https://meet.onev.cat/ja/url-scheme.html",
+        i18n::Language::Ko => "https://meet.onev.cat/ko/url-scheme.html",
+    }
+}
+
+fn open_url_scheme_help(app: &AppHandle) {
+    let lang = i18n::Language::detect();
+    let url = url_scheme_help_url(&lang);
+    if let Err(e) = app.opener().open_url(url, None::<&str>) {
+        eprintln!("[MeetCat] Failed to open URL scheme help: {}", e);
+        log_app_event(
+            app,
+            LogLevel::Warn,
+            "help",
+            "url_scheme.open_failed",
+            Some(e.to_string()),
+            Some(json!({ "url": url })),
+        );
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1903,6 +1944,9 @@ pub fn run() {
                         if let Err(e) = navigate_to_meet_home(app) {
                             eprintln!("Failed to refresh homepage: {}", e);
                         }
+                    }
+                    "app-help-url-scheme" => {
+                        open_url_scheme_help(app);
                     }
                     _ => {}
                 });
