@@ -5,7 +5,7 @@ use crate::i18n::{self, keys, Language};
 use crate::settings::{LogLevel, TauriSettings, TrayDisplayMode};
 use crate::{
     ensure_settings_window, navigate_to_meet_home, request_manual_update_check,
-    request_open_update_dialog, AppState,
+    request_open_update_dialog, restore_main_window_visibility, AppState,
 };
 use chrono::{DateTime, Utc};
 use serde_json::json;
@@ -126,6 +126,7 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                 app.exit(0);
             }
             "show" => {
+                restore_main_window_visibility(app);
                 let mut ok = false;
                 if let Some(window) = app.get_webview_window("main") {
                     ok = window.show().is_ok() && window.set_focus().is_ok();
@@ -205,6 +206,7 @@ pub fn setup_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } = event
             {
+                restore_main_window_visibility(tray.app_handle());
                 if let Some(window) = tray.app_handle().get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();

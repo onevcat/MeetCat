@@ -2262,6 +2262,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
+ "objc2",
  "serde",
  "serde_json",
  "sys-locale",
