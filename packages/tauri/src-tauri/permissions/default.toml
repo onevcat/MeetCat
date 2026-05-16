@@ -1,0 +1,34 @@
+[default]
+description = "Default permission set: enables all MeetCat app commands."
+permissions = ["allow-app-commands"]
+
+# Tauri 2.11 strictly enforces that any custom command invoked from a remote
+# origin (e.g. the injected script running on meet.google.com) is explicitly
+# allow-listed in a capability. Keep this list in sync with the
+# `tauri::generate_handler![..]` block in src/lib.rs.
+[[permission]]
+identifier = "allow-app-commands"
+description = "Allow every MeetCat-defined Tauri command (registered via generate_handler!)."
+commands.allow = [
+    "get_status",
+    "get_joined_meetings",
+    "get_suppressed_meetings",
+    "get_settings",
+    "save_settings",
+    "start_daemon",
+    "stop_daemon",
+    "meetings_updated",
+    "meeting_joined",
+    "meeting_closed",
+    "open_settings_window",
+    "navigate_home",
+    "get_update_info",
+    "get_update_prompt_preference",
+    "set_update_prompt_preference",
+    "check_for_update_manual",
+    "download_and_install_update",
+    "open_update_dialog",
+    "consume_open_update_dialog_request",
+    "consume_manual_update_check_request",
+    "log_event",
+]

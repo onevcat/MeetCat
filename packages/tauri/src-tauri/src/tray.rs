@@ -7,6 +7,7 @@ use crate::{
     ensure_settings_window, navigate_to_meet_home, request_manual_update_check,
     request_open_update_dialog, AppState,
 };
+use chrono::{DateTime, Utc};
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -239,11 +240,15 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
     };
 
     let lang = resolve_language(app);
+    let now = Utc::now();
 
-    // Update tooltip
+    // Update tooltip. The cached `starts_in_minutes` on the Meeting can be
+    // stale (frozen if the webview stopped pushing updates), so always recompute
+    // from begin_time. See issue #19.
     let tooltip = match meeting {
         Some(m) => {
-            let status = i18n::tr_time_status(&lang, m.starts_in_minutes);
+            let live_minutes = starts_in_minutes_at(m.begin_time, now);
+            let status = i18n::tr_time_status(&lang, live_minutes);
             i18n::tr_tooltip_with_meeting(&lang, &m.title, &status)
         }
         None => i18n::tr_tooltip_no_meetings(&lang),
@@ -256,7 +261,7 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
         .try_state::<AppState>()
         .and_then(|state| state.settings.lock().ok().and_then(|s| s.tauri.clone()))
         .unwrap_or_default();
-    let title = build_tray_title(meeting, &tray_settings, &lang);
+    let title = build_tray_title_at(meeting, &tray_settings, &lang, now);
     let _ = tray.set_title(Some(&title));
 
     let Some(items) = app.try_state::<TrayMenuItems>() else {
@@ -276,10 +281,12 @@ pub fn update_tray_status(app: &AppHandle, meeting: Option<&Meeting>) {
         }
     }
 
-    // Update status text
+    // Update status text. Recompute from begin_time for the same reason as the
+    // tooltip above (issue #19).
     let status_text = match meeting {
         Some(m) => {
-            let time_str = i18n::tr_time_status(&lang, m.starts_in_minutes);
+            let live_minutes = starts_in_minutes_at(m.begin_time, now);
+            let time_str = i18n::tr_time_status(&lang, live_minutes);
             i18n::tr_next_meeting(&lang, &truncate_title(&m.title, 25), &time_str)
         }
         None => i18n::tr(&lang, keys::NO_UPCOMING_MEETINGS).to_string(),
@@ -393,7 +400,20 @@ fn format_countdown(lang: &Language, starts_in_minutes: i64) -> String {
     i18n::tr_countdown_short(lang, starts_in_minutes)
 }
 
-fn build_tray_title(meeting: Option<&Meeting>, settings: &TauriSettings, lang: &Language) -> String {
+/// Live-compute the minutes between `begin` and `now`, matching the frontend's
+/// `Math.floor((beginTime - now) / 60000)` semantics. We use `div_euclid` so
+/// negative deltas floor away from zero (e.g. -90s → -2, not -1).
+pub(crate) fn starts_in_minutes_at(begin: DateTime<Utc>, now: DateTime<Utc>) -> i64 {
+    let delta_ms = begin.timestamp_millis() - now.timestamp_millis();
+    delta_ms.div_euclid(60_000)
+}
+
+fn build_tray_title_at(
+    meeting: Option<&Meeting>,
+    settings: &TauriSettings,
+    lang: &Language,
+    now: DateTime<Utc>,
+) -> String {
     if matches!(settings.tray_display_mode, TrayDisplayMode::IconOnly) {
         return String::new();
     }
@@ -404,7 +424,9 @@ fn build_tray_title(meeting: Option<&Meeting>, settings: &TauriSettings, lang: &
 
     let base = match settings.tray_display_mode {
         TrayDisplayMode::IconWithTime => meeting.display_time.clone(),
-        TrayDisplayMode::IconWithCountdown => format_countdown(lang, meeting.starts_in_minutes),
+        TrayDisplayMode::IconWithCountdown => {
+            format_countdown(lang, starts_in_minutes_at(meeting.begin_time, now))
+        }
         TrayDisplayMode::IconOnly => return String::new(),
     };
 
@@ -422,6 +444,52 @@ fn build_tray_title(meeting: Option<&Meeting>, settings: &TauriSettings, lang: &
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn test_starts_in_minutes_at_exact_now() {
+        let now = Utc::now();
+        assert_eq!(starts_in_minutes_at(now, now), 0);
+    }
+
+    #[test]
+    fn test_starts_in_minutes_at_future_whole_minute() {
+        let now = Utc::now();
+        assert_eq!(starts_in_minutes_at(now + Duration::minutes(5), now), 5);
+    }
+
+    #[test]
+    fn test_starts_in_minutes_at_future_sub_minute_floors_to_zero() {
+        let now = Utc::now();
+        assert_eq!(starts_in_minutes_at(now + Duration::seconds(30), now), 0);
+    }
+
+    #[test]
+    fn test_starts_in_minutes_at_future_partial_minute_floors_down() {
+        let now = Utc::now();
+        // 90s in the future → 1 min (floor(1.5) = 1), mirrors frontend Math.floor.
+        assert_eq!(starts_in_minutes_at(now + Duration::seconds(90), now), 1);
+    }
+
+    #[test]
+    fn test_starts_in_minutes_at_past_whole_minute() {
+        let now = Utc::now();
+        assert_eq!(starts_in_minutes_at(now - Duration::minutes(5), now), -5);
+    }
+
+    #[test]
+    fn test_starts_in_minutes_at_past_sub_minute_floors_negative() {
+        let now = Utc::now();
+        // 30s in the past → floor(-0.5) = -1, not 0. Truncation toward zero would be wrong.
+        assert_eq!(starts_in_minutes_at(now - Duration::seconds(30), now), -1);
+    }
+
+    #[test]
+    fn test_starts_in_minutes_at_past_partial_minute_floors_down() {
+        let now = Utc::now();
+        // 90s in the past → floor(-1.5) = -2. This is the case that breaks naive i64 division.
+        assert_eq!(starts_in_minutes_at(now - Duration::seconds(90), now), -2);
+    }
 
     #[test]
     fn test_truncate_title_short() {
@@ -469,19 +537,21 @@ mod tests {
 
     #[test]
     fn test_build_tray_title_icon_only() {
-        let meeting = create_test_meeting("Design Sync", "10:30 AM", 5);
+        let now = Utc::now();
+        let meeting = make_meeting_at("Design Sync", "10:30 AM", now + Duration::minutes(5), 5);
         let lang = Language::En;
         let settings = TauriSettings {
             tray_display_mode: TrayDisplayMode::IconOnly,
             ..TauriSettings::default()
         };
 
-        assert_eq!(build_tray_title(Some(&meeting), &settings, &lang), "");
+        assert_eq!(build_tray_title_at(Some(&meeting), &settings, &lang, now), "");
     }
 
     #[test]
     fn test_build_tray_title_time_with_name() {
-        let meeting = create_test_meeting("Design Sync", "10:30 AM", 5);
+        let now = Utc::now();
+        let meeting = make_meeting_at("Design Sync", "10:30 AM", now + Duration::minutes(5), 5);
         let lang = Language::En;
         let settings = TauriSettings {
             tray_display_mode: TrayDisplayMode::IconWithTime,
@@ -490,14 +560,15 @@ mod tests {
         };
 
         assert_eq!(
-            build_tray_title(Some(&meeting), &settings, &lang),
+            build_tray_title_at(Some(&meeting), &settings, &lang, now),
             "10:30 AM - Design Sync"
         );
     }
 
     #[test]
     fn test_build_tray_title_countdown_without_name() {
-        let meeting = create_test_meeting("Design Sync", "10:30 AM", -2);
+        let now = Utc::now();
+        let meeting = make_meeting_at("Design Sync", "10:30 AM", now - Duration::minutes(2), -2);
         let lang = Language::En;
         let settings = TauriSettings {
             tray_display_mode: TrayDisplayMode::IconWithCountdown,
@@ -505,11 +576,15 @@ mod tests {
             ..TauriSettings::default()
         };
 
-        assert_eq!(build_tray_title(Some(&meeting), &settings, &lang), "2m ago");
+        assert_eq!(
+            build_tray_title_at(Some(&meeting), &settings, &lang, now),
+            "2m ago"
+        );
     }
 
     #[test]
     fn test_build_tray_title_no_meeting() {
+        let now = Utc::now();
         let lang = Language::En;
         let settings = TauriSettings {
             tray_display_mode: TrayDisplayMode::IconWithTime,
@@ -517,19 +592,89 @@ mod tests {
             ..TauriSettings::default()
         };
 
-        assert_eq!(build_tray_title(None, &settings, &lang), "");
+        assert_eq!(build_tray_title_at(None, &settings, &lang, now), "");
     }
 
-    fn create_test_meeting(title: &str, display_time: &str, starts_in_minutes: i64) -> Meeting {
+    /// Core regression for issue #19: even when the cached starts_in_minutes
+    /// field is stale (frozen because the webview stopped pushing), the tray
+    /// title must reflect the real time delta computed from begin_time.
+    #[test]
+    fn test_build_tray_title_ignores_stale_cached_starts_in_minutes() {
+        let now = Utc::now();
+        // Begin time is 5 minutes in the future, but the cached field claims
+        // "1 minute" — the kind of stale value the daemon would hold onto if
+        // the webview stopped reporting. The tray title must trust begin_time.
+        let meeting = make_meeting_at("Daily Sync", "10:30 AM", now + Duration::minutes(5), 1);
+        let lang = Language::En;
+        let settings = TauriSettings {
+            tray_display_mode: TrayDisplayMode::IconWithCountdown,
+            tray_show_meeting_title: false,
+            ..TauriSettings::default()
+        };
+
+        assert_eq!(
+            build_tray_title_at(Some(&meeting), &settings, &lang, now),
+            "in 5m"
+        );
+    }
+
+    /// The cross-minute floor — begin = now + 90s should display "in 1m",
+    /// matching the frontend's Math.floor behavior.
+    #[test]
+    fn test_build_tray_title_floors_cross_minute_boundary() {
+        let now = Utc::now();
+        let meeting = make_meeting_at("Standup", "09:00 AM", now + Duration::seconds(90), 1);
+        let lang = Language::En;
+        let settings = TauriSettings {
+            tray_display_mode: TrayDisplayMode::IconWithCountdown,
+            tray_show_meeting_title: false,
+            ..TauriSettings::default()
+        };
+
+        assert_eq!(
+            build_tray_title_at(Some(&meeting), &settings, &lang, now),
+            "in 1m"
+        );
+    }
+
+    #[test]
+    fn test_build_tray_title_countdown_with_long_title_truncates() {
+        let now = Utc::now();
+        let meeting = make_meeting_at(
+            "This Is A Very Long Meeting Title That Should Be Truncated",
+            "09:00 AM",
+            now + Duration::minutes(3),
+            3,
+        );
+        let lang = Language::En;
+        let settings = TauriSettings {
+            tray_display_mode: TrayDisplayMode::IconWithCountdown,
+            tray_show_meeting_title: true,
+            ..TauriSettings::default()
+        };
+
+        // 24-char truncation budget for the title portion; format is "<base> - <title>".
+        assert_eq!(
+            build_tray_title_at(Some(&meeting), &settings, &lang, now),
+            "in 3m - This Is A Very Long M..."
+        );
+    }
+
+    fn make_meeting_at(
+        title: &str,
+        display_time: &str,
+        begin: DateTime<Utc>,
+        cached_starts_in_minutes: i64,
+    ) -> Meeting {
         Meeting {
             call_id: "abc123".to_string(),
             url: "https://meet.google.com/abc123".to_string(),
             title: title.to_string(),
             display_time: display_time.to_string(),
-            begin_time: chrono::Utc::now(),
-            end_time: chrono::Utc::now(),
+            begin_time: begin,
+            end_time: begin + Duration::minutes(30),
             event_id: None,
-            starts_in_minutes,
+            starts_in_minutes: cached_starts_in_minutes,
         }
     }
 }

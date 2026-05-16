@@ -38,6 +38,13 @@ const MEET_HOME_URL: &str = "https://meet.google.com/";
 const MEETCAT_AUTO_JOIN_PARAM: &str = "meetcatAuto";
 const UPDATE_CHECK_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
 const UPDATE_PROMPT_PREFERENCE_FILE: &str = "update-prompt-preference.json";
+/// How often we refresh the tray status independently of webview push.
+///
+/// 30s gives at most a 30s lag across whole-minute boundaries for the
+/// countdown display. See issue #19 — the tray must keep ticking even when
+/// the main webview navigates away from the homepage and stops sending
+/// `meetings_updated`.
+const TRAY_REFRESH_INTERVAL_SECONDS: u64 = 30;
 
 /// Application state shared across commands
 pub struct AppState {
@@ -415,6 +422,10 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
 
     // Re-schedule trigger for the next meeting
     schedule_join_trigger(&app, &state);
+
+    // Push the tray to the next meeting right away rather than waiting for
+    // the periodic ticker. See issue #19.
+    refresh_tray_status(&app);
 }
 
 /// Mark a meeting as closed
@@ -816,6 +827,16 @@ fn setup_update_checker(app: &AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(UPDATE_CHECK_INTERVAL_SECONDS)).await;
             let _ = check_for_update_with_source(app_handle.clone(), "polling").await;
+        }
+    });
+}
+
+fn setup_tray_ticker(app: &AppHandle) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(TRAY_REFRESH_INTERVAL_SECONDS)).await;
+            refresh_tray_status(&app_handle);
         }
     });
 }
@@ -2019,6 +2040,8 @@ pub fn run() {
             }
 
             setup_update_checker(app.handle());
+
+            setup_tray_ticker(app.handle());
 
             Ok(())
         })
