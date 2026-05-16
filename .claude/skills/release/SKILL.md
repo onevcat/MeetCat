@@ -29,6 +29,7 @@ description: 自动化 MeetCat 完整发布流程：版本号确定、changelog 
 6. 用户确认后：
    - 如果 package.json 中的版本已经是目标版本，跳过此步
    - 否则执行 `pnpm run version:set <version>`
+   - 注意：`version:set` 除了改 root / 各 workspace 的 `package.json` 和 `Cargo.toml`，还会跑 cargo 同步 `Cargo.lock`。输出里可能出现 `Updating crates.io index` / `Adding ...` 等行，属预期，不是脏改动。
 
 ## Phase 2: 更新 Changelog
 
@@ -51,6 +52,8 @@ description: 自动化 MeetCat 完整发布流程：版本号确定、changelog 
 将 changelog 草稿呈现给用户审阅。用户确认后写入 `CHANGELOG.md`。
 
 **重要：不要 git commit。** `release:app` 脚本会自动提交所有发布相关文件。
+
+**写入后跑 `git status` 确认脏文件全部落在白名单内** —— `scripts/release-tauri-github.sh` 维护了 `RELEASE_ALLOWED_DIRTY_FILES`（`CHANGELOG.md` / `package.json` / 各 workspace `package.json` / `Cargo.toml` / `Cargo.lock` 等），出现其它脏文件会让脚本 abort。意外动到的文件需要先 stash 或 revert 再进 Phase 3。
 
 ## Phase 3: 打包 Extension
 
@@ -91,8 +94,11 @@ pnpm run release:app
 
 用户确认 `release:app` 完成后：
 
-1. 推送 tag 到远端：`git push origin --tags`
-2. 验证 tag：`git tag --sort=-v:refname | head -3`
+1. 确认 release commit 和 tag 都已推到远端：
+   - `git log origin/master..HEAD --oneline` 应为空（commit 已 push）
+   - `git ls-remote --tags origin | grep <version>` 应能找到 tag
+   - 如果其中任一缺失，再补一次 `git push origin master --follow-tags`。**正常情况下 `release-tauri-github.sh` 已经替你把 commit + tag 都推上去了，不要无脑跑 `git push --tags`。**
+2. 验证本地 tag 存在：`git tag --sort=-v:refname | head -3`
 3. 验证 GitHub Release：`gh release view <version>`
 4. 汇报发布结果：
    - GitHub Release URL
