@@ -35,6 +35,13 @@ describe("Settings Defaults", () => {
     it("should have expected UI defaults", () => {
       expect(DEFAULT_SETTINGS.showCountdownOverlay).toBe(true);
     });
+
+    it("should freeze exported singletons to prevent shared-state mutations", () => {
+      expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
+      expect(Object.isFrozen(DEFAULT_SETTINGS.titleExcludeFilters)).toBe(true);
+      expect(Object.isFrozen(DEFAULT_EXTENSION_SETTINGS)).toBe(true);
+      expect(Object.isFrozen(DEFAULT_TAURI_SETTINGS)).toBe(true);
+    });
   });
 
   describe("DEFAULT_EXTENSION_SETTINGS", () => {
@@ -79,6 +86,16 @@ describe("Settings Defaults", () => {
       const defaults = getExtensionDefaults();
       expect(defaults.tauri).toBeUndefined();
     });
+
+    it("should return isolated mutable defaults", () => {
+      const first = getExtensionDefaults();
+      first.titleExcludeFilters.push("Private");
+      first.extension!.openInNewTab = false;
+
+      const second = getExtensionDefaults();
+      expect(second.titleExcludeFilters).toEqual([]);
+      expect(second.extension).toEqual(DEFAULT_EXTENSION_SETTINGS);
+    });
   });
 
   describe("getTauriDefaults", () => {
@@ -98,6 +115,16 @@ describe("Settings Defaults", () => {
     it("should not include extension settings", () => {
       const defaults = getTauriDefaults();
       expect(defaults.extension).toBeUndefined();
+    });
+
+    it("should return isolated mutable defaults", () => {
+      const first = getTauriDefaults();
+      first.titleExcludeFilters.push("Private");
+      first.tauri!.showTrayIcon = false;
+
+      const second = getTauriDefaults();
+      expect(second.titleExcludeFilters).toEqual([]);
+      expect(second.tauri).toEqual(DEFAULT_TAURI_SETTINGS);
     });
   });
 });

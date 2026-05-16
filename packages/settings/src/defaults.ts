@@ -18,52 +18,64 @@ type DefaultsJson = {
 
 const DEFAULTS = defaults as DefaultsJson;
 
+function createDefaultSettings(): Settings {
+  return {
+    // Language
+    language: DEFAULTS.language,
+
+    // Timing
+    checkIntervalSeconds: DEFAULTS.checkIntervalSeconds,
+    joinBeforeMinutes: DEFAULTS.joinBeforeMinutes,
+    maxMinutesAfterStart: DEFAULTS.maxMinutesAfterStart,
+
+    // Join behavior
+    autoClickJoin: DEFAULTS.autoClickJoin,
+    joinCountdownSeconds: DEFAULTS.joinCountdownSeconds,
+    titleExcludeFilters: [...DEFAULTS.titleExcludeFilters],
+
+    // Media defaults
+    defaultMicState: DEFAULTS.defaultMicState,
+    defaultCameraState: DEFAULTS.defaultCameraState,
+
+    // UI
+    showCountdownOverlay: DEFAULTS.showCountdownOverlay,
+  };
+}
+
+// Freeze the exported singletons so accidental mutations throw in strict mode
+// instead of silently corrupting defaults for every later reader. Callers that
+// need a mutable copy should spread them or use the getXxxDefaults factories.
+function freezeSettings(settings: Settings): Settings {
+  Object.freeze(settings.titleExcludeFilters);
+  return Object.freeze(settings);
+}
+
 /**
- * Default settings values
+ * Default settings values (frozen — spread or use a factory for mutations)
  */
-export const DEFAULT_SETTINGS: Settings = {
-  // Language
-  language: DEFAULTS.language,
-
-  // Timing
-  checkIntervalSeconds: DEFAULTS.checkIntervalSeconds,
-  joinBeforeMinutes: DEFAULTS.joinBeforeMinutes,
-  maxMinutesAfterStart: DEFAULTS.maxMinutesAfterStart,
-
-  // Join behavior
-  autoClickJoin: DEFAULTS.autoClickJoin,
-  joinCountdownSeconds: DEFAULTS.joinCountdownSeconds,
-  titleExcludeFilters: [...DEFAULTS.titleExcludeFilters],
-
-  // Media defaults
-  defaultMicState: DEFAULTS.defaultMicState,
-  defaultCameraState: DEFAULTS.defaultCameraState,
-
-  // UI
-  showCountdownOverlay: DEFAULTS.showCountdownOverlay,
-};
+export const DEFAULT_SETTINGS: Settings = freezeSettings(createDefaultSettings());
 
 /**
- * Default extension settings
+ * Default extension settings (frozen — spread for mutations)
  */
-export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
+export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = Object.freeze({
   ...DEFAULTS.extension,
-};
+});
 
 /**
- * Default Tauri settings
+ * Default Tauri settings (frozen — spread for mutations)
  */
-export const DEFAULT_TAURI_SETTINGS: TauriSettings = {
+export const DEFAULT_TAURI_SETTINGS: TauriSettings = Object.freeze({
   ...DEFAULTS.tauri,
-};
+});
 
 /**
  * Get complete default settings for extension platform
  */
 export function getExtensionDefaults(): Settings {
   return {
-    ...DEFAULT_SETTINGS,
-    extension: DEFAULT_EXTENSION_SETTINGS,
+    ...createDefaultSettings(),
+    extension: { ...DEFAULTS.extension },
   };
 }
 
@@ -72,7 +84,7 @@ export function getExtensionDefaults(): Settings {
  */
 export function getTauriDefaults(): Settings {
   return {
-    ...DEFAULT_SETTINGS,
-    tauri: DEFAULT_TAURI_SETTINGS,
+    ...createDefaultSettings(),
+    tauri: { ...DEFAULTS.tauri },
   };
 }
