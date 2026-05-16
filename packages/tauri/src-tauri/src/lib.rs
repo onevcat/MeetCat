@@ -340,6 +340,7 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
                 );
             }
 
+            restore_main_window_visibility(&app_handle);
             if let Some(window) = app_handle.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -1211,16 +1212,92 @@ fn setup_daemon(app: &AppHandle) {
     });
 }
 
-/// Set up window lifecycle (hide instead of close)
+// =============================================================================
+// Main window close handling — see issue #21.
+//
+// We deliberately do NOT call `window.hide()` on close. Hiding the window on
+// macOS triggers WKWebView occlusion, which flips `document.visibilityState`
+// to "hidden". Google Meet's homepage throttles its own background polling
+// once it sees visibility=hidden, so our cached meeting state goes stale
+// (tray countdown lies; auto-join fires on the wrong schedule).
+//
+// Instead we make the window visually invisible while keeping NSWindow
+// ordered-in: setAlphaValue:0 + setIgnoresMouseEvents:YES. AppKit still
+// considers the window visible, so WKWebView occlusion does not fire and
+// `visibilityState` stays "visible". Meet keeps refreshing the homepage DOM
+// in the background.
+//
+// Parking the window offscreen via `set_position` does NOT work: macOS
+// auto-repositions any window that leaves all screens back to the nearest
+// screen edge, so the window leaks onto a secondary display.
+//
+// `restore_main_window_visibility` runs from every "show the main window"
+// code path to undo the alpha/mouse settings before the user sees the window.
+// =============================================================================
+
+/// Apply or undo the visually-hidden state on the main window.
+/// macOS-only; on other platforms we fall back to `window.hide()` / `show()`
+/// since the WKWebView throttling issue is macOS-specific.
+fn set_main_window_hidden_visually(app: &AppHandle, hidden: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let app_for_closure = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let Some(window) = app_for_closure.get_webview_window("main") else {
+                return;
+            };
+            let Ok(ns_window_ptr) = window.ns_window() else {
+                return;
+            };
+            let alpha: f64 = if hidden { 0.0 } else { 1.0 };
+            let ignores: bool = hidden;
+            // Safety: ns_window() returns a valid NSWindow pointer for the
+            // lifetime of the window; we only invoke standard setters that
+            // accept these primitive arguments. We're on the main thread via
+            // run_on_main_thread, which is required for NSWindow setters.
+            unsafe {
+                let ns_window = ns_window_ptr as *mut objc2::runtime::AnyObject;
+                let _: () = objc2::msg_send![ns_window, setAlphaValue: alpha];
+                let _: () = objc2::msg_send![ns_window, setIgnoresMouseEvents: ignores];
+            }
+        });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some(window) = app.get_webview_window("main") {
+            if hidden {
+                let _ = window.hide();
+            } else {
+                let _ = window.show();
+            }
+        }
+    }
+}
+
+/// Undo the visually-hidden close treatment before the user sees the window.
+/// Idempotent — safe to call on a window that is already fully visible.
+pub(crate) fn restore_main_window_visibility(app: &AppHandle) {
+    set_main_window_hidden_visually(app, false);
+}
+
+/// Set up the main window's close behavior — see the module comment above.
 fn setup_window_lifecycle(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let window_clone = window.clone();
+        let app_handle = app.clone();
 
         window.on_window_event(move |event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Prevent close, hide instead
                 api.prevent_close();
-                let _ = window_clone.hide();
+                set_main_window_hidden_visually(&app_handle, true);
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Info,
+                    "window",
+                    "main.close_intercepted",
+                    None,
+                    None,
+                );
             }
         });
     }
@@ -1232,6 +1309,7 @@ pub(crate) fn navigate_to_meet_home(app: &AppHandle) -> Result<(), String> {
         .ok_or_else(|| "Main window not found".to_string())?;
     let url = Url::parse(MEET_HOME_URL).map_err(|e| e.to_string())?;
     window.navigate(url).map_err(|e| e.to_string())?;
+    restore_main_window_visibility(app);
     let _ = window.show();
     let _ = window.set_focus();
     Ok(())
@@ -1247,6 +1325,7 @@ fn navigate_to_meet_home_silent(app: &AppHandle) -> Result<(), String> {
 }
 
 fn focus_main_window(app: &AppHandle) {
+    restore_main_window_visibility(app);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
@@ -1259,6 +1338,7 @@ fn navigate_main_window(app: &AppHandle, url: Url) -> Result<(), String> {
         .get_webview_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
     window.navigate(url).map_err(|e| e.to_string())?;
+    restore_main_window_visibility(app);
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
@@ -1882,6 +1962,7 @@ mod tests {
             "https://meet.google.com/lookup/ab_cd-EF12?meetcatAuto=1"
         );
     }
+
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
