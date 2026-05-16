@@ -47,6 +47,7 @@ const ja = {
     collectLogsHint: "ローカルに 3 日間ログを保存",
     logLevel: "ログレベル",
     logLevelHint: "設定レベル以上のログが記録されます",
+    openLogFolder: "ログフォルダを開く",
 
     loading: "設定を読み込み中...",
     saving: "保存中...",

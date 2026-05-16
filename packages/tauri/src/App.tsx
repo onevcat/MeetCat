@@ -52,6 +52,7 @@ const adapter: SettingsAdapter = {
     tray: true,
     showSavingIndicator: true,
     developer: true,
+    openLogFolder: true,
   },
   getDefaultSettings: () => resolveSettings(null),
   resolveSettings,
@@ -115,6 +116,9 @@ const adapter: SettingsAdapter = {
     };
   },
   getVersion: async () => getVersion(),
+  openLogFolder: async () => {
+    await invoke("open_log_folder");
+  },
 };
 
 function isSuppressedByPreference(

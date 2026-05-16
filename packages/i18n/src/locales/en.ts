@@ -47,6 +47,7 @@ const en = {
     collectLogsHint: "Stores logs locally for 3 days",
     logLevel: "Log level",
     logLevelHint: "Logs at or above this level will be recorded",
+    openLogFolder: "Open log folder",
 
     loading: "Loading settings...",
     saving: "Saving...",

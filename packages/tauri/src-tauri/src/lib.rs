@@ -895,6 +895,16 @@ fn open_settings_window(app: AppHandle) -> Result<(), String> {
     ensure_settings_window(&app)
 }
 
+/// Reveal the on-disk log folder in the platform's file manager.
+#[tauri::command]
+fn open_log_folder(app: AppHandle) -> Result<(), String> {
+    let dir = logging::default_log_dir();
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    app.opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
     // Check if settings window already exists
     if let Some(window) = app.get_webview_window("settings") {
@@ -2138,6 +2148,7 @@ pub fn run() {
             meeting_joined,
             meeting_closed,
             open_settings_window,
+            open_log_folder,
             navigate_home,
             get_update_info,
             get_update_prompt_preference,

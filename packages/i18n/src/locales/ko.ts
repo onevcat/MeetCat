@@ -47,6 +47,7 @@ const ko = {
     collectLogsHint: "3일간 로컬에 로그를 저장합니다",
     logLevel: "로그 레벨",
     logLevelHint: "설정 레벨 이상의 로그가 기록됩니다",
+    openLogFolder: "로그 폴더 열기",
 
     loading: "설정 불러오는 중...",
     saving: "저장 중...",
