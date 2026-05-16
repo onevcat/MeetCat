@@ -35,6 +35,13 @@ describe("Settings Defaults", () => {
     it("should have expected UI defaults", () => {
       expect(DEFAULT_SETTINGS.showCountdownOverlay).toBe(true);
     });
+
+    it("should freeze exported singletons to prevent shared-state mutations", () => {
+      expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
+      expect(Object.isFrozen(DEFAULT_SETTINGS.titleExcludeFilters)).toBe(true);
+      expect(Object.isFrozen(DEFAULT_EXTENSION_SETTINGS)).toBe(true);
+      expect(Object.isFrozen(DEFAULT_TAURI_SETTINGS)).toBe(true);
+    });
   });
 
   describe("DEFAULT_EXTENSION_SETTINGS", () => {

@@ -42,24 +42,32 @@ function createDefaultSettings(): Settings {
   };
 }
 
-/**
- * Default settings values
- */
-export const DEFAULT_SETTINGS: Settings = createDefaultSettings();
+// Freeze the exported singletons so accidental mutations throw in strict mode
+// instead of silently corrupting defaults for every later reader. Callers that
+// need a mutable copy should spread them or use the getXxxDefaults factories.
+function freezeSettings(settings: Settings): Settings {
+  Object.freeze(settings.titleExcludeFilters);
+  return Object.freeze(settings);
+}
 
 /**
- * Default extension settings
+ * Default settings values (frozen — spread or use a factory for mutations)
  */
-export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
+export const DEFAULT_SETTINGS: Settings = freezeSettings(createDefaultSettings());
+
+/**
+ * Default extension settings (frozen — spread for mutations)
+ */
+export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = Object.freeze({
   ...DEFAULTS.extension,
-};
+});
 
 /**
- * Default Tauri settings
+ * Default Tauri settings (frozen — spread for mutations)
  */
-export const DEFAULT_TAURI_SETTINGS: TauriSettings = {
+export const DEFAULT_TAURI_SETTINGS: TauriSettings = Object.freeze({
   ...DEFAULTS.tauri,
-};
+});
 
 /**
  * Get complete default settings for extension platform
