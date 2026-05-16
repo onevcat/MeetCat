@@ -46,6 +46,7 @@ const zh = {
     collectLogsHint: "本地保存日志 3 天",
     logLevel: "日志级别",
     logLevelHint: "高于设定级别的 log 将被记录",
+    openLogFolder: "打开日志文件夹",
 
     loading: "加载设置...",
     saving: "保存中...",

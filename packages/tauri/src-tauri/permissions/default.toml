@@ -21,6 +21,7 @@ commands.allow = [
     "meeting_joined",
     "meeting_closed",
     "open_settings_window",
+    "open_log_folder",
     "navigate_home",
     "get_update_info",
     "get_update_prompt_preference",

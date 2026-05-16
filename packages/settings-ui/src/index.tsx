@@ -16,6 +16,7 @@ export type SettingsCapabilities = {
   tray?: boolean;
   showSavingIndicator?: boolean;
   developer?: boolean;
+  openLogFolder?: boolean;
 };
 
 export type SettingsAdapter = {
@@ -27,6 +28,7 @@ export type SettingsAdapter = {
   subscribe?: (handler: (settings: Settings) => void) => () => void;
   updateStartAtLogin?: (enabled: boolean, settings: Settings) => Promise<Settings>;
   getVersion?: () => Promise<string | null> | string | null;
+  openLogFolder?: () => Promise<void>;
 };
 
 export type SettingsContainerProps = {
@@ -154,6 +156,13 @@ export function SettingsContainer({
     void saveSettings(nextSettings);
   }, [settings, saveSettings]);
 
+  const handleOpenLogFolder = useCallback(() => {
+    if (!adapter.openLogFolder) return;
+    adapter.openLogFolder().catch((e) => {
+      console.error("Failed to open log folder:", e);
+    });
+  }, [adapter]);
+
   if (!i18nReady) {
     return null;
   }
@@ -173,6 +182,11 @@ export function SettingsContainer({
         adapter.capabilities.startAtLogin ? handleStartAtLoginChange : undefined
       }
       onLanguageChange={handleLanguageChange}
+      onOpenLogFolder={
+        adapter.capabilities.openLogFolder && adapter.openLogFolder
+          ? handleOpenLogFolder
+          : undefined
+      }
     />
   );
 }
@@ -189,6 +203,7 @@ export type SettingsViewProps = {
   onSettingsChange: (settings: Settings) => void;
   onStartAtLoginChange?: (enabled: boolean) => void;
   onLanguageChange?: (lang: LanguageSetting) => void;
+  onOpenLogFolder?: () => void;
 };
 
 function NumberInput({
@@ -259,6 +274,7 @@ export function SettingsView({
   onSettingsChange,
   onStartAtLoginChange,
   onLanguageChange,
+  onOpenLogFolder,
 }: SettingsViewProps) {
   const { t } = useTranslation();
   const [filterInput, setFilterInput] = useState("");
@@ -581,19 +597,42 @@ export function SettingsView({
             <h2>{t("settings.developer")}</h2>
 
             <div className="form-group">
-              <div className="form-checkbox-group">
-                <input
-                  type="checkbox"
-                  id="logCollectionEnabled"
-                  className="form-checkbox"
-                  checked={logCollectionEnabled}
-                  onChange={(e) =>
-                    updateTauriSettings({ logCollectionEnabled: e.target.checked })
-                  }
-                />
-                <label htmlFor="logCollectionEnabled" className="form-checkbox-label">
-                  {t("settings.collectLogs")}
-                </label>
+              <div className="form-inline-row">
+                <div className="form-checkbox-group">
+                  <input
+                    type="checkbox"
+                    id="logCollectionEnabled"
+                    className="form-checkbox"
+                    checked={logCollectionEnabled}
+                    onChange={(e) =>
+                      updateTauriSettings({ logCollectionEnabled: e.target.checked })
+                    }
+                  />
+                  <label htmlFor="logCollectionEnabled" className="form-checkbox-label">
+                    {t("settings.collectLogs")}
+                  </label>
+                </div>
+                {onOpenLogFolder && (
+                  <button
+                    type="button"
+                    className="settings-icon-btn"
+                    onClick={onOpenLogFolder}
+                    title={t("settings.openLogFolder")}
+                    aria-label={t("settings.openLogFolder")}
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M1.75 4.25a1 1 0 0 1 1-1H6.5l1.5 1.5h5.25a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1V4.25Z" />
+                    </svg>
+                  </button>
+                )}
               </div>
               <p className="form-hint">{t("settings.collectLogsHint")}</p>
             </div>

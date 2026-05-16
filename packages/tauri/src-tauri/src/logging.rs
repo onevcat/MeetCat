@@ -212,7 +212,7 @@ impl LogManager {
     }
 }
 
-fn default_log_dir() -> PathBuf {
+pub(crate) fn default_log_dir() -> PathBuf {
     let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     base.join("meetcat").join("logs")
 }
