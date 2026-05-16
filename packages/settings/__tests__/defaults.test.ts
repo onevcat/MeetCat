@@ -79,6 +79,16 @@ describe("Settings Defaults", () => {
       const defaults = getExtensionDefaults();
       expect(defaults.tauri).toBeUndefined();
     });
+
+    it("should return isolated mutable defaults", () => {
+      const first = getExtensionDefaults();
+      first.titleExcludeFilters.push("Private");
+      first.extension!.openInNewTab = false;
+
+      const second = getExtensionDefaults();
+      expect(second.titleExcludeFilters).toEqual([]);
+      expect(second.extension).toEqual(DEFAULT_EXTENSION_SETTINGS);
+    });
   });
 
   describe("getTauriDefaults", () => {
@@ -98,6 +108,16 @@ describe("Settings Defaults", () => {
     it("should not include extension settings", () => {
       const defaults = getTauriDefaults();
       expect(defaults.extension).toBeUndefined();
+    });
+
+    it("should return isolated mutable defaults", () => {
+      const first = getTauriDefaults();
+      first.titleExcludeFilters.push("Private");
+      first.tauri!.showTrayIcon = false;
+
+      const second = getTauriDefaults();
+      expect(second.titleExcludeFilters).toEqual([]);
+      expect(second.tauri).toEqual(DEFAULT_TAURI_SETTINGS);
     });
   });
 });

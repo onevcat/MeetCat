@@ -18,30 +18,34 @@ type DefaultsJson = {
 
 const DEFAULTS = defaults as DefaultsJson;
 
+function createDefaultSettings(): Settings {
+  return {
+    // Language
+    language: DEFAULTS.language,
+
+    // Timing
+    checkIntervalSeconds: DEFAULTS.checkIntervalSeconds,
+    joinBeforeMinutes: DEFAULTS.joinBeforeMinutes,
+    maxMinutesAfterStart: DEFAULTS.maxMinutesAfterStart,
+
+    // Join behavior
+    autoClickJoin: DEFAULTS.autoClickJoin,
+    joinCountdownSeconds: DEFAULTS.joinCountdownSeconds,
+    titleExcludeFilters: [...DEFAULTS.titleExcludeFilters],
+
+    // Media defaults
+    defaultMicState: DEFAULTS.defaultMicState,
+    defaultCameraState: DEFAULTS.defaultCameraState,
+
+    // UI
+    showCountdownOverlay: DEFAULTS.showCountdownOverlay,
+  };
+}
+
 /**
  * Default settings values
  */
-export const DEFAULT_SETTINGS: Settings = {
-  // Language
-  language: DEFAULTS.language,
-
-  // Timing
-  checkIntervalSeconds: DEFAULTS.checkIntervalSeconds,
-  joinBeforeMinutes: DEFAULTS.joinBeforeMinutes,
-  maxMinutesAfterStart: DEFAULTS.maxMinutesAfterStart,
-
-  // Join behavior
-  autoClickJoin: DEFAULTS.autoClickJoin,
-  joinCountdownSeconds: DEFAULTS.joinCountdownSeconds,
-  titleExcludeFilters: [...DEFAULTS.titleExcludeFilters],
-
-  // Media defaults
-  defaultMicState: DEFAULTS.defaultMicState,
-  defaultCameraState: DEFAULTS.defaultCameraState,
-
-  // UI
-  showCountdownOverlay: DEFAULTS.showCountdownOverlay,
-};
+export const DEFAULT_SETTINGS: Settings = createDefaultSettings();
 
 /**
  * Default extension settings
@@ -62,8 +66,8 @@ export const DEFAULT_TAURI_SETTINGS: TauriSettings = {
  */
 export function getExtensionDefaults(): Settings {
   return {
-    ...DEFAULT_SETTINGS,
-    extension: DEFAULT_EXTENSION_SETTINGS,
+    ...createDefaultSettings(),
+    extension: { ...DEFAULTS.extension },
   };
 }
 
@@ -72,7 +76,7 @@ export function getExtensionDefaults(): Settings {
  */
 export function getTauriDefaults(): Settings {
   return {
-    ...DEFAULT_SETTINGS,
-    tauri: DEFAULT_TAURI_SETTINGS,
+    ...createDefaultSettings(),
+    tauri: { ...DEFAULTS.tauri },
   };
 }
