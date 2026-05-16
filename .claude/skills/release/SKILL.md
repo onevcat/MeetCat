@@ -59,7 +59,15 @@ description: 自动化 MeetCat 完整发布流程：版本号确定、changelog 
 pnpm run release:extension
 ```
 
-这会构建扩展并生成 `release/meetcat-extension-<VERSION>.zip`。确认 zip 文件已成功创建。
+这会构建扩展并生成 `release/meetcat-extension-<VERSION>.zip`。
+
+**自动上传 Chrome Web Store：** 如果环境变量 `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN`（通常通过 `.env`）已设置，脚本会调 `scripts/publish-extension.sh` 自动上传到 Chrome Web Store。
+
+观察脚本输出最后一段，判断走的是哪条路径：
+- 看到 "publish complete" 之类的成功输出 → 已自动上传
+- 看到 "CWS credentials not set, skipping..." → 凭证缺失，本次没上传，需要后续手动上传
+
+在 Phase 5 汇报中转达这个状态。
 
 ## Phase 4: 发布 App
 
@@ -89,7 +97,9 @@ pnpm run release:app
 4. 汇报发布结果：
    - GitHub Release URL
    - Extension zip 路径（`release/meetcat-extension-<VERSION>.zip`）
-4. 提醒用户手动上传 extension zip 到 Chrome Web Store
+   - Chrome Web Store 上传状态（来自 Phase 3 观察）：
+     - 已自动上传 → 告诉用户在 Chrome Web Store 开发者后台等审核
+     - 凭证缺失/未上传 → 提醒用户手动上传 zip
 
 ## 部分发布
 
