@@ -538,6 +538,40 @@ mod tests {
     }
 
     #[test]
+    fn test_format_countdown_hours_and_minutes_en() {
+        let lang = Language::En;
+        assert_eq!(format_countdown(&lang, 60), "in 1h");
+        assert_eq!(format_countdown(&lang, 90), "in 1h 30m");
+        assert_eq!(format_countdown(&lang, 172), "in 2h 52m");
+        assert_eq!(format_countdown(&lang, -125), "2h 5m ago");
+    }
+
+    #[test]
+    fn test_format_countdown_hours_and_minutes_zh() {
+        let lang = Language::Zh;
+        assert_eq!(format_countdown(&lang, 5), "5分后");
+        assert_eq!(format_countdown(&lang, 172), "2h 52m后");
+        assert_eq!(format_countdown(&lang, -90), "1h 30m前");
+        assert_eq!(format_countdown(&lang, 120), "2h后");
+    }
+
+    #[test]
+    fn test_format_countdown_hours_and_minutes_ja() {
+        let lang = Language::Ja;
+        assert_eq!(format_countdown(&lang, 172), "2h 52m後");
+        assert_eq!(format_countdown(&lang, -90), "1h 30m前");
+    }
+
+    #[test]
+    fn test_format_countdown_hours_and_minutes_ko() {
+        let lang = Language::Ko;
+        // KO preserves the existing single-unit space convention ({} 후/전).
+        assert_eq!(format_countdown(&lang, 5), "5분 후");
+        assert_eq!(format_countdown(&lang, 172), "2h 52m 후");
+        assert_eq!(format_countdown(&lang, -90), "1h 30m 전");
+    }
+
+    #[test]
     fn test_build_tray_title_icon_only() {
         let now = Utc::now();
         let meeting = make_meeting_at("Design Sync", "10:30 AM", now + Duration::minutes(5), 5);

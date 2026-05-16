@@ -249,23 +249,46 @@ pub fn tr_time_status(lang: &Language, starts_in_minutes: i64) -> String {
     }
 }
 
-/// Format countdown for tray title like "in 5m" / "now" / "3m ago"
+/// Format countdown for tray title like "in 5m" / "now" / "3m ago".
+/// For |minutes| >= 60, switches to "Xh Ym" body so a 172-minute countdown
+/// renders as "2h 52m" (per-locale prefix/suffix still applied) instead of
+/// the awkward "172m" / "172分后".
 pub fn tr_countdown_short(lang: &Language, starts_in_minutes: i64) -> String {
-    if starts_in_minutes > 0 {
-        match lang {
-            Language::En => format!("in {}m", starts_in_minutes),
-            Language::Zh => format!("{}分后", starts_in_minutes),
-            Language::Ja => format!("{}分後", starts_in_minutes),
-            Language::Ko => format!("{}분 후", starts_in_minutes),
+    if starts_in_minutes == 0 {
+        return tr(lang, keys::NOW).to_string();
+    }
+
+    let abs = starts_in_minutes.unsigned_abs();
+    let body = if abs >= 60 {
+        let h = abs / 60;
+        let m = abs % 60;
+        if m == 0 {
+            format!("{}h", h)
+        } else {
+            format!("{}h {}m", h, m)
         }
-    } else if starts_in_minutes == 0 {
-        tr(lang, keys::NOW).to_string()
     } else {
         match lang {
-            Language::En => format!("{}m ago", -starts_in_minutes),
-            Language::Zh => format!("{}分前", -starts_in_minutes),
-            Language::Ja => format!("{}分前", -starts_in_minutes),
-            Language::Ko => format!("{}분 전", -starts_in_minutes),
+            Language::En => format!("{}m", abs),
+            Language::Zh => format!("{}分", abs),
+            Language::Ja => format!("{}分", abs),
+            Language::Ko => format!("{}분", abs),
+        }
+    };
+
+    if starts_in_minutes > 0 {
+        match lang {
+            Language::En => format!("in {}", body),
+            Language::Zh => format!("{}后", body),
+            Language::Ja => format!("{}後", body),
+            Language::Ko => format!("{} 후", body),
+        }
+    } else {
+        match lang {
+            Language::En => format!("{} ago", body),
+            Language::Zh => format!("{}前", body),
+            Language::Ja => format!("{}前", body),
+            Language::Ko => format!("{} 전", body),
         }
     }
 }
