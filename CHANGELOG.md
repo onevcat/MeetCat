@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-16
+
+Reliability fixes for tray countdown and auto-join while the app is in the
+background, plus a quick way to open the log folder from Settings.
+
+### Added
+
+- Added a folder button in Settings → Developer that opens MeetCat's log
+  directory in Finder.
+
+### Fixed
+
+- Fixed tray countdown and auto-join acting on stale meeting data after the
+  main window was closed. The webview now stays unthrottled while hidden so
+  Google Meet keeps refreshing in the background.
+- Fixed tray countdown freezing while on a meeting page or after the main
+  webview left the homepage. The tray now refreshes every 30 seconds on its
+  own, independent of webview pushes.
+- Fixed in-app commands being rejected after the Tauri 2.11 dependency
+  upgrade, which had broken background meeting checks, log collection, and
+  join detection.
+- Fixed default settings occasionally being shared across the app, causing
+  the wrong configuration to apply in some flows.
+
+### Changed
+
+- Improved tray countdown readability: meetings 60 minutes or further away
+  now show "in 2h 52m" / "2h 52m后" instead of "in 172m" / "172分后".
+
 ## [0.1.0] - 2026-04-26
 
 First beta milestone. Brings a new meetcat:// URL Scheme for automation and tightens mic / camera defaults during cold-start joins.
