@@ -375,11 +375,96 @@ mod tests {
         assert!(trigger.is_none());
     }
 
+    /// Counterpart to `test_suppressed_meeting_does_not_trigger`: when the user
+    /// closes a meeting BEFORE its trigger time fires, the suppression must not
+    /// stick — the trigger should still re-fire at the normal time. This guards
+    /// against accidentally simplifying the filter to "any suppressed call_id
+    /// is dead forever".
+    #[test]
+    fn test_calculate_next_trigger_includes_suppressed_before_trigger_time() {
+        let mut state = DaemonState::default();
+        // Meeting starts in 10 minutes, joinBefore=1 → trigger at +9min.
+        let meetings = vec![create_test_meeting("first", "First Meeting", 10)];
+        state.update_meetings(meetings);
+        // Marked suppressed "now", well before the +9min trigger.
+        state.mark_suppressed("first", Utc::now().timestamp_millis());
+
+        let settings = Settings {
+            join_before_minutes: 1,
+            ..Settings::default()
+        };
+
+        let trigger = state.calculate_next_trigger(&settings);
+        assert!(trigger.is_some(), "suppressed-before-trigger must not silently disable the meeting");
+        let trigger = trigger.unwrap();
+        assert_eq!(trigger.meeting.call_id, "first");
+        // ~9 minutes out
+        assert!(trigger.delay_ms > 8 * 60 * 1000);
+        assert!(trigger.delay_ms < 10 * 60 * 1000);
+    }
+
+    /// Same shape as the trigger test above, but for the tray-facing
+    /// `get_next_meeting`. Closing a meeting card before its join trigger fires
+    /// must not hide it from the tray either.
+    #[test]
+    fn test_get_next_meeting_includes_suppressed_before_trigger_time() {
+        let mut state = DaemonState::default();
+        let meetings = vec![create_test_meeting("first", "First Meeting", 10)];
+        state.update_meetings(meetings);
+        state.mark_suppressed("first", Utc::now().timestamp_millis());
+
+        let settings = Settings {
+            join_before_minutes: 1,
+            ..Settings::default()
+        };
+
+        let next = state.get_next_meeting(&settings);
+        assert!(next.is_some(), "suppressed-before-trigger must still appear in the tray");
+        assert_eq!(next.unwrap().call_id, "first");
+    }
+
     #[test]
     fn test_get_next_meeting_excludes_old_meetings() {
         let mut state = DaemonState::default();
         // Meeting that started 10 minutes ago (beyond the 5-minute grace period)
         let meetings = vec![create_test_meeting("old", "Old Meeting", -10)];
+        state.update_meetings(meetings);
+
+        let next = state.get_next_meeting(&Settings::default());
+        assert!(next.is_none());
+    }
+
+    /// Positive assertion for the 5-minute grace window — a meeting that started
+    /// 3 minutes ago must still be reported as "next" so the tray can render
+    /// "3m ago" instead of jumping ahead. Pair with `excludes_old_meetings`.
+    #[test]
+    fn test_get_next_meeting_includes_recently_started_within_grace() {
+        let mut state = DaemonState::default();
+        let meetings = vec![create_test_meeting("recent", "Recently Started", -3)];
+        state.update_meetings(meetings);
+
+        let next = state.get_next_meeting(&Settings::default());
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().call_id, "recent");
+    }
+
+    /// A meeting whose end_time has already passed must never be reported,
+    /// regardless of its begin_time/grace status.
+    #[test]
+    fn test_get_next_meeting_excludes_meeting_past_its_end_time() {
+        let mut state = DaemonState::default();
+        let now = Utc::now();
+        let meetings = vec![Meeting {
+            call_id: "ended".to_string(),
+            url: "https://meet.google.com/ended".to_string(),
+            title: "Already Ended".to_string(),
+            display_time: "09:00 AM".to_string(),
+            // Started an hour ago, ended a minute ago.
+            begin_time: now - Duration::minutes(61),
+            end_time: now - Duration::minutes(1),
+            event_id: None,
+            starts_in_minutes: -61,
+        }];
         state.update_meetings(meetings);
 
         let next = state.get_next_meeting(&Settings::default());
