@@ -15,6 +15,7 @@ export interface TauriSettings {
   joinBeforeMinutes: number;
   maxMinutesAfterStart: number;
   autoClickJoin: boolean;
+  autoMaximizeInMeeting: boolean;
   joinCountdownSeconds: number;
   titleExcludeFilters: string[];
   defaultMicState: "muted" | "unmuted";

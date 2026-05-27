@@ -166,6 +166,7 @@ describe("Tauri Bridge", () => {
         joinBeforeMinutes: 1,
         maxMinutesAfterStart: 10,
         autoClickJoin: true,
+        autoMaximizeInMeeting: true,
         joinCountdownSeconds: 20,
         titleExcludeFilters: [],
         defaultMicState: "muted",

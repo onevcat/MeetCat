@@ -6,6 +6,9 @@ const en = {
     general: "General",
     startAtLogin: "Start at login",
     startAtLoginHint: "Launch MeetCat when you sign in",
+    autoMaximizeInMeeting: "Maximize during meetings",
+    autoMaximizeInMeetingHint:
+      "Zoom the desktop window on join, then restore it after leaving",
     autoClickJoin: "Auto-click join",
     autoClickJoinHint: "Off: only open the meeting page",
     homepageOverlay: "Homepage overlay",

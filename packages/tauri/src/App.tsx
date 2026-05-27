@@ -49,6 +49,7 @@ const resolveSettings = (loaded: Settings | null): Settings => {
 const adapter: SettingsAdapter = {
   capabilities: {
     startAtLogin: true,
+    autoMaximizeInMeeting: true,
     tray: true,
     showSavingIndicator: true,
     developer: true,

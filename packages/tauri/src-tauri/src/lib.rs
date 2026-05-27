@@ -26,8 +26,8 @@ use tauri::async_runtime::JoinHandle;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri::{
-    AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    AppHandle, Emitter, Listener, Manager, PhysicalPosition, PhysicalSize, Position, Size, State,
+    Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -50,6 +50,7 @@ const TRAY_REFRESH_INTERVAL_SECONDS: u64 = 30;
 pub struct AppState {
     pub settings: Mutex<Settings>,
     pub daemon: Mutex<DaemonState>,
+    pub meeting_window_snapshot: Mutex<Option<WindowSnapshot>>,
     /// Handle to cancel the current join trigger timer
     pub join_trigger_handle: Mutex<Option<JoinHandle<()>>>,
     pub update_checking: Mutex<bool>,
@@ -78,6 +79,7 @@ impl Default for AppState {
         Self {
             settings: Mutex::new(settings),
             daemon: Mutex::new(DaemonState::default()),
+            meeting_window_snapshot: Mutex::new(None),
             join_trigger_handle: Mutex::new(None),
             update_checking: Mutex::new(false),
             update_info: Mutex::new(None),
@@ -92,6 +94,12 @@ impl Default for AppState {
             homepage_active: Mutex::new(None),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowSnapshot {
+    size: PhysicalSize<u32>,
+    position: PhysicalPosition<i32>,
 }
 
 /// Status response for frontend
@@ -404,6 +412,123 @@ fn meetings_updated(app: AppHandle, state: State<AppState>, meetings: Vec<Meetin
     tray::update_tray_status(&app, next_meeting.as_ref());
 }
 
+fn take_window_snapshot(snapshot: &Mutex<Option<WindowSnapshot>>) -> Option<WindowSnapshot> {
+    match snapshot.lock() {
+        Ok(mut snapshot) => snapshot.take(),
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to lock meeting window snapshot: {}", e);
+            None
+        }
+    }
+}
+
+fn store_window_snapshot(snapshot: &Mutex<Option<WindowSnapshot>>, value: WindowSnapshot) -> bool {
+    match snapshot.lock() {
+        Ok(mut snapshot) => {
+            *snapshot = Some(value);
+            true
+        }
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to lock meeting window snapshot: {}", e);
+            false
+        }
+    }
+}
+
+fn auto_maximize_main_window_for_meeting(app: &AppHandle, state: &State<AppState>) {
+    let enabled = state
+        .settings
+        .lock()
+        .map(|settings| settings.auto_maximize_in_meeting)
+        .unwrap_or_else(|e| {
+            eprintln!("[MeetCat] Failed to read auto-maximize setting: {}", e);
+            false
+        });
+    if !enabled {
+        return;
+    }
+
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[MeetCat] Failed to find main window for meeting maximize");
+        return;
+    };
+
+    match window.is_fullscreen() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to read fullscreen state: {}", e);
+            return;
+        }
+    }
+
+    match window.is_maximized() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to read maximized state: {}", e);
+            return;
+        }
+    }
+
+    let size = match window.outer_size() {
+        Ok(size) => size,
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to capture window size: {}", e);
+            return;
+        }
+    };
+    let position = match window.outer_position() {
+        Ok(position) => position,
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to capture window position: {}", e);
+            return;
+        }
+    };
+
+    if !store_window_snapshot(
+        &state.meeting_window_snapshot,
+        WindowSnapshot { size, position },
+    ) {
+        return;
+    }
+
+    if let Err(e) = window.maximize() {
+        eprintln!("[MeetCat] Failed to maximize window for meeting: {}", e);
+        let _ = take_window_snapshot(&state.meeting_window_snapshot);
+    }
+}
+
+fn restore_main_window_after_meeting(app: &AppHandle, state: &State<AppState>) {
+    let Some(snapshot) = take_window_snapshot(&state.meeting_window_snapshot) else {
+        return;
+    };
+
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[MeetCat] Failed to find main window for meeting restore");
+        return;
+    };
+
+    match window.is_fullscreen() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to read fullscreen state: {}", e);
+            return;
+        }
+    }
+
+    if let Err(e) = window.unmaximize() {
+        eprintln!("[MeetCat] Failed to unmaximize window after meeting: {}", e);
+    }
+    if let Err(e) = window.set_size(Size::Physical(snapshot.size)) {
+        eprintln!("[MeetCat] Failed to restore window size: {}", e);
+    }
+    if let Err(e) = window.set_position(Position::Physical(snapshot.position)) {
+        eprintln!("[MeetCat] Failed to restore window position: {}", e);
+    }
+}
+
 /// Mark a meeting as joined
 #[tauri::command]
 fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
@@ -427,6 +552,8 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
     // Push the tray to the next meeting right away rather than waiting for
     // the periodic ticker. See issue #19.
     refresh_tray_status(&app);
+
+    auto_maximize_main_window_for_meeting(&app, &state);
 }
 
 /// Mark a meeting as closed
@@ -468,6 +595,8 @@ fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, close
 
     let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
     tray::update_tray_status(&app, next_meeting.as_ref());
+
+    restore_main_window_after_meeting(&app, &state);
 }
 
 /// Get suppressed meeting call IDs
@@ -1013,6 +1142,13 @@ fn build_settings_change_summary(
         "autoClickJoin",
         before.auto_click_join,
         after.auto_click_join,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "autoMaximizeInMeeting",
+        before.auto_maximize_in_meeting,
+        after.auto_maximize_in_meeting,
         &mut changed_keys,
         &mut changes,
     );
@@ -1893,8 +2029,11 @@ fn should_open_external(current_url: &Url, target_url: &Url) -> bool {
 mod tests {
     use super::{
         build_join_meeting_url, is_meeting_path, is_meeting_url, should_open_external,
+        store_window_snapshot, take_window_snapshot, WindowSnapshot,
     };
+    use std::sync::Mutex;
     use tauri::Url;
+    use tauri::{PhysicalPosition, PhysicalSize};
 
     #[test]
     fn test_is_meeting_path_code() {
@@ -1973,6 +2112,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_window_snapshot_store_take_and_clear() {
+        let snapshot_store = Mutex::new(None);
+        let snapshot = WindowSnapshot {
+            size: PhysicalSize::new(1200, 800),
+            position: PhysicalPosition::new(80, 120),
+        };
+
+        store_window_snapshot(&snapshot_store, snapshot.clone());
+
+        assert_eq!(take_window_snapshot(&snapshot_store), Some(snapshot));
+        assert_eq!(take_window_snapshot(&snapshot_store), None);
+    }
+
+    #[test]
+    fn test_window_snapshot_replaced_by_latest_join() {
+        let snapshot_store = Mutex::new(None);
+        let first = WindowSnapshot {
+            size: PhysicalSize::new(900, 600),
+            position: PhysicalPosition::new(10, 20),
+        };
+        let second = WindowSnapshot {
+            size: PhysicalSize::new(1400, 900),
+            position: PhysicalPosition::new(30, 40),
+        };
+
+        store_window_snapshot(&snapshot_store, first);
+        store_window_snapshot(&snapshot_store, second.clone());
+
+        assert_eq!(take_window_snapshot(&snapshot_store), Some(second));
+        assert_eq!(take_window_snapshot(&snapshot_store), None);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

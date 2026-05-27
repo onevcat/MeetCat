@@ -13,6 +13,7 @@ function baseSettings(): Settings {
     joinBeforeMinutes: 1,
     maxMinutesAfterStart: 10,
     autoClickJoin: true,
+    autoMaximizeInMeeting: true,
     joinCountdownSeconds: 20,
     titleExcludeFilters: [],
     defaultMicState: "muted",

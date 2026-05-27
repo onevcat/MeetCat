@@ -161,6 +161,7 @@ const DEFAULT_SETTINGS: TauriSettings = {
   joinBeforeMinutes: SETTINGS_DEFAULTS.joinBeforeMinutes,
   maxMinutesAfterStart: SETTINGS_DEFAULTS.maxMinutesAfterStart,
   autoClickJoin: SETTINGS_DEFAULTS.autoClickJoin,
+  autoMaximizeInMeeting: SETTINGS_DEFAULTS.autoMaximizeInMeeting,
   joinCountdownSeconds: SETTINGS_DEFAULTS.joinCountdownSeconds,
   titleExcludeFilters: SETTINGS_DEFAULTS.titleExcludeFilters,
   defaultMicState: SETTINGS_DEFAULTS.defaultMicState,

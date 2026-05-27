@@ -6,6 +6,9 @@ const ko = {
     general: "일반",
     startAtLogin: "로그인 시 시작",
     startAtLoginHint: "로그인 시 MeetCat을 실행합니다",
+    autoMaximizeInMeeting: "회의 중 창 최대화",
+    autoMaximizeInMeetingHint:
+      "참가 시 데스크톱 창을 확대하고, 나간 뒤 원래 크기와 위치로 되돌립니다",
     autoClickJoin: "자동 참가 클릭",
     autoClickJoinHint: "끄면 회의 페이지만 열기",
     homepageOverlay: "홈페이지 오버레이",
