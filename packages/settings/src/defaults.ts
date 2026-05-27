@@ -7,6 +7,7 @@ type DefaultsJson = {
   joinBeforeMinutes: number;
   maxMinutesAfterStart: number;
   autoClickJoin: boolean;
+  autoMaximizeInMeeting: boolean;
   joinCountdownSeconds: number;
   titleExcludeFilters: string[];
   defaultMicState: Settings["defaultMicState"];
@@ -30,6 +31,7 @@ function createDefaultSettings(): Settings {
 
     // Join behavior
     autoClickJoin: DEFAULTS.autoClickJoin,
+    autoMaximizeInMeeting: DEFAULTS.autoMaximizeInMeeting,
     joinCountdownSeconds: DEFAULTS.joinCountdownSeconds,
     titleExcludeFilters: [...DEFAULTS.titleExcludeFilters],
 

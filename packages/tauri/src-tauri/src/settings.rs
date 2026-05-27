@@ -110,6 +110,9 @@ pub struct Settings {
     #[serde(default = "default_auto_click_join")]
     pub auto_click_join: bool,
 
+    #[serde(default = "default_auto_maximize_in_meeting")]
+    pub auto_maximize_in_meeting: bool,
+
     #[serde(default = "default_countdown")]
     pub join_countdown_seconds: u32,
 
@@ -150,6 +153,7 @@ struct DefaultsFile {
     join_before_minutes: u32,
     max_minutes_after_start: u32,
     auto_click_join: bool,
+    auto_maximize_in_meeting: bool,
     join_countdown_seconds: u32,
     title_exclude_filters: Vec<String>,
     default_mic_state: MediaState,
@@ -184,6 +188,10 @@ fn default_max_minutes_after_start() -> u32 {
 
 fn default_auto_click_join() -> bool {
     defaults().auto_click_join
+}
+
+fn default_auto_maximize_in_meeting() -> bool {
+    defaults().auto_maximize_in_meeting
 }
 
 fn default_countdown() -> u32 {
@@ -239,6 +247,7 @@ impl Default for Settings {
             join_before_minutes: defaults.join_before_minutes,
             max_minutes_after_start: defaults.max_minutes_after_start,
             auto_click_join: defaults.auto_click_join,
+            auto_maximize_in_meeting: defaults.auto_maximize_in_meeting,
             join_countdown_seconds: defaults.join_countdown_seconds,
             title_exclude_filters: defaults.title_exclude_filters.clone(),
             default_mic_state: defaults.default_mic_state.clone(),
@@ -391,6 +400,7 @@ mod tests {
         assert!(json.contains("checkIntervalSeconds"));
         assert!(json.contains("joinBeforeMinutes"));
         assert!(json.contains("autoClickJoin"));
+        assert!(json.contains("autoMaximizeInMeeting"));
         assert!(json.contains("defaultMicState"));
         // Should NOT use snake_case
         assert!(!json.contains("check_interval_seconds"));
@@ -418,6 +428,7 @@ mod tests {
             join_before_minutes: 5,
             max_minutes_after_start: 12,
             auto_click_join: false,
+            auto_maximize_in_meeting: false,
             join_countdown_seconds: 15,
             title_exclude_filters: vec!["Skip".to_string()],
             default_mic_state: MediaState::Unmuted,
@@ -440,6 +451,7 @@ mod tests {
         assert_eq!(parsed.join_before_minutes, 5);
         assert_eq!(parsed.max_minutes_after_start, 12);
         assert!(!parsed.auto_click_join);
+        assert!(!parsed.auto_maximize_in_meeting);
         assert_eq!(parsed.join_countdown_seconds, 15);
         assert_eq!(parsed.title_exclude_filters, vec!["Skip".to_string()]);
         assert_eq!(parsed.default_mic_state, MediaState::Unmuted);

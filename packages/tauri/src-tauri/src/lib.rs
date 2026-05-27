@@ -26,8 +26,8 @@ use tauri::async_runtime::JoinHandle;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::PageLoadEvent;
 use tauri::{
-    AppHandle, Emitter, Listener, Manager, State, Url, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    AppHandle, Emitter, Listener, Manager, PhysicalPosition, PhysicalSize, Position, Size, State,
+    Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -50,6 +50,7 @@ const TRAY_REFRESH_INTERVAL_SECONDS: u64 = 30;
 pub struct AppState {
     pub settings: Mutex<Settings>,
     pub daemon: Mutex<DaemonState>,
+    pub meeting_window_snapshot: Mutex<Option<WindowSnapshot>>,
     /// Handle to cancel the current join trigger timer
     pub join_trigger_handle: Mutex<Option<JoinHandle<()>>>,
     pub update_checking: Mutex<bool>,
@@ -78,6 +79,7 @@ impl Default for AppState {
         Self {
             settings: Mutex::new(settings),
             daemon: Mutex::new(DaemonState::default()),
+            meeting_window_snapshot: Mutex::new(None),
             join_trigger_handle: Mutex::new(None),
             update_checking: Mutex::new(false),
             update_info: Mutex::new(None),
@@ -92,6 +94,19 @@ impl Default for AppState {
             homepage_active: Mutex::new(None),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowSnapshot {
+    call_id: String,
+    size: PhysicalSize<u32>,
+    position: PhysicalPosition<i32>,
+}
+
+#[derive(Debug, PartialEq)]
+enum WindowSnapshotRestoreDecision {
+    Restore,
+    UserOverride,
 }
 
 /// Status response for frontend
@@ -166,6 +181,10 @@ fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> 
         let mut current = state.settings.lock().unwrap();
         *current = settings.clone();
         current.save().map_err(|e| e.to_string())?;
+    }
+
+    if previous_settings.auto_maximize_in_meeting && !settings.auto_maximize_in_meeting {
+        clear_window_snapshot(&state.meeting_window_snapshot);
     }
 
     // Notify WebView of settings change
@@ -404,6 +423,195 @@ fn meetings_updated(app: AppHandle, state: State<AppState>, meetings: Vec<Meetin
     tray::update_tray_status(&app, next_meeting.as_ref());
 }
 
+fn clear_window_snapshot(snapshot: &Mutex<Option<WindowSnapshot>>) -> bool {
+    match snapshot.lock() {
+        Ok(mut snapshot) => {
+            *snapshot = None;
+            true
+        }
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to lock meeting window snapshot: {}", e);
+            false
+        }
+    }
+}
+
+fn clear_window_snapshot_for_call(snapshot: &Mutex<Option<WindowSnapshot>>, call_id: &str) -> bool {
+    match snapshot.lock() {
+        Ok(mut snapshot) => {
+            if snapshot
+                .as_ref()
+                .map(|value| value.call_id == call_id)
+                .unwrap_or(false)
+            {
+                *snapshot = None;
+            }
+            true
+        }
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to lock meeting window snapshot: {}", e);
+            false
+        }
+    }
+}
+
+fn store_window_snapshot(snapshot: &Mutex<Option<WindowSnapshot>>, value: WindowSnapshot) -> bool {
+    match snapshot.lock() {
+        Ok(mut snapshot) => {
+            *snapshot = Some(value);
+            true
+        }
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to lock meeting window snapshot: {}", e);
+            false
+        }
+    }
+}
+
+fn window_snapshot_for_call(
+    snapshot: &Mutex<Option<WindowSnapshot>>,
+    call_id: &str,
+) -> Option<WindowSnapshot> {
+    match snapshot.lock() {
+        Ok(snapshot) => snapshot
+            .as_ref()
+            .filter(|value| value.call_id == call_id)
+            .cloned(),
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to lock meeting window snapshot: {}", e);
+            None
+        }
+    }
+}
+
+fn evaluate_window_snapshot_restore(
+    is_fullscreen: bool,
+    is_maximized: bool,
+) -> WindowSnapshotRestoreDecision {
+    if is_fullscreen || !is_maximized {
+        WindowSnapshotRestoreDecision::UserOverride
+    } else {
+        WindowSnapshotRestoreDecision::Restore
+    }
+}
+
+fn auto_maximize_main_window_for_meeting(app: &AppHandle, state: &State<AppState>, call_id: &str) {
+    let enabled = state
+        .settings
+        .lock()
+        .map(|settings| settings.auto_maximize_in_meeting)
+        .unwrap_or_else(|e| {
+            eprintln!("[MeetCat] Failed to read auto-maximize setting: {}", e);
+            false
+        });
+    if !enabled {
+        return;
+    }
+
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[MeetCat] Failed to find main window for meeting maximize");
+        return;
+    };
+
+    match window.is_fullscreen() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to read fullscreen state: {}", e);
+            return;
+        }
+    }
+
+    match window.is_maximized() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to read maximized state: {}", e);
+            return;
+        }
+    }
+
+    let size = match window.outer_size() {
+        Ok(size) => size,
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to capture window size: {}", e);
+            return;
+        }
+    };
+    let position = match window.outer_position() {
+        Ok(position) => position,
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to capture window position: {}", e);
+            return;
+        }
+    };
+
+    if !store_window_snapshot(
+        &state.meeting_window_snapshot,
+        WindowSnapshot {
+            call_id: call_id.to_string(),
+            size,
+            position,
+        },
+    ) {
+        return;
+    }
+
+    if let Err(e) = window.maximize() {
+        eprintln!("[MeetCat] Failed to maximize window for meeting: {}", e);
+        clear_window_snapshot_for_call(&state.meeting_window_snapshot, call_id);
+    }
+}
+
+fn restore_main_window_after_meeting(app: &AppHandle, state: &State<AppState>, call_id: &str) {
+    let Some(snapshot) = window_snapshot_for_call(&state.meeting_window_snapshot, call_id) else {
+        return;
+    };
+
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[MeetCat] Failed to find main window for meeting restore");
+        return;
+    };
+
+    let is_fullscreen = match window.is_fullscreen() {
+        Ok(value) => value,
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to read fullscreen state: {}", e);
+            return;
+        }
+    };
+    let is_maximized = match window.is_maximized() {
+        Ok(value) => value,
+        Err(e) => {
+            eprintln!("[MeetCat] Failed to read maximized state: {}", e);
+            return;
+        }
+    };
+
+    match evaluate_window_snapshot_restore(is_fullscreen, is_maximized) {
+        WindowSnapshotRestoreDecision::Restore => {}
+        WindowSnapshotRestoreDecision::UserOverride => {
+            clear_window_snapshot_for_call(&state.meeting_window_snapshot, call_id);
+            return;
+        }
+    }
+
+    if let Err(e) = window.unmaximize() {
+        eprintln!("[MeetCat] Failed to unmaximize window after meeting: {}", e);
+        return;
+    }
+    if let Err(e) = window.set_size(Size::Physical(snapshot.size)) {
+        eprintln!("[MeetCat] Failed to restore window size: {}", e);
+        return;
+    }
+    if let Err(e) = window.set_position(Position::Physical(snapshot.position)) {
+        eprintln!("[MeetCat] Failed to restore window position: {}", e);
+        return;
+    }
+
+    clear_window_snapshot_for_call(&state.meeting_window_snapshot, call_id);
+}
+
 /// Mark a meeting as joined
 #[tauri::command]
 fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
@@ -418,7 +626,7 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
         "meetings",
         "meeting.joined",
         None,
-        Some(json!({ "callId": call_id })),
+        Some(json!({ "callId": call_id.clone() })),
     );
 
     // Re-schedule trigger for the next meeting
@@ -427,6 +635,8 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
     // Push the tray to the next meeting right away rather than waiting for
     // the periodic ticker. See issue #19.
     refresh_tray_status(&app);
+
+    auto_maximize_main_window_for_meeting(&app, &state, &call_id);
 }
 
 /// Mark a meeting as closed
@@ -468,6 +678,8 @@ fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, close
 
     let next_meeting = state.daemon.lock().unwrap().get_next_meeting(&settings);
     tray::update_tray_status(&app, next_meeting.as_ref());
+
+    restore_main_window_after_meeting(&app, &state, &call_id);
 }
 
 /// Get suppressed meeting call IDs
@@ -1013,6 +1225,13 @@ fn build_settings_change_summary(
         "autoClickJoin",
         before.auto_click_join,
         after.auto_click_join,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "autoMaximizeInMeeting",
+        before.auto_maximize_in_meeting,
+        after.auto_maximize_in_meeting,
         &mut changed_keys,
         &mut changes,
     );
@@ -1892,9 +2111,14 @@ fn should_open_external(current_url: &Url, target_url: &Url) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_join_meeting_url, is_meeting_path, is_meeting_url, should_open_external,
+        build_join_meeting_url, clear_window_snapshot, clear_window_snapshot_for_call,
+        evaluate_window_snapshot_restore, is_meeting_path, is_meeting_url, should_open_external,
+        store_window_snapshot, window_snapshot_for_call, WindowSnapshot,
+        WindowSnapshotRestoreDecision,
     };
+    use std::sync::Mutex;
     use tauri::Url;
+    use tauri::{PhysicalPosition, PhysicalSize};
 
     #[test]
     fn test_is_meeting_path_code() {
@@ -1973,6 +2197,117 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_window_snapshot_store_take_and_clear() {
+        let snapshot_store = Mutex::new(None);
+        let snapshot = WindowSnapshot {
+            call_id: "abc-defg-hij".to_string(),
+            size: PhysicalSize::new(1200, 800),
+            position: PhysicalPosition::new(80, 120),
+        };
+
+        store_window_snapshot(&snapshot_store, snapshot.clone());
+
+        assert_eq!(
+            window_snapshot_for_call(&snapshot_store, "abc-defg-hij"),
+            Some(snapshot)
+        );
+        assert!(clear_window_snapshot_for_call(
+            &snapshot_store,
+            "abc-defg-hij"
+        ));
+        assert_eq!(
+            window_snapshot_for_call(&snapshot_store, "abc-defg-hij"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_window_snapshot_replaced_by_latest_join() {
+        let snapshot_store = Mutex::new(None);
+        let first = WindowSnapshot {
+            call_id: "abc-defg-hij".to_string(),
+            size: PhysicalSize::new(900, 600),
+            position: PhysicalPosition::new(10, 20),
+        };
+        let second = WindowSnapshot {
+            call_id: "xyz-abcd-uvw".to_string(),
+            size: PhysicalSize::new(1400, 900),
+            position: PhysicalPosition::new(30, 40),
+        };
+
+        store_window_snapshot(&snapshot_store, first);
+        store_window_snapshot(&snapshot_store, second.clone());
+
+        assert_eq!(
+            window_snapshot_for_call(&snapshot_store, "abc-defg-hij"),
+            None
+        );
+        assert_eq!(
+            window_snapshot_for_call(&snapshot_store, "xyz-abcd-uvw"),
+            Some(second)
+        );
+    }
+
+    #[test]
+    fn test_window_snapshot_ignores_non_matching_close() {
+        let snapshot_store = Mutex::new(None);
+        let snapshot = WindowSnapshot {
+            call_id: "abc-defg-hij".to_string(),
+            size: PhysicalSize::new(900, 600),
+            position: PhysicalPosition::new(10, 20),
+        };
+
+        store_window_snapshot(&snapshot_store, snapshot.clone());
+
+        assert_eq!(
+            window_snapshot_for_call(&snapshot_store, "other-call"),
+            None
+        );
+        assert!(clear_window_snapshot_for_call(
+            &snapshot_store,
+            "other-call"
+        ));
+        assert_eq!(
+            window_snapshot_for_call(&snapshot_store, "abc-defg-hij"),
+            Some(snapshot)
+        );
+    }
+
+    #[test]
+    fn test_window_snapshot_clear_discards_active_snapshot() {
+        let snapshot_store = Mutex::new(None);
+        store_window_snapshot(
+            &snapshot_store,
+            WindowSnapshot {
+                call_id: "abc-defg-hij".to_string(),
+                size: PhysicalSize::new(900, 600),
+                position: PhysicalPosition::new(10, 20),
+            },
+        );
+
+        assert!(clear_window_snapshot(&snapshot_store));
+        assert_eq!(
+            window_snapshot_for_call(&snapshot_store, "abc-defg-hij"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_window_snapshot_restore_decision_respects_user_override() {
+        assert_eq!(
+            evaluate_window_snapshot_restore(false, true),
+            WindowSnapshotRestoreDecision::Restore
+        );
+        assert_eq!(
+            evaluate_window_snapshot_restore(false, false),
+            WindowSnapshotRestoreDecision::UserOverride
+        );
+        assert_eq!(
+            evaluate_window_snapshot_restore(true, true),
+            WindowSnapshotRestoreDecision::UserOverride
+        );
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -142,6 +142,54 @@ describe("SettingsView", () => {
     expect(nextSettings.tauri?.startAtLogin).toBe(true);
   });
 
+  it("hides auto-maximize setting when capability is missing", () => {
+    const settings = createSettings();
+
+    render(
+      <SettingsView
+        settings={settings}
+        loading={false}
+        saving={false}
+        showSavingIndicator={false}
+        headerTitle="MeetCat Settings"
+        headerIconSrc="/icon.png"
+        footerText="MeetCat"
+        capabilities={{}}
+        onSettingsChange={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByLabelText("Maximize during meetings")).toBeNull();
+  });
+
+  it("updates auto-maximize setting for desktop capability", async () => {
+    const settings = createSettings({ autoMaximizeInMeeting: true });
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsView
+        settings={settings}
+        loading={false}
+        saving={false}
+        showSavingIndicator={false}
+        headerTitle="MeetCat Settings"
+        headerIconSrc="/icon.png"
+        footerText="MeetCat"
+        capabilities={{ autoMaximizeInMeeting: true }}
+        onSettingsChange={onSettingsChange}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("Maximize during meetings"));
+
+    await waitFor(() => {
+      expect(onSettingsChange).toHaveBeenCalled();
+    });
+
+    const nextSettings = onSettingsChange.mock.calls.at(-1)?.[0] as Settings;
+    expect(nextSettings.autoMaximizeInMeeting).toBe(false);
+  });
+
   it("updates homepage overlay setting", async () => {
     const settings = createSettings({ showCountdownOverlay: true });
     const onSettingsChange = vi.fn();

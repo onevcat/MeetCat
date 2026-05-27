@@ -13,6 +13,7 @@ import {
 
 export type SettingsCapabilities = {
   startAtLogin?: boolean;
+  autoMaximizeInMeeting?: boolean;
   tray?: boolean;
   showSavingIndicator?: boolean;
   developer?: boolean;
@@ -379,6 +380,31 @@ export function SettingsView({
                 </label>
               </div>
               <p className="form-hint">{t("settings.startAtLoginHint")}</p>
+            </div>
+          )}
+
+          {capabilities.autoMaximizeInMeeting && (
+            <div className="form-group">
+              <div className="form-checkbox-group">
+                <input
+                  type="checkbox"
+                  id="autoMaximizeInMeeting"
+                  className="form-checkbox"
+                  checked={settings.autoMaximizeInMeeting}
+                  onChange={(e) =>
+                    updateSettings({ autoMaximizeInMeeting: e.target.checked })
+                  }
+                />
+                <label
+                  htmlFor="autoMaximizeInMeeting"
+                  className="form-checkbox-label"
+                >
+                  {t("settings.autoMaximizeInMeeting")}
+                </label>
+              </div>
+              <p className="form-hint">
+                {t("settings.autoMaximizeInMeetingHint")}
+              </p>
             </div>
           )}
 

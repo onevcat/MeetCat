@@ -23,6 +23,7 @@ describe("Settings Defaults", () => {
 
     it("should have expected join behavior defaults", () => {
       expect(DEFAULT_SETTINGS.autoClickJoin).toBe(true);
+      expect(DEFAULT_SETTINGS.autoMaximizeInMeeting).toBe(true);
       expect(DEFAULT_SETTINGS.joinCountdownSeconds).toBe(20);
       expect(DEFAULT_SETTINGS.titleExcludeFilters).toEqual([]);
     });

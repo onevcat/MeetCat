@@ -7,6 +7,7 @@ type DefaultsJson = {
   joinBeforeMinutes: number;
   maxMinutesAfterStart: number;
   autoClickJoin: boolean;
+  autoMaximizeInMeeting: boolean;
   joinCountdownSeconds: number;
   titleExcludeFilters: string[];
   defaultMicState: "muted" | "unmuted";
@@ -110,6 +111,10 @@ export const SettingsSchema = z.object({
   // Join behavior
   /** Automatically click join button (false = only open page) */
   autoClickJoin: z.boolean().default(DEFAULTS.autoClickJoin),
+  /** Maximize the Tauri main window while in a meeting */
+  autoMaximizeInMeeting: z
+    .boolean()
+    .default(DEFAULTS.autoMaximizeInMeeting),
   /** Seconds to countdown before auto-join (allows user to cancel) */
   joinCountdownSeconds: z
     .number()

@@ -6,6 +6,9 @@ const ja = {
     general: "一般",
     startAtLogin: "ログイン時に起動",
     startAtLoginHint: "サインイン時に MeetCat を起動します",
+    autoMaximizeInMeeting: "会議中にウィンドウを最大化",
+    autoMaximizeInMeetingHint:
+      "参加時にデスクトップウィンドウを拡大し、退出後に元へ戻します",
     autoClickJoin: "自動的に参加をクリック",
     autoClickJoinHint: "オフ：会議ページを開くのみ",
     homepageOverlay: "ホームページオーバーレイ",

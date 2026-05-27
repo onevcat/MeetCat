@@ -90,6 +90,9 @@ describe("Settings", () => {
       if (result.success) {
         expect(result.data.joinBeforeMinutes).toBe(5);
         expect(result.data.autoClickJoin).toBe(DEFAULT_SETTINGS.autoClickJoin);
+        expect(result.data.autoMaximizeInMeeting).toBe(
+          DEFAULT_SETTINGS.autoMaximizeInMeeting
+        );
       }
     });
 
@@ -171,6 +174,7 @@ describe("Settings", () => {
         expect(result.data.checkIntervalSeconds).toBe(30);
         expect(result.data.joinBeforeMinutes).toBe(1);
         expect(result.data.autoClickJoin).toBe(true);
+        expect(result.data.autoMaximizeInMeeting).toBe(true);
         expect(result.data.maxMinutesAfterStart).toBe(10);
         expect(result.data.joinCountdownSeconds).toBe(20);
         expect(result.data.showCountdownOverlay).toBe(true);

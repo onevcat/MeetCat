@@ -6,6 +6,9 @@ const zh = {
     general: "通用",
     startAtLogin: "登录时启动",
     startAtLoginHint: "在登录时启动 MeetCat",
+    autoMaximizeInMeeting: "会议中最大化窗口",
+    autoMaximizeInMeetingHint:
+      "加入会议时放大桌面窗口，离会后恢复原尺寸和位置",
     autoClickJoin: "自动点击加入",
     autoClickJoinHint: "关闭时仅打开会议页面",
     homepageOverlay: "主页悬浮窗",

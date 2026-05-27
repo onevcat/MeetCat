@@ -104,6 +104,7 @@ describe("Popup", () => {
     await waitFor(() => {
       expect(screen.getByText("General")).toBeDefined();
       expect(screen.getByText("Auto-click join")).toBeDefined();
+      expect(screen.queryByText("Maximize during meetings")).toBeNull();
     });
   });
 
