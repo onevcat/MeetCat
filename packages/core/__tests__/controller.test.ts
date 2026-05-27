@@ -203,7 +203,7 @@ describe("Controller - Media Buttons", () => {
       document.body.appendChild(camBtn);
 
       const clickSpy = vi.spyOn(micBtn, "click");
-      const result = await applyMicState(document, false);
+      const result = await applyMicState(document, false, { stableChecks: 0 });
 
       expect(result).toEqual({ success: true, clicks: 0, attempts: 1 });
       expect(clickSpy).not.toHaveBeenCalled();
@@ -216,7 +216,10 @@ describe("Controller - Media Buttons", () => {
       document.body.appendChild(camBtn);
       attachClickThatFlips(micBtn);
 
-      const result = await applyMicState(document, false, { verifyDelayMs: 0 });
+      const result = await applyMicState(document, false, {
+        verifyDelayMs: 0,
+        stableChecks: 0,
+      });
 
       expect(result.success).toBe(true);
       expect(result.clicks).toBe(1);
@@ -240,6 +243,7 @@ describe("Controller - Media Buttons", () => {
       const result = await applyMicState(document, false, {
         maxAttempts: 3,
         verifyDelayMs: 0,
+        stableChecks: 0,
       });
 
       expect(result.success).toBe(true);
@@ -257,6 +261,7 @@ describe("Controller - Media Buttons", () => {
       const result = await applyMicState(document, false, {
         maxAttempts: 3,
         verifyDelayMs: 0,
+        stableChecks: 0,
       });
 
       expect(result.success).toBe(false);
@@ -265,8 +270,41 @@ describe("Controller - Media Buttons", () => {
       expect(clickSpy).toHaveBeenCalledTimes(3);
     });
 
+    it("retries when Meet reverts the state during initial device setup", async () => {
+      const micBtn = createMediaButton(false); // unmuted
+      const camBtn = createMediaButton(true);
+      document.body.appendChild(micBtn);
+      document.body.appendChild(camBtn);
+
+      let clickCount = 0;
+      micBtn.addEventListener("click", () => {
+        clickCount++;
+        micBtn.dataset.isMuted = "true";
+        if (clickCount === 1) {
+          setTimeout(() => {
+            micBtn.dataset.isMuted = "false";
+          }, 5);
+        }
+      });
+
+      const result = await applyMicState(document, false, {
+        maxAttempts: 3,
+        verifyDelayMs: 0,
+        stableDelayMs: 5,
+        stableChecks: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.clicks).toBe(2);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(micBtn.dataset.isMuted).toBe("true");
+    });
+
     it("reports failure when button is missing", async () => {
-      const result = await applyMicState(document, false, { verifyDelayMs: 0 });
+      const result = await applyMicState(document, false, {
+        verifyDelayMs: 0,
+        stableChecks: 0,
+      });
       expect(result.success).toBe(false);
       expect(result.clicks).toBe(0);
     });
@@ -283,7 +321,10 @@ describe("Controller - Media Buttons", () => {
         camBtn.dataset.isMuted = "false";
       });
 
-      const result = await applyCameraState(document, true, { verifyDelayMs: 0 });
+      const result = await applyCameraState(document, true, {
+        verifyDelayMs: 0,
+        stableChecks: 0,
+      });
 
       expect(result.success).toBe(true);
       expect(result.clicks).toBe(1);

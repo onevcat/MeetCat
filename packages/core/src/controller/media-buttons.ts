@@ -105,12 +105,45 @@ export function setCameraState(
 }
 
 const DEFAULT_APPLY_OPTIONS: Required<MediaApplyOptions> = {
-  maxAttempts: 3,
-  verifyDelayMs: 200,
+  maxAttempts: 5,
+  verifyDelayMs: 300,
+  stableDelayMs: 500,
+  stableChecks: 3,
 };
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getMediaButton(
+  container: Document | Element,
+  kind: "mic" | "camera"
+): Element | null {
+  const { micButton, cameraButton } = findMediaButtons(container);
+  return kind === "mic" ? micButton : cameraButton;
+}
+
+function getMediaOffState(
+  container: Document | Element,
+  kind: "mic" | "camera"
+): boolean | null {
+  return isMuted(getMediaButton(container, kind));
+}
+
+async function isDesiredStateStable(
+  container: Document | Element,
+  kind: "mic" | "camera",
+  desiredOff: boolean,
+  stableChecks: number,
+  stableDelayMs: number
+): Promise<boolean> {
+  for (let check = 0; check < stableChecks; check++) {
+    await delay(stableDelayMs);
+    if (getMediaOffState(container, kind) !== desiredOff) {
+      return false;
+    }
+  }
+  return true;
 }
 
 async function applyMediaButton(
@@ -119,40 +152,57 @@ async function applyMediaButton(
   enabled: boolean,
   options: MediaApplyOptions
 ): Promise<MediaApplyResult> {
-  const { maxAttempts, verifyDelayMs } = { ...DEFAULT_APPLY_OPTIONS, ...options };
+  const { maxAttempts, verifyDelayMs, stableChecks, stableDelayMs } = {
+    ...DEFAULT_APPLY_OPTIONS,
+    ...options,
+  };
   const desiredOff = !enabled;
   let clicks = 0;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const { micButton, cameraButton } = findMediaButtons(container);
-    const button = kind === "mic" ? micButton : cameraButton;
+    const button = getMediaButton(container, kind);
     if (!button) {
       return { success: false, clicks, attempts: attempt };
     }
-    const currentlyOff = isMuted(button);
+    let currentlyOff = isMuted(button);
     if (currentlyOff === null) {
       return { success: false, clicks, attempts: attempt };
     }
-    if (currentlyOff === desiredOff) {
+
+    if (currentlyOff !== desiredOff) {
+      const latestButton = getMediaButton(container, kind);
+      if (!latestButton) {
+        return { success: false, clicks, attempts: attempt };
+      }
+      (latestButton as HTMLElement).click();
+      clicks++;
+      await delay(verifyDelayMs);
+
+      currentlyOff = getMediaOffState(container, kind);
+      if (currentlyOff === null) {
+        return { success: false, clicks, attempts: attempt };
+      }
+      if (currentlyOff !== desiredOff) {
+        continue;
+      }
+    }
+
+    if (
+      stableChecks <= 0 ||
+      (await isDesiredStateStable(
+        container,
+        kind,
+        desiredOff,
+        stableChecks,
+        stableDelayMs
+      ))
+    ) {
       return { success: true, clicks, attempts: attempt };
     }
-    (button as HTMLElement).click();
-    clicks++;
-    await delay(verifyDelayMs);
   }
 
-  // Final verification after the last click
-  const { micButton, cameraButton } = findMediaButtons(container);
-  const button = kind === "mic" ? micButton : cameraButton;
-  if (!button) {
-    return { success: false, clicks, attempts: maxAttempts };
-  }
-  const currentlyOff = isMuted(button);
-  if (currentlyOff === null) {
-    return { success: false, clicks, attempts: maxAttempts };
-  }
   return {
-    success: currentlyOff === desiredOff,
+    success: false,
     clicks,
     attempts: maxAttempts,
   };

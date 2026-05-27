@@ -56,8 +56,16 @@ describe("content scripts i18n initialization", () => {
         micButton: document.createElement("button"),
         cameraButton: document.createElement("button"),
       })),
-      setMicState: vi.fn(),
-      setCameraState: vi.fn(),
+      applyMicState: vi.fn().mockResolvedValue({
+        success: true,
+        clicks: 0,
+        attempts: 1,
+      }),
+      applyCameraState: vi.fn().mockResolvedValue({
+        success: true,
+        clicks: 0,
+        attempts: 1,
+      }),
       clickJoinButton: vi.fn(() => true),
       findJoinButton: vi.fn(() => ({ button: document.createElement("button"), matchedText: "" })),
       findLeaveButton: vi.fn(() => ({ button: null, matchedText: null })),
@@ -67,6 +75,7 @@ describe("content scripts i18n initialization", () => {
     }));
 
     await import("../../src/content-scripts/meeting.ts");
+    await flushPromises();
     await flushPromises();
 
     expect(initI18n).toHaveBeenCalledWith("auto");
