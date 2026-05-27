@@ -9,8 +9,8 @@
 
 import {
   findMediaButtons,
-  setMicState,
-  setCameraState,
+  applyMicState,
+  applyCameraState,
   clickJoinButton,
   findJoinButton,
   findLeaveButton,
@@ -107,7 +107,7 @@ async function loadSettings(): Promise<void> {
 /**
  * Apply media settings (mic/camera)
  */
-function applyMediaSettings(): boolean {
+async function applyMediaSettings(): Promise<boolean> {
   const { micButton, cameraButton } = findMediaButtons(document);
 
   if (!micButton || !cameraButton) {
@@ -117,28 +117,36 @@ function applyMediaSettings(): boolean {
   const micEnabled = state.settings.defaultMicState === "unmuted";
   const cameraEnabled = state.settings.defaultCameraState === "unmuted";
 
-  setMicState(document, micEnabled);
-  setCameraState(document, cameraEnabled);
+  const [micResult, cameraResult] = await Promise.all([
+    applyMicState(document, micEnabled),
+    applyCameraState(document, cameraEnabled),
+  ]);
 
   console.log("[MeetCat] Media settings applied:", {
-    mic: micEnabled ? "unmuted" : "muted",
-    camera: cameraEnabled ? "on" : "off",
+    mic: {
+      desired: micEnabled ? "unmuted" : "muted",
+      result: micResult,
+    },
+    camera: {
+      desired: cameraEnabled ? "on" : "off",
+      result: cameraResult,
+    },
   });
 
-  return true;
+  return micResult.success && cameraResult.success;
 }
 
 /**
  * Wait for media buttons to be available
  */
-function waitForMediaButtons(callback: () => void, maxAttempts = 20): void {
+function waitForMediaButtons(callback: () => void | Promise<void>, maxAttempts = 20): void {
   let attempts = 0;
 
   const check = (): void => {
     const { micButton, cameraButton } = findMediaButtons(document);
 
     if (micButton && cameraButton) {
-      callback();
+      void callback();
       return;
     }
 
@@ -273,9 +281,9 @@ async function init(): Promise<void> {
   const isAutoJoinRequested = hasAutoJoinParam(window.location.href);
 
   // Wait for media buttons and apply settings
-  waitForMediaButtons(() => {
+  waitForMediaButtons(async () => {
     if (!state.mediaApplied) {
-      state.mediaApplied = applyMediaSettings();
+      state.mediaApplied = await applyMediaSettings();
     }
 
     if (!isAutoJoinRequested) {

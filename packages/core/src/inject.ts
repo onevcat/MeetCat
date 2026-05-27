@@ -1050,8 +1050,10 @@ async function applyMediaSettings(): Promise<void> {
   const micEnabled = settings.defaultMicState === "unmuted";
   const cameraEnabled = settings.defaultCameraState === "unmuted";
 
-  const micResult = await applyMicState(document, micEnabled);
-  const cameraResult = await applyCameraState(document, cameraEnabled);
+  const [micResult, cameraResult] = await Promise.all([
+    applyMicState(document, micEnabled),
+    applyCameraState(document, cameraEnabled),
+  ]);
 
   logToConsole("info", "[MeetCat] Media settings applied:", {
     mic: { desired: micEnabled, result: micResult },

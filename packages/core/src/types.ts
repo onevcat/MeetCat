@@ -56,10 +56,14 @@ export interface MediaStateResult {
  * Options for applying media state with verification
  */
 export interface MediaApplyOptions {
-  /** Maximum click attempts before giving up. Defaults to 3. */
+  /** Maximum click attempts before giving up. Defaults to 5. */
   maxAttempts?: number;
-  /** Milliseconds to wait before re-reading state after a click. Defaults to 200. */
+  /** Milliseconds to wait before re-reading state after a click. Defaults to 300. */
   verifyDelayMs?: number;
+  /** Milliseconds between post-apply stability checks. Defaults to 500. */
+  stableDelayMs?: number;
+  /** Number of consecutive desired-state reads required before success. Defaults to 3. */
+  stableChecks?: number;
 }
 
 /**

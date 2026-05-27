@@ -22,8 +22,16 @@ describe("meeting content script", () => {
         micButton: document.createElement("button"),
         cameraButton: document.createElement("button"),
       }),
-      setMicState: vi.fn(),
-      setCameraState: vi.fn(),
+      applyMicState: vi.fn().mockResolvedValue({
+        success: true,
+        clicks: 0,
+        attempts: 1,
+      }),
+      applyCameraState: vi.fn().mockResolvedValue({
+        success: true,
+        clicks: 0,
+        attempts: 1,
+      }),
       clickJoinButton: vi.fn(() => true),
       findJoinButton: vi.fn(() => ({ button: joinButton, matchedText: "Join now" })),
       findLeaveButton: vi.fn(() => ({ button: null, matchedText: null })),
@@ -45,5 +53,43 @@ describe("meeting content script", () => {
       type: "MEETING_JOINED",
       callId: "abc-defg-hij",
     });
+  });
+
+  it("applies media settings with verified retry helpers", async () => {
+    const applyMicState = vi.fn().mockResolvedValue({
+      success: true,
+      clicks: 1,
+      attempts: 2,
+    });
+    const applyCameraState = vi.fn().mockResolvedValue({
+      success: true,
+      clicks: 1,
+      attempts: 1,
+    });
+
+    vi.doMock("@meetcat/core", () => ({
+      findMediaButtons: () => ({
+        micButton: document.createElement("button"),
+        cameraButton: document.createElement("button"),
+      }),
+      applyMicState,
+      applyCameraState,
+      clickJoinButton: vi.fn(() => true),
+      findJoinButton: vi.fn(() => ({ button: null, matchedText: null })),
+      findLeaveButton: vi.fn(() => ({ button: null, matchedText: null })),
+      getMeetingCodeFromPath: vi.fn(() => "abc-defg-hij"),
+      createJoinCountdown: vi.fn(() => ({
+        start: vi.fn(),
+        destroy: vi.fn(),
+      })),
+      hasAutoJoinParam: vi.fn(() => false),
+    }));
+
+    await import("../../src/content-scripts/meeting.ts");
+    await flushPromises();
+    await flushPromises();
+
+    expect(applyMicState).toHaveBeenCalledWith(document, false);
+    expect(applyCameraState).toHaveBeenCalledWith(document, false);
   });
 });
