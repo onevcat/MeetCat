@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-28
+
+Adds an option to auto-maximize the desktop window during meetings, and makes
+mic / camera defaults apply more reliably across the app.
+
+### Added
+
+- Added a "Maximize during meetings" option (Tauri desktop). MeetCat now zooms
+  the main window when you join a meeting and restores it to its previous size
+  after you leave. Enabled by default; toggle it in Settings.
+
+### Fixed
+
+- Fixed mic and camera default states occasionally being applied from a
+  transient toolbar state. MeetCat now waits for the meeting controls to settle
+  before reading and enforcing your defaults, reducing flaky results when
+  Google Meet re-renders its UI. (Tauri and extension)
+- Fixed mic, camera, and auto-join defaults occasionally not taking effect
+  because the injected defaults could be dropped from the browser bundle. The
+  injected logic is now self-contained. (extension)
+
+### Changed
+
+- Updated a bundled dependency to clear a known security advisory.
+
 ## [0.2.0] - 2026-05-16
 
 Reliability fixes for tray countdown and auto-join while the app is in the
