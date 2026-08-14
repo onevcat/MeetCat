@@ -35,6 +35,12 @@ pub struct DaemonState {
     meetings: Vec<Meeting>,
     joined_meetings: HashSet<String>,
     suppressed_meetings: HashMap<String, i64>,
+    /// Meeting instances whose join trigger already fired, keyed by call id
+    /// with the instance's begin time. The joined guard alone cannot prevent
+    /// re-firing before the meeting starts (it is time-scoped so a recurring
+    /// call id can join again the next day), so trigger execution is tracked
+    /// separately per instance.
+    triggered_meetings: HashMap<String, i64>,
 }
 
 impl DaemonState {
@@ -99,6 +105,22 @@ impl DaemonState {
         self.joined_meetings.insert(call_id.to_string());
     }
 
+    /// Whether a meeting has been reported joined
+    pub fn is_joined(&self, call_id: &str) -> bool {
+        self.joined_meetings.contains(call_id)
+    }
+
+    /// Mark a meeting instance's join trigger as fired
+    pub fn mark_triggered(&mut self, call_id: &str, begin_time_ms: i64) {
+        self.triggered_meetings
+            .insert(call_id.to_string(), begin_time_ms);
+    }
+
+    fn is_triggered(&self, meeting: &Meeting) -> bool {
+        self.triggered_meetings.get(&meeting.call_id)
+            == Some(&meeting.begin_time.timestamp_millis())
+    }
+
     /// Mark a meeting as suppressed
     pub fn mark_suppressed(&mut self, call_id: &str, closed_at_ms: i64) {
         self.suppressed_meetings
@@ -131,6 +153,8 @@ impl DaemonState {
 
         self.joined_meetings.retain(|id| active_ids.contains(id));
         self.suppressed_meetings
+            .retain(|id, _| active_ids.contains(id));
+        self.triggered_meetings
             .retain(|id, _| active_ids.contains(id));
     }
 
@@ -190,6 +214,12 @@ impl DaemonState {
             .iter()
             .filter(|m| m.end_time > now)
             .filter(|m| {
+                // A fired trigger must never fire again for the same instance
+                // (re-scheduling happens on every meetings/joined/closed update)
+                if self.is_triggered(m) {
+                    return false;
+                }
+
                 let start_time_ms = m.begin_time.timestamp_millis();
                 let trigger_at_ms = start_time_ms - join_before_ms;
 
@@ -622,6 +652,60 @@ mod tests {
         let trigger = state.calculate_next_trigger(&settings);
         assert!(trigger.is_some());
         assert_eq!(trigger.unwrap().meeting.call_id, "joined");
+    }
+
+    /// Regression: after the trigger fires, joined+triggered marks must stop
+    /// any re-fire for the same instance even before the meeting starts
+    /// (every meetings/joined/closed update re-runs the scheduler).
+    #[test]
+    fn test_calculate_next_trigger_excludes_triggered_instance_before_start() {
+        let mut state = DaemonState::default();
+        let meeting = create_test_meeting("abc", "Daily", 5);
+        let begin_time_ms = meeting.begin_time.timestamp_millis();
+        state.update_meetings(vec![meeting]);
+
+        let settings = Settings::default();
+        assert!(state.calculate_next_trigger(&settings).is_some());
+
+        // Same marks the fired trigger applies
+        state.mark_joined("abc");
+        state.mark_triggered("abc", begin_time_ms);
+
+        assert!(state.calculate_next_trigger(&settings).is_none());
+    }
+
+    /// A triggered mark is per instance: the same call id with a different
+    /// begin time (recurring meeting, next occurrence) must trigger again.
+    #[test]
+    fn test_triggered_mark_does_not_block_next_instance() {
+        let mut state = DaemonState::default();
+        let today = create_test_meeting("abc", "Daily", 5);
+        let yesterday_begin_ms =
+            (today.begin_time - Duration::days(1)).timestamp_millis();
+        state.mark_triggered("abc", yesterday_begin_ms);
+        state.update_meetings(vec![today]);
+
+        let settings = Settings::default();
+        let trigger = state.calculate_next_trigger(&settings);
+        assert!(trigger.is_some());
+        assert_eq!(trigger.unwrap().meeting.call_id, "abc");
+    }
+
+    /// Triggered marks are pruned with the meeting list like joined marks.
+    #[test]
+    fn test_triggered_marks_pruned_with_meetings() {
+        let mut state = DaemonState::default();
+        let meeting = create_test_meeting("abc", "Daily", 5);
+        let begin_time_ms = meeting.begin_time.timestamp_millis();
+        state.update_meetings(vec![meeting.clone()]);
+        state.mark_triggered("abc", begin_time_ms);
+
+        // Meeting disappears from the list — the mark must be pruned
+        state.update_meetings(vec![]);
+        state.update_meetings(vec![meeting]);
+
+        let settings = Settings::default();
+        assert!(state.calculate_next_trigger(&settings).is_some());
     }
 
     #[test]

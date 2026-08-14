@@ -21,6 +21,18 @@ export interface Meeting {
 }
 
 /**
+ * Homepage parser generations, one per Google Meet frontend era:
+ * - "v1": until 2026-08 — meeting cards carry `data-call-id` /
+ *   `data-begin-time` / `data-end-time` attributes
+ * - "v2": 2026-08 redesign (`/home`) — cards are buttons whose element id is
+ *   a Google Calendar instance id; no meeting code exists in the DOM
+ *
+ * When Google redesigns again, add "v3" and a `homepage-v3.ts` parser, and
+ * chain it in `parseMeetingCards`.
+ */
+export type HomepageParserVersion = "v1" | "v2";
+
+/**
  * Result of parsing meeting cards
  */
 export interface ParseResult {
@@ -32,6 +44,8 @@ export interface ParseResult {
   hiddenCards?: number;
   /** Hidden reason counts */
   hiddenReasons?: Record<string, number>;
+  /** Which parser generation produced this result */
+  parser?: HomepageParserVersion;
 }
 
 /**

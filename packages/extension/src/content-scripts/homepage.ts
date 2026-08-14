@@ -11,6 +11,12 @@ import {
   parseMeetingCards,
   getNextJoinableMeeting,
   createHomepageOverlay,
+  closestCalendarCard,
+  waitForMeetingCard,
+  getCardJoinTarget,
+  hasAutoJoinParam,
+  markPendingCardJoin,
+  CARD_JOIN_PARAM,
   type Meeting,
 } from "@meetcat/core";
 import { initI18n } from "@meetcat/i18n";
@@ -201,6 +207,58 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 });
 
 /**
+ * Track user-initiated calendar-card clicks (redesigned homepage) so the
+ * meeting page can attribute the join back to the instance id. Programmatic
+ * clicks (isTrusted false) already carry their own pending flag.
+ */
+function observeCardClicks(): void {
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!event.isTrusted) return;
+      const target = event.target as Element | null;
+      if (!target) return;
+      const card = closestCalendarCard(target);
+      if (card) {
+        markPendingCardJoin(card.id, false);
+      }
+    },
+    true
+  );
+}
+
+/**
+ * The redesigned homepage exposes no meeting URLs, so the service worker
+ * navigates here with a `meetcatJoin` param instead. Find the card and click
+ * it, letting Meet resolve the meeting itself.
+ */
+async function handleCardJoinFromUrl(): Promise<void> {
+  const target = getCardJoinTarget(window.location.href);
+  if (!target) return;
+  const auto = hasAutoJoinParam(window.location.href);
+
+  // Strip join params first so a reload cannot re-trigger the click
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete(CARD_JOIN_PARAM);
+    url.searchParams.delete("meetcatAuto");
+    history.replaceState(null, "", url.toString());
+  } catch {
+    // URL manipulation failed — proceed anyway
+  }
+
+  const card = await waitForMeetingCard(document, target);
+  if (!card) {
+    console.warn("[MeetCat] Card join failed: card not found", target);
+    return;
+  }
+
+  markPendingCardJoin(target, auto);
+  card.click();
+  console.log("[MeetCat] Calendar card clicked for join:", target);
+}
+
+/**
  * Initialize
  */
 async function init(): Promise<void> {
@@ -208,8 +266,10 @@ async function init(): Promise<void> {
 
   await loadSettings();
   await initI18n(state.settings.language);
+  observeCardClicks();
   initOverlay();
   startChecking();
+  void handleCardJoinFromUrl();
 }
 
 // Run when DOM is ready

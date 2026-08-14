@@ -2,6 +2,7 @@
 export type {
   Meeting,
   ParseResult,
+  HomepageParserVersion,
   MediaButtons,
   MediaStateResult,
   MediaApplyOptions,
@@ -15,9 +16,19 @@ export type {
 // Re-export parser
 export {
   parseMeetingCards,
-  parseMeetingCard,
   getNextJoinableMeeting,
+  parseMeetingCard,
+  parseHomepageV1,
   MEETING_CARD_SELECTOR,
+  parseHomepageV2,
+  parseCalendarCard,
+  findCalendarCards,
+  findMeetingCardById,
+  closestCalendarCard,
+  waitForMeetingCard,
+  extractDurationMinutes,
+  CALENDAR_CARD_SELECTOR,
+  CALENDAR_INSTANCE_ID_PATTERN,
 } from "./parser/index.js";
 
 // Re-export controller
@@ -56,7 +67,17 @@ export {
 } from "./ui/index.js";
 
 // Re-export auto-join helpers
-export { appendAutoJoinParam, hasAutoJoinParam } from "./auto-join.js";
+export {
+  appendAutoJoinParam,
+  hasAutoJoinParam,
+  buildCardJoinUrl,
+  getCardJoinTarget,
+  markPendingCardJoin,
+  readPendingCardJoin,
+  clearPendingCardJoin,
+  CARD_JOIN_PARAM,
+  type PendingCardJoin,
+} from "./auto-join.js";
 
 // Re-export utils
 export {

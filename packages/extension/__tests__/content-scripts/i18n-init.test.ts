@@ -27,6 +27,12 @@ describe("content scripts i18n initialization", () => {
       parseMeetingCards: vi.fn(() => ({ meetings: [] })),
       getNextJoinableMeeting: vi.fn(() => null),
       createHomepageOverlay,
+      closestCalendarCard: vi.fn(() => null),
+      waitForMeetingCard: vi.fn(async () => null),
+      getCardJoinTarget: vi.fn(() => null),
+      hasAutoJoinParam: vi.fn(() => false),
+      markPendingCardJoin: vi.fn(),
+      CARD_JOIN_PARAM: "meetcatJoin",
     }));
 
     await import("../../src/content-scripts/homepage.ts");
@@ -72,6 +78,8 @@ describe("content scripts i18n initialization", () => {
       getMeetingCodeFromPath: vi.fn(() => "abc-defg-hij"),
       createJoinCountdown,
       hasAutoJoinParam: vi.fn(() => true),
+      readPendingCardJoin: vi.fn(() => null),
+      clearPendingCardJoin: vi.fn(),
     }));
 
     await import("../../src/content-scripts/meeting.ts");

@@ -10,6 +10,10 @@ describe("isMeetHomepageUrl", () => {
     expect(isMeetHomepageUrl("https://meet.google.com/landing")).toBe(true);
   });
 
+  it("accepts redesigned home page", () => {
+    expect(isMeetHomepageUrl("https://meet.google.com/home")).toBe(true);
+  });
+
   it("rejects calling landing page", () => {
     expect(isMeetHomepageUrl("https://meet.google.com/landing?calling=1")).toBe(false);
   });

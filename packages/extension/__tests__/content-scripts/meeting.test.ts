@@ -41,6 +41,8 @@ describe("meeting content script", () => {
         destroy: vi.fn(),
       })),
       hasAutoJoinParam: vi.fn(() => false),
+      readPendingCardJoin: vi.fn(() => null),
+      clearPendingCardJoin: vi.fn(),
     }));
 
     await import("../../src/content-scripts/meeting.ts");
@@ -52,6 +54,74 @@ describe("meeting content script", () => {
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
       type: "MEETING_JOINED",
       callId: "abc-defg-hij",
+    });
+  });
+
+  it("reports join and close under the card alias id on v2 card joins", async () => {
+    const instanceId = "qh3otvuvq3e5odp340e22elatr_20260814T021500Z";
+    const joinButton = document.createElement("button");
+    joinButton.textContent = "Join now";
+    document.body.appendChild(joinButton);
+
+    vi.doMock("@meetcat/core", () => ({
+      findMediaButtons: () => ({
+        micButton: document.createElement("button"),
+        cameraButton: document.createElement("button"),
+      }),
+      applyMicState: vi.fn().mockResolvedValue({
+        success: true,
+        clicks: 0,
+        attempts: 1,
+      }),
+      applyCameraState: vi.fn().mockResolvedValue({
+        success: true,
+        clicks: 0,
+        attempts: 1,
+      }),
+      clickJoinButton: vi.fn(() => true),
+      findJoinButton: vi.fn(() => ({ button: joinButton, matchedText: "Join now" })),
+      findLeaveButton: vi.fn(() => ({ button: null, matchedText: null })),
+      getMeetingCodeFromPath: vi.fn(() => "abc-defg-hij"),
+      createJoinCountdown: vi.fn(() => ({
+        start: vi.fn(),
+        destroy: vi.fn(),
+      })),
+      hasAutoJoinParam: vi.fn(() => false),
+      readPendingCardJoin: vi.fn(() => ({
+        callId: instanceId,
+        auto: false,
+        atMs: Date.now(),
+      })),
+      clearPendingCardJoin: vi.fn(),
+    }));
+
+    await import("../../src/content-scripts/meeting.ts");
+    await flushPromises();
+
+    joinButton.click();
+    await flushPromises();
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: "MEETING_JOINED",
+      callId: "abc-defg-hij",
+    });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: "MEETING_JOINED",
+      callId: instanceId,
+    });
+
+    window.dispatchEvent(new Event("pagehide"));
+    await flushPromises();
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: "MEETING_CLOSED",
+      callId: "abc-defg-hij",
+      closedAtMs: expect.any(Number),
+    });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: "MEETING_CLOSED",
+      callId: instanceId,
+      closedAtMs: expect.any(Number),
     });
   });
 
@@ -83,6 +153,8 @@ describe("meeting content script", () => {
         destroy: vi.fn(),
       })),
       hasAutoJoinParam: vi.fn(() => false),
+      readPendingCardJoin: vi.fn(() => null),
+      clearPendingCardJoin: vi.fn(),
     }));
 
     await import("../../src/content-scripts/meeting.ts");

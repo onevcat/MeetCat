@@ -13,7 +13,12 @@ declare global {
   }
 }
 
-import { parseMeetingCards, getNextJoinableMeeting } from "./parser/index.js";
+import {
+  parseMeetingCards,
+  getNextJoinableMeeting,
+  closestCalendarCard,
+  waitForMeetingCard,
+} from "./parser/index.js";
 import {
   applyMicState,
   applyCameraState,
@@ -30,7 +35,14 @@ import {
   type HomepageOverlay,
   type JoinCountdown,
 } from "./ui/index.js";
-import { appendAutoJoinParam, hasAutoJoinParam } from "./auto-join.js";
+import {
+  appendAutoJoinParam,
+  hasAutoJoinParam,
+  getCardJoinTarget,
+  markPendingCardJoin,
+  readPendingCardJoin,
+  clearPendingCardJoin,
+} from "./auto-join.js";
 import {
   isTauriEnvironment,
   reportMeetings,
@@ -48,6 +60,7 @@ import {
   reportMeetingClosed,
   getJoinedMeetings,
   getSuppressedMeetings,
+  saveDomSnapshot,
   logEvent,
   type LogLevel,
   type CheckMeetingsPayload,
@@ -81,6 +94,10 @@ let suppressedMeetings: Set<string> = new Set();
 let unsubscribers: Array<() => void> = [];
 let fallbackIntervalId: ReturnType<typeof setInterval> | null = null;
 let currentMeetingCallId: string | null = null;
+// Calendar instance id of the card whose click opened this meeting page.
+// Needed because the daemon tracks v2 meetings by instance id while the
+// meeting page only knows the real meeting code (see reportPendingCardJoinOnce).
+let currentMeetingAliasId: string | null = null;
 let homepageKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 let meetingEntryObserver: MutationObserver | null = null;
 let homepageVisibilityHandler: (() => void) | null = null;
@@ -201,11 +218,37 @@ async function syncJoinedMeetings(): Promise<void> {
 }
 
 function reportJoinedOnce(callId: string): void {
+  reportPendingCardJoinOnce(callId);
   if (joinedMeetings.has(callId)) return;
   joinedMeetings.add(callId);
   reportJoined(callId).catch((e) => console.error("[MeetCat] Failed to report join:", e));
   logToDisk("debug", "meeting", "join.reported", "Meeting reported joined", {
     callId,
+  });
+}
+
+/**
+ * On the redesigned homepage the scheduler tracks meetings by calendar
+ * instance id, but the meeting page only knows the real meeting code. When a
+ * join is reported, also report the instance id of the card whose click led
+ * here so the daemon's joined/suppressed bookkeeping stays consistent.
+ */
+function reportPendingCardJoinOnce(realCallId: string): void {
+  const pending = readPendingCardJoin();
+  // Fall back to the alias captured at meeting-page init — the storage flag
+  // may have expired or been consumed by the time the join completes
+  const aliasId = pending?.callId ?? currentMeetingAliasId;
+  if (pending) clearPendingCardJoin();
+  if (!aliasId || aliasId === realCallId) return;
+  if (joinedMeetings.has(aliasId)) return;
+  joinedMeetings.add(aliasId);
+  reportJoined(aliasId).catch((e) =>
+    console.error("[MeetCat] Failed to report card join:", e)
+  );
+  logToDisk("debug", "meeting", "join.card_reported", "Card join reported", {
+    callId: aliasId,
+    realCallId,
+    auto: pending?.auto ?? null,
   });
 }
 
@@ -271,6 +314,39 @@ function reportPageDetectedForNativeState(
   }).catch((error) => {
     console.warn("[MeetCat] Failed to report page detection:", error);
   });
+}
+
+let domSnapshotAttempted = false;
+let zeroCardChecks = 0;
+
+/**
+ * Capture the live DOM when detection fails so a redesign can be diagnosed
+ * from real markup. Debug builds only — the Rust side rejects the write in
+ * release builds, so this stays a best-effort no-op for end users.
+ */
+function attemptDomSnapshot(reason: string): void {
+  if (domSnapshotAttempted) return;
+  domSnapshotAttempted = true;
+  if (!isTauriEnvironment()) return;
+
+  saveDomSnapshot(document.documentElement.outerHTML, reason)
+    .then((path) => {
+      logToConsole("info", "[MeetCat] DOM snapshot saved", { reason, path });
+      logToDisk("info", "inject", "snapshot.saved", "DOM snapshot saved", {
+        reason,
+        path,
+      });
+    })
+    .catch((e) => {
+      // Expected in release builds (command rejects); log so debug-build
+      // failures (e.g. missing capability permissions) stay visible
+      const error = e instanceof Error ? e.message : String(e);
+      logToConsole("warn", "[MeetCat] DOM snapshot failed", { reason, error });
+      logToDisk("warn", "inject", "snapshot.failed", "DOM snapshot failed", {
+        reason,
+        error,
+      });
+    });
 }
 
 function isUpdateNoticeSuppressed(
@@ -382,6 +458,20 @@ async function init(): Promise<void> {
     (event) => {
       const target = event.target as Element | null;
       if (!target) return;
+      // Track user-initiated calendar-card clicks (redesigned homepage) so
+      // the meeting page can attribute the join back to the instance id.
+      // Programmatic clicks (isTrusted false) are marked by the caller with
+      // the auto flag and must not be downgraded here.
+      if (event.isTrusted) {
+        const card = closestCalendarCard(target);
+        if (card) {
+          markPendingCardJoin(card.id, false);
+          logToDisk("debug", "homepage", "card_click.tracked", "Card click tracked", {
+            callId: card.id,
+          });
+          return;
+        }
+      }
       const clickedButton = target.closest("button");
       if (!clickedButton) return;
       const { button } = findJoinButton(document);
@@ -455,6 +545,8 @@ async function init(): Promise<void> {
       await initMeetingPage();
     } else {
       logToConsole("info", "[MeetCat] Unknown page type, skipping initialization");
+      // Delay so the SPA settles before we snapshot unknown markup
+      setTimeout(() => attemptDomSnapshot("unknown-page"), 10_000);
     }
   } catch (error) {
     console.error("[MeetCat] Page init error:", error);
@@ -631,11 +723,25 @@ async function checkAndReportMeetings(meta: {
   logToDisk("debug", "homepage", "parse.result", "Parsed meetings", {
     source: meta.source ?? "unknown",
     checkId: meta.checkId,
+    parser: result.parser,
     cardsFound: result.cardsFound,
     meetingsCount: result.meetings.length,
     hiddenCards: result.hiddenCards ?? 0,
     hiddenReasons: result.hiddenReasons ?? {},
   });
+
+  // Snapshot the DOM if the homepage repeatedly parses to zero cards
+  // (skip the init pass — Meet renders its schedule asynchronously)
+  if (result.cardsFound === 0) {
+    if (meta.source !== "init") {
+      zeroCardChecks += 1;
+      if (zeroCardChecks >= 2) {
+        attemptDomSnapshot("homepage-zero-cards");
+      }
+    }
+  } else {
+    zeroCardChecks = 0;
+  }
 
   if (evaluateHomepageRecovery(meta.source ?? "unknown", result.meetings)) {
     return;
@@ -729,7 +835,13 @@ function createOverlay(): void {
 }
 
 function isMeetHomepagePath(pathname: string = location.pathname): boolean {
-  return pathname === "/" || pathname === "" || pathname === "/landing";
+  return (
+    pathname === "/" ||
+    pathname === "" ||
+    pathname === "/landing" ||
+    // Google Meet redesign (2026-08) moved the homepage to /home
+    pathname === "/home"
+  );
 }
 
 function isHomepageForeground(): boolean {
@@ -961,8 +1073,44 @@ function handleNavigateAndJoin(cmd: NavigateAndJoinCommand): void {
   // Update settings with the ones from the command
   settings = cmd.settings;
 
+  // Redesigned homepage: no meeting URL exists — click the calendar card
+  // and let Meet resolve the meeting itself
+  const cardTarget = getCardJoinTarget(cmd.url);
+  if (cardTarget) {
+    void joinByCardClick(cardTarget);
+    return;
+  }
+
   // Navigate to meeting URL
   location.href = appendAutoJoinParam(cmd.url);
+}
+
+/**
+ * Join a meeting on the redesigned homepage by clicking its calendar card.
+ * The pending-card-join flag survives the navigation Meet performs and lets
+ * the meeting page treat the arrival as an auto-join request.
+ */
+async function joinByCardClick(instanceId: string): Promise<void> {
+  const card = await waitForMeetingCard(document, instanceId, {
+    maxAttempts: 10,
+    intervalMs: 500,
+  });
+
+  if (!card) {
+    logToConsole("warn", "[MeetCat] Card join failed: card not found", {
+      callId: instanceId,
+    });
+    logToDisk("warn", "meeting", "card_join.not_found", "Card not found for join", {
+      callId: instanceId,
+    });
+    return;
+  }
+
+  markPendingCardJoin(instanceId, true);
+  card.click();
+  logToDisk("info", "meeting", "card_join.clicked", "Calendar card clicked for join", {
+    callId: instanceId,
+  });
 }
 
 /**
@@ -975,10 +1123,19 @@ async function initMeetingPage(): Promise<void> {
     callId: meetingCode,
   });
   currentMeetingCallId = meetingCode;
-  const isAutoJoinRequested = hasAutoJoinParam(location.href);
+  // Auto-join intent arrives via URL param (legacy navigation) or via the
+  // pending card-join flag (redesigned homepage, where Meet navigates itself)
+  const pendingCardJoin = readPendingCardJoin();
+  currentMeetingAliasId =
+    pendingCardJoin && pendingCardJoin.callId !== meetingCode
+      ? pendingCardJoin.callId
+      : null;
+  const isAutoJoinRequested =
+    hasAutoJoinParam(location.href) || Boolean(pendingCardJoin?.auto);
   logToDisk("info", "meeting", "meeting.init", "Meeting page init", {
     callId: meetingCode,
     autoJoinRequested: isAutoJoinRequested,
+    viaCardJoin: Boolean(pendingCardJoin?.auto),
   });
 
   // Wait for media buttons to appear
@@ -1183,7 +1340,16 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
     reportMeetingClosed(currentMeetingCallId, Date.now()).catch((e) =>
       console.error("[MeetCat] Failed to report meeting closed:", e)
     );
+    // Also close under the calendar instance id: the daemon's suppression
+    // and window-restore bookkeeping track v2 meetings by that id, not by
+    // the real meeting code this page reports
+    if (currentMeetingAliasId && currentMeetingAliasId !== currentMeetingCallId) {
+      reportMeetingClosed(currentMeetingAliasId, Date.now()).catch((e) =>
+        console.error("[MeetCat] Failed to report card meeting closed:", e)
+      );
+    }
     currentMeetingCallId = null;
+    currentMeetingAliasId = null;
   }
 
   // Unsubscribe from events
@@ -1219,6 +1385,8 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
 
   lastHomepageRecoveryLogKey = null;
   reloadInFlightSince = null;
+  domSnapshotAttempted = false;
+  zeroCardChecks = 0;
 }
 
 // Initialize on DOMContentLoaded or immediately if already loaded

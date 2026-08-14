@@ -345,9 +345,12 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
 
             // Mark the meeting as "triggered" BEFORE navigating
             // This prevents re-triggering if user cancels and goes back to homepage
+            let mut already_joined = false;
             if let Some(state) = app_handle.try_state::<AppState>() {
                 let mut daemon = state.daemon.lock().unwrap();
+                already_joined = daemon.is_joined(&call_id);
                 daemon.mark_joined(&call_id);
+                daemon.mark_triggered(&call_id, meeting.begin_time.timestamp_millis());
                 println!("[MeetCat] Marked meeting as triggered: {}", call_id);
                 log_app_event(
                     &app_handle,
@@ -357,6 +360,22 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
                     None,
                     Some(json!({ "callId": call_id })),
                 );
+            }
+
+            // The user already joined (manually) before this trigger fired:
+            // the trigger is consumed above, but re-navigating would steal
+            // focus or re-click the calendar card, so stop here
+            if already_joined {
+                println!("[MeetCat] Meeting already joined, skipping navigation");
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Info,
+                    "join",
+                    "trigger.skipped_joined",
+                    None,
+                    Some(json!({ "callId": call_id })),
+                );
+                return;
             }
 
             restore_main_window_visibility(&app_handle);
@@ -1115,6 +1134,34 @@ fn open_log_folder(app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_path(dir.to_string_lossy().to_string(), None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+/// Save a DOM snapshot from the webview for detector debugging.
+///
+/// Debug builds only: snapshots contain personal data (meeting titles,
+/// account info), so release builds refuse to write them. Used to capture
+/// the live Meet DOM when the homepage parser stops matching (e.g. after
+/// a Google Meet frontend redesign).
+#[tauri::command]
+fn save_dom_snapshot(html: String, reason: String) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("DOM snapshots are disabled in release builds".to_string());
+    }
+
+    let sanitized_reason: String = reason
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .take(64)
+        .collect();
+    let dir = logging::default_log_dir()
+        .parent()
+        .map(|p| p.join("snapshots"))
+        .ok_or_else(|| "Cannot resolve snapshot directory".to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let path = dir.join(format!("dom-{}-{}.html", sanitized_reason, now_ms()));
+    fs::write(&path, html).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
 }
 
 pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
@@ -2494,6 +2541,7 @@ pub fn run() {
             consume_open_update_dialog_request,
             consume_manual_update_check_request,
             log_event,
+            save_dom_snapshot,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

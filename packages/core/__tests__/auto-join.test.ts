@@ -55,3 +55,45 @@ describe("auto-join url helpers", () => {
     expect(hasAutoJoinParam("http://[")).toBe(false);
   });
 });
+
+describe("pending card join flag", () => {
+  it("round-trips through sessionStorage", async () => {
+    const { markPendingCardJoin, readPendingCardJoin, clearPendingCardJoin } =
+      await import("../src/auto-join.js");
+
+    const now = 1_000_000;
+    markPendingCardJoin("event_20260814T021500Z", true, now);
+
+    const pending = readPendingCardJoin(now + 1000);
+    expect(pending).toEqual({
+      callId: "event_20260814T021500Z",
+      auto: true,
+      atMs: now,
+    });
+
+    clearPendingCardJoin();
+    expect(readPendingCardJoin(now + 1000)).toBeNull();
+  });
+
+  it("expires after the TTL", async () => {
+    const { markPendingCardJoin, readPendingCardJoin, clearPendingCardJoin } =
+      await import("../src/auto-join.js");
+
+    const now = 1_000_000;
+    markPendingCardJoin("event_20260814T021500Z", false, now);
+
+    expect(readPendingCardJoin(now + 3 * 60 * 1000 + 1)).toBeNull();
+    clearPendingCardJoin();
+  });
+
+  it("ignores corrupted storage payloads", async () => {
+    const { readPendingCardJoin } = await import("../src/auto-join.js");
+
+    sessionStorage.setItem("__meetcat_card_join", "not json");
+    expect(readPendingCardJoin()).toBeNull();
+
+    sessionStorage.setItem("__meetcat_card_join", JSON.stringify({ callId: 42 }));
+    expect(readPendingCardJoin()).toBeNull();
+    sessionStorage.removeItem("__meetcat_card_join");
+  });
+});

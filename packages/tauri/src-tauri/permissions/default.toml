@@ -32,4 +32,5 @@ commands.allow = [
     "consume_open_update_dialog_request",
     "consume_manual_update_check_request",
     "log_event",
+    "save_dom_snapshot",
 ]

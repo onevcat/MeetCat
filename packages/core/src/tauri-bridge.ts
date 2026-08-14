@@ -229,6 +229,15 @@ export async function logEvent(input: LogEventInput): Promise<void> {
   await invoke("log_event", { input });
 }
 
+/**
+ * Save a DOM snapshot for detector debugging.
+ * Only effective in debug builds; release builds reject the call.
+ * Returns the written file path.
+ */
+export async function saveDomSnapshot(html: string, reason: string): Promise<string> {
+  return invoke("save_dom_snapshot", { html, reason });
+}
+
 // Extend Window interface for Tauri
 declare global {
   interface Window {
