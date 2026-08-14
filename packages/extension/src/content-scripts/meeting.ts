@@ -18,6 +18,8 @@ import {
   createJoinCountdown,
   type JoinCountdown,
   hasAutoJoinParam,
+  readPendingCardJoin,
+  clearPendingCardJoin,
 } from "@meetcat/core";
 import { initI18n } from "@meetcat/i18n";
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
@@ -34,6 +36,12 @@ interface MeetingState {
   joinAttempted: boolean;
   joinReported: boolean;
   autoJoinBlocked: boolean;
+  /**
+   * Calendar instance id of the card whose click opened this meeting page.
+   * The scheduler tracks v2 meetings by that id, so joins and closes must be
+   * reported under it as well as under the real meeting code.
+   */
+  cardJoinAliasId: string | null;
 }
 
 const state: MeetingState = {
@@ -43,6 +51,7 @@ const state: MeetingState = {
   joinAttempted: false,
   joinReported: false,
   autoJoinBlocked: false,
+  cardJoinAliasId: null,
 };
 
 async function safeRuntimeSendMessage<T = unknown>(message: unknown): Promise<T | null> {
@@ -221,16 +230,32 @@ function reportJoined(): void {
   if (!meetingCode) return;
   state.joinReported = true;
   void safeRuntimeSendMessage({ type: "MEETING_JOINED", callId: meetingCode });
+
+  // Redesigned homepage: also report under the calendar instance id
+  if (state.cardJoinAliasId && state.cardJoinAliasId !== meetingCode) {
+    void safeRuntimeSendMessage({ type: "MEETING_JOINED", callId: state.cardJoinAliasId });
+  }
+  clearPendingCardJoin();
 }
 
 function reportClosed(): void {
   const meetingCode = getMeetingCodeFromPath(window.location.pathname);
   if (!meetingCode) return;
+  const closedAtMs = Date.now();
   void safeRuntimeSendMessage({
     type: "MEETING_CLOSED",
     callId: meetingCode,
-    closedAtMs: Date.now(),
+    closedAtMs,
   });
+  // Redesigned homepage: also close under the calendar instance id so the
+  // service worker's suppression bookkeeping matches its meeting list
+  if (state.cardJoinAliasId && state.cardJoinAliasId !== meetingCode) {
+    void safeRuntimeSendMessage({
+      type: "MEETING_CLOSED",
+      callId: state.cardJoinAliasId,
+      closedAtMs,
+    });
+  }
 }
 
 function observeManualJoinClicks(): void {
@@ -278,7 +303,15 @@ async function init(): Promise<void> {
   await initI18n(state.settings.language);
   observeManualJoinClicks();
 
-  const isAutoJoinRequested = hasAutoJoinParam(window.location.href);
+  // Auto-join intent arrives via URL param (legacy navigation) or via the
+  // pending card-join flag (redesigned homepage, where Meet navigates itself)
+  const pendingCardJoin = readPendingCardJoin();
+  state.cardJoinAliasId =
+    pendingCardJoin && pendingCardJoin.callId !== meetingCode
+      ? pendingCardJoin.callId
+      : null;
+  const isAutoJoinRequested =
+    hasAutoJoinParam(window.location.href) || Boolean(pendingCardJoin?.auto);
 
   // Wait for media buttons and apply settings
   waitForMediaButtons(async () => {

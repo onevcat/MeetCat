@@ -6,6 +6,8 @@ const parserMocks = vi.hoisted(() => ({
   getNextJoinableMeeting: vi.fn((meetings: unknown[]) =>
     meetings.length ? (meetings[0] as unknown) : null
   ),
+  closestCalendarCard: vi.fn(() => null),
+  waitForMeetingCard: vi.fn(async () => null),
 }));
 
 const controllerMocks = vi.hoisted(() => ({
@@ -42,7 +44,7 @@ const tauriMocks = vi.hoisted(() => ({
   onUpdatePromptPreferenceChanged: vi.fn(),
   getUpdateInfo: vi.fn(),
   openUpdateDialog: vi.fn(),
-  reportJoined: vi.fn(),
+  reportJoined: vi.fn().mockResolvedValue(undefined),
   reportMeetingClosed: vi.fn().mockResolvedValue(undefined),
   logEvent: vi.fn().mockResolvedValue(undefined),
   requestNavigateHome: vi.fn().mockResolvedValue(undefined),
@@ -51,10 +53,16 @@ const tauriMocks = vi.hoisted(() => ({
 vi.mock("../src/parser/index.js", () => parserMocks);
 vi.mock("../src/controller/index.js", () => controllerMocks);
 vi.mock("../src/ui/index.js", () => uiMocks);
-vi.mock("../src/auto-join.js", () => ({
+const autoJoinMocks = vi.hoisted(() => ({
   appendAutoJoinParam: (url: string) => url,
   hasAutoJoinParam: () => false,
+  getCardJoinTarget: vi.fn(() => null),
+  markPendingCardJoin: vi.fn(),
+  readPendingCardJoin: vi.fn(() => null),
+  clearPendingCardJoin: vi.fn(),
 }));
+
+vi.mock("../src/auto-join.js", () => autoJoinMocks);
 vi.mock("../src/tauri-bridge.js", () => tauriMocks);
 vi.mock("@meetcat/i18n", () => ({
   initI18n: vi.fn().mockResolvedValue(undefined),
@@ -338,6 +346,58 @@ describe("inject homepage checks", () => {
     );
 
     module.cleanup();
+  });
+
+  it("reports join and close under the card alias id on v2 card joins", async () => {
+    const instanceId = "qh3otvuvq3e5odp340e22elatr_20260814T021500Z";
+
+    tauriMocks.isTauriEnvironment.mockReturnValue(true);
+    tauriMocks.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS });
+    tauriMocks.onCheckMeetings.mockResolvedValue(() => {});
+    tauriMocks.onNavigateAndJoin.mockResolvedValue(() => {});
+    tauriMocks.onSettingsChanged.mockResolvedValue(() => {});
+
+    controllerMocks.getMeetingCodeFromPath.mockReturnValue("abc-defg-hij");
+    controllerMocks.findMediaButtons.mockReturnValue({
+      micButton: document.createElement("button"),
+      cameraButton: document.createElement("button"),
+    });
+    controllerMocks.findLeaveButton.mockReturnValue({
+      button: document.createElement("button"),
+      matchedText: "Leave call",
+    });
+
+    autoJoinMocks.readPendingCardJoin.mockReturnValue({
+      callId: instanceId,
+      auto: true,
+      atMs: Date.now(),
+    });
+
+    window.history.pushState({}, "", "/abc-defg-hij");
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    // Entering the meeting reports the real code and the alias
+    expect(tauriMocks.reportJoined).toHaveBeenCalledWith("abc-defg-hij");
+    expect(tauriMocks.reportJoined).toHaveBeenCalledWith(instanceId);
+
+    window.dispatchEvent(new Event("pagehide"));
+    await flushPromises();
+
+    // Closing reports both ids so daemon suppression/restore stays consistent
+    expect(tauriMocks.reportMeetingClosed).toHaveBeenCalledWith(
+      "abc-defg-hij",
+      expect.any(Number)
+    );
+    expect(tauriMocks.reportMeetingClosed).toHaveBeenCalledWith(
+      instanceId,
+      expect.any(Number)
+    );
+
+    module.cleanup();
+    autoJoinMocks.readPendingCardJoin.mockReturnValue(null);
+    controllerMocks.findLeaveButton.mockReturnValue({ button: null, matchedText: null });
   });
 
 });
