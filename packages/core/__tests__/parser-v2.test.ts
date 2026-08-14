@@ -9,7 +9,7 @@ import {
   extractDurationMinutes,
   CALENDAR_INSTANCE_ID_PATTERN,
 } from "../src/parser/homepage-v2.js";
-import { parseMeetingCards } from "../src/parser/meeting-cards.js";
+import { parseMeetingCards, getNextJoinableMeeting } from "../src/parser/meeting-cards.js";
 import { getCardJoinTarget, CARD_JOIN_PARAM } from "../src/auto-join.js";
 
 /**
@@ -274,6 +274,47 @@ describe("Homepage v2 parser", () => {
       expect(result.cardsFound).toBe(1);
       expect(result.hiddenCards).toBe(1);
       expect(result.meetings).toHaveLength(0);
+    });
+
+    /**
+     * The redesigned homepage shows ended meetings in a VISIBLE "Past"
+     * section (v1 never rendered those). The parser is expected to see
+     * them — exclusion is the job of the downstream joinability checks
+     * (endTime, grace window), which must never pick a past meeting.
+     */
+    it("parses visible past-section cards but never makes them joinable", () => {
+      // ANDD Daily 11:15–12:00 UTC+9 as captured; "now" is 5 min after end
+      const now = Date.UTC(2026, 7, 14, 3, 5, 0);
+      render(`
+        <section aria-labelledby="ucc-past">
+          <div role="heading" aria-level="3" id="ucc-past">过去</div>
+          <ol>${cardMarkup()}</ol>
+        </section>`);
+
+      const result = parseMeetingCards(document, now);
+
+      // The card is visible, so the parser reports it faithfully
+      expect(result.parser).toBe("v2");
+      expect(result.meetings).toHaveLength(1);
+      expect(result.meetings[0].endTime.getTime()).toBeLessThanOrEqual(now);
+
+      // ...but it can never become the next joinable meeting
+      expect(getNextJoinableMeeting(result.meetings, { now })).toBeNull();
+    });
+
+    it("keeps past-section cards outside the grace window even if endTime overshoots", () => {
+      // Duration text unparseable → endTime falls back to begin + 60 min,
+      // which is still in the future here; the grace window must exclude it
+      const now = Date.UTC(2026, 7, 14, 2, 45, 0); // 30 min after start
+      render(scheduleMarkup(cardMarkup({ timeText: "全天" })));
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.meetings).toHaveLength(1);
+      expect(result.meetings[0].endTime.getTime()).toBeGreaterThan(now);
+      expect(
+        getNextJoinableMeeting(result.meetings, { now, gracePeriodMinutes: 10 })
+      ).toBeNull();
     });
 
     it("returns an empty v2 result on a page without any meeting markup", () => {
