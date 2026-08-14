@@ -348,6 +348,7 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
             if let Some(state) = app_handle.try_state::<AppState>() {
                 let mut daemon = state.daemon.lock().unwrap();
                 daemon.mark_joined(&call_id);
+                daemon.mark_triggered(&call_id, meeting.begin_time.timestamp_millis());
                 println!("[MeetCat] Marked meeting as triggered: {}", call_id);
                 log_app_event(
                     &app_handle,
