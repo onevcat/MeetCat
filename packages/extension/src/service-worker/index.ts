@@ -17,6 +17,7 @@ import {
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 import type { ExtensionMessage, ExtensionStatus } from "../types.js";
 import { HomepageRecoveryController } from "./homepage-recovery.js";
+import { selectNextJoinTrigger } from "./join-scheduler.js";
 
 const STORAGE_KEY = "meetcat_settings";
 const ALARM_NAME = "meetcat_check";
@@ -30,6 +31,8 @@ interface ServiceWorkerState {
   meetings: Meeting[];
   joinedMeetings: Set<string>;
   suppressedMeetings: Map<string, number>;
+  /** Fired join triggers, keyed by call id with the instance's begin time */
+  triggeredMeetings: Map<string, number>;
   lastCheck: number | null;
   scheduler: ReturnType<typeof createSchedulerLogic>;
   /** The meeting scheduled to be joined by the precise trigger */
@@ -60,6 +63,7 @@ const state: ServiceWorkerState = {
   meetings: [],
   joinedMeetings: new Set(),
   suppressedMeetings: new Map(),
+  triggeredMeetings: new Map(),
   lastCheck: null,
   scheduler: createSchedulerLogic(),
   scheduledJoinMeeting: null,
@@ -381,52 +385,10 @@ async function scheduleJoinTrigger(): Promise<void> {
   await chrome.alarms.clear(JOIN_TRIGGER_ALARM);
   state.scheduledJoinMeeting = null;
 
-  const joinBeforeMs = state.settings.joinBeforeMinutes * 60 * 1000;
-  const maxAfterStartMs = state.settings.maxMinutesAfterStart * 60 * 1000;
   const now = Date.now();
 
   // Find the next meeting to schedule
-  let nextTrigger: { meeting: Meeting; triggerTime: number } | null = null;
-
-  for (const meeting of state.meetings) {
-    // Skip if title matches any exclude filter
-    if (
-      state.settings.titleExcludeFilters.length > 0 &&
-      state.settings.titleExcludeFilters.some((filter) => meeting.title.includes(filter))
-    ) {
-      continue;
-    }
-
-    const startTime = meeting.beginTime.getTime();
-    const triggerTime = startTime - joinBeforeMs;
-    const timeSinceStart = now - startTime;
-
-    // Skip already ended
-    if (meeting.endTime.getTime() <= now) continue;
-
-    // Skip if suppressed after trigger time
-    if (state.suppressedMeetings.has(meeting.callId) && now >= triggerTime) {
-      continue;
-    }
-
-    // Skip already joined only after meeting starts
-    if (state.joinedMeetings.has(meeting.callId) && now >= startTime) {
-      continue;
-    }
-
-    // Check if this meeting is valid for triggering
-    if (triggerTime > now) {
-      // Trigger is in the future
-      if (!nextTrigger || triggerTime < nextTrigger.triggerTime) {
-        nextTrigger = { meeting, triggerTime };
-      }
-    } else if (timeSinceStart < maxAfterStartMs) {
-      // Already past trigger time but still within join window - schedule immediately
-      if (!nextTrigger || triggerTime < nextTrigger.triggerTime) {
-        nextTrigger = { meeting, triggerTime: now };
-      }
-    }
-  }
+  const nextTrigger = selectNextJoinTrigger(state.meetings, state, state.settings, now);
 
   if (nextTrigger) {
     const delayMs = Math.max(0, nextTrigger.triggerTime - now);
@@ -476,6 +438,12 @@ function pruneMeetingState(): void {
       state.suppressedMeetings.delete(callId);
     }
   }
+
+  for (const callId of state.triggeredMeetings.keys()) {
+    if (!activeCallIds.has(callId)) {
+      state.triggeredMeetings.delete(callId);
+    }
+  }
 }
 
 async function handleMeetingClosed(callId: string, closedAtMs: number): Promise<void> {
@@ -513,6 +481,13 @@ async function handleJoinTrigger(): Promise<void> {
   }
 
   console.log("[MeetCat SW] Precise trigger fired, joining:", meeting.title);
+
+  // Mark the instance as triggered BEFORE opening the tab so re-scheduling
+  // (which runs after every meetings/joined/closed update) can never fire
+  // the same trigger again — the joined mark alone does not prevent that
+  // before the meeting starts
+  state.triggeredMeetings.set(meeting.callId, meeting.beginTime.getTime());
+
   await openMeeting(meeting);
 
   // Clear the scheduled meeting
