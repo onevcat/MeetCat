@@ -181,18 +181,30 @@ describe("Homepage v2 parser", () => {
     });
   });
 
-  describe("parseMeetingCards generation fallback", () => {
-    it("prefers v1 cards when present", () => {
-      const now = Date.now();
-      render(`
-        <div data-call-id="abc-defg-hij"
-             data-begin-time="${now + 600000}"
-             data-end-time="${now + 4200000}"
+  describe("parseMeetingCards generation compatibility", () => {
+    // Google decides which frontend each user gets, so every generation must
+    // keep working, and stale/hidden markup left over from one generation
+    // must never mask the generation that actually renders the schedule.
+
+    function v1CardMarkup(
+      now: number,
+      options: { hidden?: boolean; broken?: boolean } = {}
+    ): string {
+      const { hidden = false, broken = false } = options;
+      const times = broken
+        ? ""
+        : `data-begin-time="${now + 600000}" data-end-time="${now + 4200000}"`;
+      return `
+        <div data-call-id="abc-defg-hij" ${times}
+             ${hidden ? 'style="display: none"' : ""}
              aria-label="10:00. Legacy Meeting.">
           <div>Legacy Meeting</div>
-        </div>
-        ${scheduleMarkup(cardMarkup())}
-      `);
+        </div>`;
+    }
+
+    it("parses a pure v1 page", () => {
+      const now = Date.now();
+      render(v1CardMarkup(now));
 
       const result = parseMeetingCards(document, now);
 
@@ -200,13 +212,78 @@ describe("Homepage v2 parser", () => {
       expect(result.meetings[0].callId).toBe("abc-defg-hij");
     });
 
-    it("falls back to v2 cards when no v1 cards exist", () => {
+    it("parses a pure v2 page", () => {
       render(scheduleMarkup(cardMarkup()));
 
       const result = parseMeetingCards(document, Date.UTC(2026, 7, 14, 2, 0, 0));
 
       expect(result.parser).toBe("v2");
       expect(result.meetings[0].callId).toBe(INSTANCE_ID);
+    });
+
+    it("ignores hidden v1 leftovers and parses visible v2 cards", () => {
+      const now = Date.now();
+      render(v1CardMarkup(now, { hidden: true }) + scheduleMarkup(cardMarkup()));
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.parser).toBe("v2");
+      expect(result.meetings).toHaveLength(1);
+      expect(result.meetings[0].callId).toBe(INSTANCE_ID);
+    });
+
+    it("ignores unparseable v1 nodes and parses visible v2 cards", () => {
+      const now = Date.now();
+      render(v1CardMarkup(now, { broken: true }) + scheduleMarkup(cardMarkup()));
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.parser).toBe("v2");
+      expect(result.meetings[0].callId).toBe(INSTANCE_ID);
+    });
+
+    it("falls back to visible v1 cards when v2 yields no meetings", () => {
+      const now = Date.now();
+      render(
+        scheduleMarkup(cardMarkup({ liStyle: "display: none" })) + v1CardMarkup(now)
+      );
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.parser).toBe("v1");
+      expect(result.meetings[0].callId).toBe("abc-defg-hij");
+    });
+
+    it("prefers the newest generation when both render meetings", () => {
+      const now = Date.now();
+      render(v1CardMarkup(now) + scheduleMarkup(cardMarkup()));
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.parser).toBe("v2");
+      expect(result.meetings[0].callId).toBe(INSTANCE_ID);
+    });
+
+    it("keeps diagnostics from the generation with markup when nothing parses", () => {
+      const now = Date.now();
+      render(v1CardMarkup(now, { hidden: true }));
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.parser).toBe("v1");
+      expect(result.cardsFound).toBe(1);
+      expect(result.hiddenCards).toBe(1);
+      expect(result.meetings).toHaveLength(0);
+    });
+
+    it("returns an empty v2 result on a page without any meeting markup", () => {
+      render("<div>nothing</div>");
+
+      const result = parseMeetingCards(document);
+
+      expect(result.parser).toBe("v2");
+      expect(result.cardsFound).toBe(0);
+      expect(result.meetings).toHaveLength(0);
     });
   });
 

@@ -8,10 +8,18 @@ export { MEETING_CARD_SELECTOR, parseMeetingCard, parseHomepageV1 } from "./home
 /**
  * Parse all meeting cards from a container element.
  *
- * Tries each homepage parser generation from oldest to newest and returns
- * the first one that finds cards (see `HomepageParserVersion` for the era
- * each generation covers). Keeping every generation in the chain keeps
- * MeetCat working across Google's staged rollouts and rollbacks.
+ * Tries each homepage parser generation from newest to oldest and returns
+ * the first one that yields parseable meetings (see `HomepageParserVersion`
+ * for the era each generation covers). Google serves whichever frontend it
+ * wants per user, so every generation stays in the chain to survive staged
+ * rollouts and rollbacks.
+ *
+ * The short-circuit is on parsed meetings, not on matched nodes: hidden or
+ * leftover markup from another generation must never block the generation
+ * that actually renders the schedule. Generations are not merged — their
+ * call ids have no common key (meeting code vs calendar instance id), so
+ * cross-generation dedup is impossible, and a real page only renders one
+ * generation at a time.
  *
  * @param container - The document or element to search within
  * @param now - Current timestamp (for testing)
@@ -21,9 +29,15 @@ export function parseMeetingCards(
   container: Document | Element,
   now: number = Date.now()
 ): ParseResult {
+  const v2 = parseHomepageV2(container, now);
+  if (v2.meetings.length > 0) return v2;
+
   const v1 = parseHomepageV1(container, now);
-  if (v1.cardsFound > 0) return v1;
-  return parseHomepageV2(container, now);
+  if (v1.meetings.length > 0) return v1;
+
+  // No meetings in any generation — return the result whose markup is
+  // actually present so cardsFound/hiddenCards diagnostics stay meaningful
+  return v1.cardsFound > v2.cardsFound ? v1 : v2;
 }
 
 /**
