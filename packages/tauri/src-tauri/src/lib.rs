@@ -345,8 +345,10 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
 
             // Mark the meeting as "triggered" BEFORE navigating
             // This prevents re-triggering if user cancels and goes back to homepage
+            let mut already_joined = false;
             if let Some(state) = app_handle.try_state::<AppState>() {
                 let mut daemon = state.daemon.lock().unwrap();
+                already_joined = daemon.is_joined(&call_id);
                 daemon.mark_joined(&call_id);
                 daemon.mark_triggered(&call_id, meeting.begin_time.timestamp_millis());
                 println!("[MeetCat] Marked meeting as triggered: {}", call_id);
@@ -358,6 +360,22 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
                     None,
                     Some(json!({ "callId": call_id })),
                 );
+            }
+
+            // The user already joined (manually) before this trigger fired:
+            // the trigger is consumed above, but re-navigating would steal
+            // focus or re-click the calendar card, so stop here
+            if already_joined {
+                println!("[MeetCat] Meeting already joined, skipping navigation");
+                log_app_event(
+                    &app_handle,
+                    LogLevel::Info,
+                    "join",
+                    "trigger.skipped_joined",
+                    None,
+                    Some(json!({ "callId": call_id })),
+                );
+                return;
             }
 
             restore_main_window_visibility(&app_handle);

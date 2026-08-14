@@ -474,6 +474,11 @@ async function handleJoinTrigger(): Promise<void> {
   // Verify the meeting is still valid and not already joined
   if (state.joinedMeetings.has(meeting.callId)) {
     console.log("[MeetCat SW] Meeting already joined, skipping");
+    // Consume the trigger for this instance too: the joined guard does not
+    // exclude the meeting before it starts (manual join between trigger
+    // time and start), so without this mark the reschedule below would
+    // re-select it with zero delay and spin until the meeting starts
+    state.triggeredMeetings.set(meeting.callId, meeting.beginTime.getTime());
     state.scheduledJoinMeeting = null;
     // Schedule next trigger
     await scheduleJoinTrigger();

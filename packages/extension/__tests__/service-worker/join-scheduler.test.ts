@@ -76,6 +76,32 @@ describe("selectNextJoinTrigger", () => {
     expect(selectNextJoinTrigger([m], fired, settings, NOW)).toBeNull();
   });
 
+  /**
+   * Regression for the manual-join variant of the spin: when the user joins
+   * by hand between trigger time and start, MEETING_JOINED reschedules while
+   * no trigger ever fired, so the meeting is still selected (spin
+   * precondition). handleJoinTrigger's joined branch must consume the
+   * trigger by writing the triggered mark — after which selection stops.
+   */
+  it("stops re-selecting a manually joined meeting once its trigger is consumed", () => {
+    // Meeting starts in 3 min with a 5-min lead: past trigger time, before start
+    const m = meeting("abc", 3);
+    const manualJoinSettings = { ...settings, joinBeforeMinutes: 5 };
+
+    // State right after a manual join before start: joined, never triggered
+    const afterManualJoin = guards({ joinedMeetings: new Set(["abc"]) });
+    const selected = selectNextJoinTrigger([m], afterManualJoin, manualJoinSettings, NOW);
+    expect(selected).not.toBeNull();
+    expect(selected!.triggerTime).toBe(NOW); // zero delay — would spin
+
+    // The joined branch marks the instance as triggered before rescheduling
+    const afterConsume = guards({
+      joinedMeetings: new Set(["abc"]),
+      triggeredMeetings: new Map([["abc", m.beginTime.getTime()]]),
+    });
+    expect(selectNextJoinTrigger([m], afterConsume, manualJoinSettings, NOW)).toBeNull();
+  });
+
   it("still selects the next occurrence of a recurring call id", () => {
     const today = meeting("abc", 5);
     const yesterdayBeginMs = today.beginTime.getTime() - 24 * 60 * 60 * 1000;

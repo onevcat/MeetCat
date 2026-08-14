@@ -105,6 +105,11 @@ impl DaemonState {
         self.joined_meetings.insert(call_id.to_string());
     }
 
+    /// Whether a meeting has been reported joined
+    pub fn is_joined(&self, call_id: &str) -> bool {
+        self.joined_meetings.contains(call_id)
+    }
+
     /// Mark a meeting instance's join trigger as fired
     pub fn mark_triggered(&mut self, call_id: &str, begin_time_ms: i64) {
         self.triggered_meetings

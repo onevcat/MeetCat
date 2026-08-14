@@ -349,6 +349,10 @@ window.addEventListener("beforeunload", () => {
 });
 
 window.addEventListener("pagehide", () => {
+  // Full cleanup here too (parity with beforeunload): pagehide is the more
+  // reliable unload signal, and a leaked meeting-entry observer would keep
+  // firing against a dead document
+  cleanupCountdown();
   reportClosed();
 });
 
