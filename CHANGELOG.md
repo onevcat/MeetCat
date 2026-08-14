@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-14
+
+Restores meeting detection and auto-join on the redesigned Google Meet
+homepage, on both the desktop app and the Chrome extension.
+
+### Added
+
+- Added support for the redesigned Google Meet homepage (now served under
+  `/home`). MeetCat detects the new calendar cards and joins meetings by
+  activating the card itself, since the new page no longer exposes meeting
+  links. Older homepage versions keep working, and MeetCat picks the right
+  mode automatically. (Tauri and extension)
+
+### Fixed
+
+- Fixed meeting detection, the countdown overlay, and auto-join being
+  completely inactive after Google rolled out the redesigned homepage.
+  (Tauri and extension)
+- Fixed closing a meeting early on the redesigned homepage not being
+  remembered: dismissed meetings are no longer re-joined, and the desktop
+  window is correctly restored after auto-maximize. (Tauri and extension)
+- Fixed the join trigger re-firing repeatedly between its scheduled time
+  and the meeting start — including after joining manually — which could
+  steal window focus or spin the scheduler. (Tauri and extension)
+
 ## [0.3.0] - 2026-05-28
 
 Adds an option to auto-maximize the desktop window during meetings, and makes
