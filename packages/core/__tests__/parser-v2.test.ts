@@ -492,7 +492,8 @@ describe("Homepage v2 parser", () => {
     });
 
     it("supports Korean prefix meridiems (CLDR ko-KR format)", () => {
-      expect(extractBeginClockMinutes(["오후 5:15 – 오후 6:15"])).toBe(17 * 60 + 15);
+      // Verbatim from a real ko homepage card (2026-08-20)
+      expect(extractBeginClockMinutes(["오후 5:45 – 오후 6:45"])).toBe(17 * 60 + 45);
       expect(extractBeginClockMinutes(["오전 9:30 – 오전 10:00"])).toBe(9 * 60 + 30);
       expect(extractBeginClockMinutes(["오전 11:30 – 오후 12:30"])).toBe(11 * 60 + 30);
     });
