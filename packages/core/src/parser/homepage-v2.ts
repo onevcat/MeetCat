@@ -10,9 +10,11 @@ import { getHiddenReason, formatDisplayTime } from "./card-support.js";
  * the DOM. Each scheduled meeting renders as a clickable card whose element
  * id is a Google Calendar event instance id (`<eventId>_<YYYYMMDD>T<HHMMSS>Z`);
  * the UTC begin time embedded in that suffix is the only machine-readable
- * timestamp. Joining works by clicking the card and letting Meet resolve the
- * meeting code itself — see `buildCardJoinUrl` for how that flows through the
- * scheduler round-trip.
+ * timestamp. Events that reuse another event's meeting code render with a
+ * bare event id instead — see `BARE_EVENT_ID_PATTERN` for how their begin
+ * time is recovered. Joining works by clicking the card and letting Meet
+ * resolve the meeting code itself — see `buildCardJoinUrl` for how that flows
+ * through the scheduler round-trip.
  */
 
 /**
@@ -21,6 +23,24 @@ import { getHiddenReason, formatDisplayTime } from "./card-support.js";
  */
 export const CALENDAR_INSTANCE_ID_PATTERN =
   /^([A-Za-z0-9][A-Za-z0-9_-]*)_(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
+
+/**
+ * Matches BARE calendar event ids (no `_<timestamp>Z` instance suffix), e.g.
+ * "3n4i5i5mf9v3lqf03ipnct6g4a". Meet renders a card this way when the event
+ * reuses a meeting code created for another event (Calendar shows the
+ * 「この会議コードは別の予定のものです」banner). Such cards carry no
+ * machine-readable time at all — the begin time must be recovered from the
+ * localized label text, with the date anchored to sibling instance-id cards
+ * (the homepage renders a single day at a time).
+ *
+ * Event ids are lowercase base32hex; the length bound plus the required
+ * parseable time range in the label keep unrelated buttons out.
+ */
+export const BARE_EVENT_ID_PATTERN = /^_?[a-z0-9][a-z0-9_-]{15,}$/;
+
+function isCalendarCardId(id: string): boolean {
+  return CALENDAR_INSTANCE_ID_PATTERN.test(id) || BARE_EVENT_ID_PATTERN.test(id);
+}
 
 /**
  * Calendar cards are focusable buttons labelled by separate title/time nodes.
@@ -54,6 +74,10 @@ function parseInstanceId(id: string): InstanceIdParts | null {
 
 /**
  * Find all calendar card buttons within a container.
+ *
+ * Instance-id cards are accepted on the id alone. Bare-id cards must also
+ * expose a parseable time range in their label — that is their only time
+ * source, and requiring it keeps unrelated buttons out of the card set.
  */
 export function findCalendarCards(container: Document | Element): HTMLElement[] {
   const candidates = container.querySelectorAll(CALENDAR_CARD_SELECTOR);
@@ -61,21 +85,26 @@ export function findCalendarCards(container: Document | Element): HTMLElement[] 
   for (const el of candidates) {
     if (CALENDAR_INSTANCE_ID_PATTERN.test(el.id)) {
       cards.push(el as HTMLElement);
+    } else if (
+      BARE_EVENT_ID_PATTERN.test(el.id) &&
+      extractBeginClockMinutes(resolveLabelledTexts(el as HTMLElement)) !== null
+    ) {
+      cards.push(el as HTMLElement);
     }
   }
   return cards;
 }
 
 /**
- * Find a specific calendar card button by its instance id.
+ * Find a specific calendar card button by its instance or bare event id.
  */
 export function findMeetingCardById(
   container: Document | Element,
-  instanceId: string
+  cardId: string
 ): HTMLElement | null {
-  if (!CALENDAR_INSTANCE_ID_PATTERN.test(instanceId)) return null;
-  // Instance ids are validated to [A-Za-z0-9_-] so direct interpolation is safe
-  const el = container.querySelector(`[role="button"][id="${instanceId}"]`);
+  if (!isCalendarCardId(cardId)) return null;
+  // Card ids are validated to [A-Za-z0-9_-] so direct interpolation is safe
+  const el = container.querySelector(`[role="button"][id="${cardId}"]`);
   return (el as HTMLElement | null) ?? null;
 }
 
@@ -85,7 +114,7 @@ export function findMeetingCardById(
  */
 export function closestCalendarCard(el: Element): HTMLElement | null {
   const button = el.closest('[role="button"][id]');
-  if (button && CALENDAR_INSTANCE_ID_PATTERN.test(button.id)) {
+  if (button && isCalendarCardId(button.id)) {
     return button as HTMLElement;
   }
   return null;
@@ -147,6 +176,57 @@ export function extractDurationMinutes(texts: string[]): number | null {
   return null;
 }
 
+const LATIN_MERIDIEM_PATTERN = /\b([AP])\.?M\.?\b/gi;
+const CJK_MERIDIEM_PATTERN = /(午前|午後|上午|下午|오전|오후)/g;
+const CJK_PM_MARKERS = new Set(["午後", "下午", "오후"]);
+
+/**
+ * Resolve the meridiem governing the range's start token, if any.
+ * Latin meridiems trail the time ("5:15 – 6:15 PM", "11:30 AM – 1:00 PM"):
+ * the first marker after the start token applies to it. CJK meridiems
+ * precede the time ("午後5:15", "오후 5:15"): the last marker before the
+ * token applies.
+ */
+function resolveStartMeridiem(text: string, tokenIndex: number): "am" | "pm" | null {
+  let cjk: "am" | "pm" | null = null;
+  for (const m of text.matchAll(CJK_MERIDIEM_PATTERN)) {
+    if (m.index! >= tokenIndex) break;
+    cjk = CJK_PM_MARKERS.has(m[1]) ? "pm" : "am";
+  }
+  if (cjk) return cjk;
+
+  for (const m of text.matchAll(LATIN_MERIDIEM_PATTERN)) {
+    if (m.index! >= tokenIndex) {
+      return m[1].toLowerCase() === "p" ? "pm" : "am";
+    }
+  }
+  return null;
+}
+
+/**
+ * Derive the range's start as minutes since local midnight from a localized
+ * display range like "17:15 – 18:15", "5:15 – 6:15 PM", or "午後5:15～6:15".
+ * Used for bare-event-id cards, whose label text is the only time source.
+ * A lone clock token (e.g. a time inside a title) is not treated as a range.
+ */
+export function extractBeginClockMinutes(texts: string[]): number | null {
+  for (const text of texts) {
+    const tokens = [...text.matchAll(TIME_TOKEN_PATTERN)];
+    if (tokens.length < 2) continue;
+
+    const first = tokens[0];
+    let hours = parseInt(first[1], 10);
+    const minutes = parseInt(first[2], 10);
+    if (hours > 23 || minutes > 59) continue;
+
+    const meridiem = resolveStartMeridiem(text, first.index!);
+    if (meridiem === "pm" && hours < 12) hours += 12;
+    if (meridiem === "am" && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+  return null;
+}
+
 function extractTitle(card: HTMLElement, labelledTexts: string[]): string {
   const ariaLabel = card.getAttribute("aria-label")?.trim();
   if (ariaLabel) return ariaLabel;
@@ -158,31 +238,61 @@ function extractTitle(card: HTMLElement, labelledTexts: string[]): string {
   return "Unknown";
 }
 
+export interface ParseCardOptions {
+  /**
+   * A timestamp on the calendar day the homepage is rendering, used to date
+   * bare-event-id cards (their label only carries wall-clock times). Taken
+   * from a sibling instance-id card; falls back to `now`.
+   */
+  anchorDateMs?: number;
+}
+
 /**
  * Parse a single calendar card button into a Meeting.
  */
 export function parseCalendarCard(
   card: HTMLElement,
-  now: number = Date.now()
+  now: number = Date.now(),
+  options: ParseCardOptions = {}
 ): Meeting | null {
-  const parts = parseInstanceId(card.id);
-  if (!parts) return null;
-
   const labelledTexts = resolveLabelledTexts(card);
+
+  let beginTimeMs: number;
+  let eventId: string;
+  const parts = parseInstanceId(card.id);
+  if (parts) {
+    beginTimeMs = parts.beginTimeMs;
+    eventId = parts.eventId;
+  } else if (BARE_EVENT_ID_PATTERN.test(card.id)) {
+    const clockMinutes = extractBeginClockMinutes(labelledTexts);
+    if (clockMinutes === null) return null;
+    const anchor = new Date(options.anchorDateMs ?? now);
+    beginTimeMs = new Date(
+      anchor.getFullYear(),
+      anchor.getMonth(),
+      anchor.getDate(),
+      0,
+      clockMinutes
+    ).getTime();
+    eventId = card.id;
+  } else {
+    return null;
+  }
+
   const durationMinutes =
     extractDurationMinutes(labelledTexts) ?? DEFAULT_DURATION_MINUTES;
-  const endTimeMs = parts.beginTimeMs + durationMinutes * 60 * 1000;
+  const endTimeMs = beginTimeMs + durationMinutes * 60 * 1000;
 
-  const startsIn = parts.beginTimeMs - now;
+  const startsIn = beginTimeMs - now;
 
   return {
     callId: card.id,
     url: buildCardJoinUrl(card.id),
     title: extractTitle(card, labelledTexts),
-    displayTime: formatDisplayTime(parts.beginTimeMs, card.ownerDocument),
-    beginTime: new Date(parts.beginTimeMs),
+    displayTime: formatDisplayTime(beginTimeMs, card.ownerDocument),
+    beginTime: new Date(beginTimeMs),
     endTime: new Date(endTimeMs),
-    eventId: parts.eventId,
+    eventId,
     startsInMinutes: Math.floor(startsIn / 60000),
   };
 }
@@ -198,20 +308,35 @@ export function parseHomepageV2(
   container: Document | Element,
   now: number = Date.now()
 ): ParseResult {
-  const cards = findCalendarCards(container);
+  const cards = findCalendarCards(container).map((card) => ({
+    card,
+    hiddenReason: getHiddenReason(cardVisibilityRoot(card)),
+  }));
+
+  // The homepage renders one day at a time, so any VISIBLE instance-id card
+  // fixes the calendar date for bare-event-id siblings. Hidden cards may be
+  // stale leftovers from another day and must never anchor.
+  let anchorDateMs: number | undefined;
+  for (const { card, hiddenReason } of cards) {
+    if (hiddenReason) continue;
+    const parts = parseInstanceId(card.id);
+    if (parts) {
+      anchorDateMs = parts.beginTimeMs;
+      break;
+    }
+  }
 
   const meetings: Meeting[] = [];
   const hiddenReasons: Record<string, number> = {};
   let hiddenCards = 0;
 
-  for (const card of cards) {
-    const hiddenReason = getHiddenReason(cardVisibilityRoot(card));
+  for (const { card, hiddenReason } of cards) {
     if (hiddenReason) {
       hiddenCards += 1;
       hiddenReasons[hiddenReason] = (hiddenReasons[hiddenReason] || 0) + 1;
       continue;
     }
-    const meeting = parseCalendarCard(card, now);
+    const meeting = parseCalendarCard(card, now, { anchorDateMs });
     if (meeting) {
       meetings.push(meeting);
     }
