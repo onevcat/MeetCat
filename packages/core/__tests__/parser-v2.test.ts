@@ -399,6 +399,40 @@ describe("Homepage v2 parser", () => {
       expect(next?.beginTime.getTime()).toBe(expectedBegin);
     });
 
+    it("anchors to a visible instance card even when 'now' is another day", () => {
+      render(
+        scheduleMarkup(
+          cardMarkup({ instanceId: ANCHOR_ID, title: "ANDD Team Time", timeText: "15:00 – 16:00", suffix: "a" }) +
+            cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15", suffix: "b" })
+        )
+      );
+      const now = ANCHOR_BEGIN_MS + 3 * 24 * 60 * 60 * 1000;
+
+      const result = parseHomepageV2(document, now);
+
+      const meeting = result.meetings.find((m) => m.callId === BARE_ID)!;
+      expect(meeting.beginTime.getTime()).toBe(localTimeOnDayOf(ANCHOR_BEGIN_MS, 17, 15));
+    });
+
+    it("never anchors to a hidden instance card from another day", () => {
+      // Stale hidden markup must not date visible bare-id cards; with no
+      // visible anchor the current local date is the correct fallback.
+      const staleId = "qh3otvuvq3e5odp340e22elatr_20260819T021500Z";
+      render(
+        scheduleMarkup(
+          cardMarkup({ instanceId: staleId, title: "Stale", timeText: "11:15 – 12:00", liStyle: "display: none", suffix: "s" }) +
+            cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15", suffix: "b" })
+        )
+      );
+      const now = Date.UTC(2026, 7, 20, 6, 30, 0);
+
+      const result = parseHomepageV2(document, now);
+
+      const meeting = result.meetings.find((m) => m.callId === BARE_ID)!;
+      expect(meeting.beginTime.getTime()).toBe(localTimeOnDayOf(now, 17, 15));
+      expect(result.hiddenCards).toBe(1);
+    });
+
     it("falls back to the current local date without an anchor sibling", () => {
       render(scheduleMarkup(cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15" })));
       const now = Date.UTC(2026, 7, 20, 3, 0, 0);
@@ -455,6 +489,12 @@ describe("Homepage v2 parser", () => {
     it("supports CJK prefix meridiems", () => {
       expect(extractBeginClockMinutes(["午後5:15～6:15"])).toBe(17 * 60 + 15);
       expect(extractBeginClockMinutes(["上午9:30 – 10:00"])).toBe(9 * 60 + 30);
+    });
+
+    it("supports Korean prefix meridiems (CLDR ko-KR format)", () => {
+      expect(extractBeginClockMinutes(["오후 5:15 – 오후 6:15"])).toBe(17 * 60 + 15);
+      expect(extractBeginClockMinutes(["오전 9:30 – 오전 10:00"])).toBe(9 * 60 + 30);
+      expect(extractBeginClockMinutes(["오전 11:30 – 오후 12:30"])).toBe(11 * 60 + 30);
     });
 
     it("ignores texts without a range", () => {

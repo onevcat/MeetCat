@@ -177,19 +177,21 @@ export function extractDurationMinutes(texts: string[]): number | null {
 }
 
 const LATIN_MERIDIEM_PATTERN = /\b([AP])\.?M\.?\b/gi;
-const CJK_MERIDIEM_PATTERN = /(午前|午後|上午|下午)/g;
+const CJK_MERIDIEM_PATTERN = /(午前|午後|上午|下午|오전|오후)/g;
+const CJK_PM_MARKERS = new Set(["午後", "下午", "오후"]);
 
 /**
  * Resolve the meridiem governing the range's start token, if any.
  * Latin meridiems trail the time ("5:15 – 6:15 PM", "11:30 AM – 1:00 PM"):
  * the first marker after the start token applies to it. CJK meridiems
- * precede the time ("午後5:15"): the last marker before the token applies.
+ * precede the time ("午後5:15", "오후 5:15"): the last marker before the
+ * token applies.
  */
 function resolveStartMeridiem(text: string, tokenIndex: number): "am" | "pm" | null {
   let cjk: "am" | "pm" | null = null;
   for (const m of text.matchAll(CJK_MERIDIEM_PATTERN)) {
     if (m.index! >= tokenIndex) break;
-    cjk = m[1] === "午後" || m[1] === "下午" ? "pm" : "am";
+    cjk = CJK_PM_MARKERS.has(m[1]) ? "pm" : "am";
   }
   if (cjk) return cjk;
 
@@ -306,12 +308,17 @@ export function parseHomepageV2(
   container: Document | Element,
   now: number = Date.now()
 ): ParseResult {
-  const cards = findCalendarCards(container);
+  const cards = findCalendarCards(container).map((card) => ({
+    card,
+    hiddenReason: getHiddenReason(cardVisibilityRoot(card)),
+  }));
 
-  // The homepage renders one day at a time, so any instance-id card fixes
-  // the calendar date for bare-event-id siblings.
+  // The homepage renders one day at a time, so any VISIBLE instance-id card
+  // fixes the calendar date for bare-event-id siblings. Hidden cards may be
+  // stale leftovers from another day and must never anchor.
   let anchorDateMs: number | undefined;
-  for (const card of cards) {
+  for (const { card, hiddenReason } of cards) {
+    if (hiddenReason) continue;
     const parts = parseInstanceId(card.id);
     if (parts) {
       anchorDateMs = parts.beginTimeMs;
@@ -323,8 +330,7 @@ export function parseHomepageV2(
   const hiddenReasons: Record<string, number> = {};
   let hiddenCards = 0;
 
-  for (const card of cards) {
-    const hiddenReason = getHiddenReason(cardVisibilityRoot(card));
+  for (const { card, hiddenReason } of cards) {
     if (hiddenReason) {
       hiddenCards += 1;
       hiddenReasons[hiddenReason] = (hiddenReasons[hiddenReason] || 0) + 1;
