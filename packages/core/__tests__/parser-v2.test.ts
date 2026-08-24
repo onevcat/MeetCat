@@ -7,7 +7,9 @@ import {
   findMeetingCardById,
   closestCalendarCard,
   extractDurationMinutes,
+  extractBeginClockMinutes,
   CALENDAR_INSTANCE_ID_PATTERN,
+  BARE_EVENT_ID_PATTERN,
 } from "../src/parser/homepage-v2.js";
 import { parseMeetingCards, getNextJoinableMeeting } from "../src/parser/meeting-cards.js";
 import { getCardJoinTarget, CARD_JOIN_PARAM } from "../src/auto-join.js";
@@ -325,6 +327,181 @@ describe("Homepage v2 parser", () => {
       expect(result.parser).toBe("v2");
       expect(result.cardsFound).toBe(0);
       expect(result.meetings).toHaveLength(0);
+    });
+  });
+
+  /**
+   * Events that reuse another event's meeting code (Calendar shows the
+   * 「この会議コードは別の予定のものです」banner) render with a BARE event id —
+   * no `_<timestamp>Z` instance suffix — and carry no machine-readable time.
+   * Captured from a real snapshot on 2026-08-20. The homepage renders one
+   * day at a time, so sibling instance-id cards anchor the calendar date and
+   * the clock time comes from the localized label text.
+   */
+  describe("reused-meeting-code cards (bare event id)", () => {
+    const BARE_ID = "3n4i5i5mf9v3lqf03ipnct6g4a";
+    const ANCHOR_ID = "cvegrqhmio0aildgefsp3pf0ad_20260820T060000Z";
+    const ANCHOR_BEGIN_MS = Date.UTC(2026, 7, 20, 6, 0, 0);
+
+    /** Local-midnight-based expectation mirroring the wall-clock contract. */
+    function localTimeOnDayOf(ms: number, hours: number, minutes: number): number {
+      const d = new Date(ms);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes).getTime();
+    }
+
+    it("BARE_EVENT_ID_PATTERN matches bare event ids only", () => {
+      expect(BARE_EVENT_ID_PATTERN.test(BARE_ID)).toBe(true);
+      expect(BARE_EVENT_ID_PATTERN.test(ANCHOR_ID)).toBe(false);
+      expect(BARE_EVENT_ID_PATTERN.test("ucc-5")).toBe(false);
+      expect(BARE_EVENT_ID_PATTERN.test("abc-defg-hij")).toBe(false);
+    });
+
+    it("parses a bare-id card, anchoring the date to a sibling instance card", () => {
+      render(
+        scheduleMarkup(
+          cardMarkup({ instanceId: ANCHOR_ID, title: "ANDD Team Time", timeText: "15:00 – 16:00", suffix: "a" }) +
+            cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15", suffix: "b" })
+        )
+      );
+      const expectedBegin = localTimeOnDayOf(ANCHOR_BEGIN_MS, 17, 15);
+      const now = expectedBegin - 30 * 60 * 1000;
+
+      const result = parseHomepageV2(document, now);
+
+      expect(result.cardsFound).toBe(2);
+      expect(result.meetings).toHaveLength(2);
+      const meeting = result.meetings.find((m) => m.title === "test2")!;
+      expect(meeting.callId).toBe(BARE_ID);
+      expect(meeting.eventId).toBe(BARE_ID);
+      expect(meeting.beginTime.getTime()).toBe(expectedBegin);
+      expect(meeting.endTime.getTime()).toBe(expectedBegin + 60 * 60 * 1000);
+      expect(getCardJoinTarget(meeting.url)).toBe(BARE_ID);
+    });
+
+    it("anchors to instance cards in the visible past section (captured scenario)", () => {
+      // Real 2026-08-20 layout: past section holds anchored cards, the
+      // reused-code meeting sits alone in the scheduled section.
+      render(`
+        <section aria-labelledby="ucc-past">
+          <div role="heading" aria-level="3" id="ucc-past">过去</div>
+          <ol>${cardMarkup({ instanceId: ANCHOR_ID, title: "ANDD Team Time", timeText: "15:00 – 16:00", suffix: "a" })}</ol>
+        </section>
+        ${scheduleMarkup(cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15", suffix: "b" }))}`);
+      const expectedBegin = localTimeOnDayOf(ANCHOR_BEGIN_MS, 17, 15);
+      const now = expectedBegin - 15 * 60 * 1000;
+
+      const result = parseMeetingCards(document, now);
+
+      expect(result.parser).toBe("v2");
+      expect(result.meetings).toHaveLength(2);
+      const next = getNextJoinableMeeting(result.meetings, { now });
+      expect(next?.callId).toBe(BARE_ID);
+      expect(next?.beginTime.getTime()).toBe(expectedBegin);
+    });
+
+    it("anchors to a visible instance card even when 'now' is another day", () => {
+      render(
+        scheduleMarkup(
+          cardMarkup({ instanceId: ANCHOR_ID, title: "ANDD Team Time", timeText: "15:00 – 16:00", suffix: "a" }) +
+            cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15", suffix: "b" })
+        )
+      );
+      const now = ANCHOR_BEGIN_MS + 3 * 24 * 60 * 60 * 1000;
+
+      const result = parseHomepageV2(document, now);
+
+      const meeting = result.meetings.find((m) => m.callId === BARE_ID)!;
+      expect(meeting.beginTime.getTime()).toBe(localTimeOnDayOf(ANCHOR_BEGIN_MS, 17, 15));
+    });
+
+    it("never anchors to a hidden instance card from another day", () => {
+      // Stale hidden markup must not date visible bare-id cards; with no
+      // visible anchor the current local date is the correct fallback.
+      const staleId = "qh3otvuvq3e5odp340e22elatr_20260819T021500Z";
+      render(
+        scheduleMarkup(
+          cardMarkup({ instanceId: staleId, title: "Stale", timeText: "11:15 – 12:00", liStyle: "display: none", suffix: "s" }) +
+            cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15", suffix: "b" })
+        )
+      );
+      const now = Date.UTC(2026, 7, 20, 6, 30, 0);
+
+      const result = parseHomepageV2(document, now);
+
+      const meeting = result.meetings.find((m) => m.callId === BARE_ID)!;
+      expect(meeting.beginTime.getTime()).toBe(localTimeOnDayOf(now, 17, 15));
+      expect(result.hiddenCards).toBe(1);
+    });
+
+    it("falls back to the current local date without an anchor sibling", () => {
+      render(scheduleMarkup(cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15" })));
+      const now = Date.UTC(2026, 7, 20, 3, 0, 0);
+
+      const result = parseHomepageV2(document, now);
+
+      expect(result.meetings).toHaveLength(1);
+      expect(result.meetings[0].beginTime.getTime()).toBe(localTimeOnDayOf(now, 17, 15));
+    });
+
+    it("ignores bare-id buttons without a displayed time range", () => {
+      render(scheduleMarkup(cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "全天" })));
+
+      const result = parseHomepageV2(document, Date.UTC(2026, 7, 20, 3, 0, 0));
+
+      expect(result.cardsFound).toBe(0);
+      expect(result.meetings).toHaveLength(0);
+    });
+
+    it("card lookup helpers accept bare event ids", () => {
+      render(scheduleMarkup(cardMarkup({ instanceId: BARE_ID, title: "test2", timeText: "17:15 – 18:15" })));
+      const card = document.getElementById(BARE_ID) as HTMLElement;
+      const inner = document.createElement("span");
+      card.appendChild(inner);
+
+      expect(findMeetingCardById(document, BARE_ID)?.id).toBe(BARE_ID);
+      expect(closestCalendarCard(inner)?.id).toBe(BARE_ID);
+      expect(findMeetingCardById(document, "ucc-5")).toBeNull();
+    });
+  });
+
+  describe("extractBeginClockMinutes", () => {
+    it("parses 24h ranges", () => {
+      expect(extractBeginClockMinutes(["17:15 – 18:15"])).toBe(17 * 60 + 15);
+    });
+
+    it("applies a trailing meridiem shared by the range", () => {
+      expect(extractBeginClockMinutes(["5:15 – 6:15 PM"])).toBe(17 * 60 + 15);
+    });
+
+    it("parses the captured en-US format with per-token meridiems", () => {
+      // Verbatim from a real en-US homepage card (2026-08-20)
+      expect(extractBeginClockMinutes(["5:45 PM – 6:45 PM"])).toBe(17 * 60 + 45);
+      // Same format with the narrow no-break space (U+202F) ICU emits
+      expect(extractBeginClockMinutes(["5:45\u202FPM – 6:45\u202FPM"])).toBe(17 * 60 + 45);
+      expect(extractBeginClockMinutes(["11:30 AM – 12:30 PM"])).toBe(11 * 60 + 30);
+    });
+
+    it("uses the meridiem attached to the start token", () => {
+      expect(extractBeginClockMinutes(["11:30 AM – 1:00 PM"])).toBe(11 * 60 + 30);
+      expect(extractBeginClockMinutes(["12:30 AM – 1:00 AM"])).toBe(30);
+    });
+
+    it("supports CJK prefix meridiems", () => {
+      expect(extractBeginClockMinutes(["午後5:15～6:15"])).toBe(17 * 60 + 15);
+      expect(extractBeginClockMinutes(["上午9:30 – 10:00"])).toBe(9 * 60 + 30);
+    });
+
+    it("supports Korean prefix meridiems (CLDR ko-KR format)", () => {
+      // Verbatim from a real ko homepage card (2026-08-20)
+      expect(extractBeginClockMinutes(["오후 5:45 – 오후 6:45"])).toBe(17 * 60 + 45);
+      expect(extractBeginClockMinutes(["오전 9:30 – 오전 10:00"])).toBe(9 * 60 + 30);
+      expect(extractBeginClockMinutes(["오전 11:30 – 오후 12:30"])).toBe(11 * 60 + 30);
+    });
+
+    it("ignores texts without a range", () => {
+      expect(extractBeginClockMinutes(["全天"])).toBeNull();
+      expect(extractBeginClockMinutes(["test2", "17:15 – 18:15"])).toBe(17 * 60 + 15);
+      expect(extractBeginClockMinutes([])).toBeNull();
     });
   });
 
