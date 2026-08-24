@@ -184,8 +184,10 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! gh auth status >/dev/null 2>&1; then
-  echo "[release] gh is not authenticated. Run: gh auth login" >&2
+# Scope the check to github.com: bare `gh auth status` fails if ANY
+# configured host has a broken token, even ones this release never touches.
+if ! gh auth status --hostname github.com >/dev/null 2>&1; then
+  echo "[release] gh is not authenticated for github.com. Run: gh auth login --hostname github.com" >&2
   exit 1
 fi
 
