@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-24
+
+Restores detection of meetings that reuse a meeting code created for
+another event, on the redesigned Google Meet homepage.
+
+### Fixed
+
+- Fixed meetings reusing a meeting code created for another calendar event
+  (Calendar shows the "this meeting code belongs to another event" notice)
+  not being detected on the redesigned Google Meet homepage: they never
+  appeared in the meeting list and were never auto-joined. Their start time
+  is now recovered from the card label across locales, including Korean and
+  other CJK time formats. (Tauri and extension)
+
 ## [0.4.0] - 2026-08-14
 
 Restores meeting detection and auto-join on the redesigned Google Meet
