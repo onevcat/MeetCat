@@ -50,6 +50,9 @@ const zh = {
     logLevel: "日志级别",
     logLevelHint: "高于设定级别的 log 将被记录",
     openLogFolder: "打开日志文件夹",
+    diagnosticSnapshots: "保存诊断页面快照",
+    diagnosticSnapshotsHint:
+      "解析 Meet 页面失败时，将页面 DOM 快照保存到本机（脚本内容已移除）。可能包含会议标题，不会上传。",
 
     loading: "加载设置...",
     saving: "保存中...",

@@ -23,6 +23,7 @@ type DefaultsJson = {
     trayShowMeetingTitle: boolean;
     logCollectionEnabled: boolean;
     logLevel: "error" | "warn" | "info" | "debug" | "trace";
+    diagnosticSnapshotsEnabled: boolean;
   };
 };
 
@@ -78,6 +79,14 @@ export const TauriSettingsSchema = z.object({
     .default(DEFAULTS.tauri.logCollectionEnabled),
   /** Log level for collection (default: info) */
   logLevel: LogLevelSchema.default(DEFAULTS.tauri.logLevel),
+  /**
+   * Save a local DOM snapshot when homepage parsing fails, also in release
+   * builds (default: false). Snapshots may contain personal data (meeting
+   * titles), so this stays a deliberate opt-in.
+   */
+  diagnosticSnapshotsEnabled: z
+    .boolean()
+    .default(DEFAULTS.tauri.diagnosticSnapshotsEnabled),
 });
 
 /**

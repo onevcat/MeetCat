@@ -1138,14 +1138,18 @@ fn open_log_folder(app: AppHandle) -> Result<(), String> {
 
 /// Save a DOM snapshot from the webview for detector debugging.
 ///
-/// Debug builds only: snapshots contain personal data (meeting titles,
-/// account info), so release builds refuse to write them. Used to capture
-/// the live Meet DOM when the homepage parser stops matching (e.g. after
-/// a Google Meet frontend redesign).
+/// Snapshots contain personal data (meeting titles, account info), so they
+/// are written only in debug builds unless the user explicitly opted in via
+/// `tauri.diagnosticSnapshotsEnabled` (the inject script strips script
+/// contents before sending either way). Used to capture the live Meet DOM
+/// when the homepage parser stops matching (e.g. after a Google Meet
+/// frontend redesign, or when a background reload comes back unparseable).
 #[tauri::command]
-fn save_dom_snapshot(html: String, reason: String) -> Result<String, String> {
-    if !cfg!(debug_assertions) {
-        return Err("DOM snapshots are disabled in release builds".to_string());
+fn save_dom_snapshot(app: AppHandle, html: String, reason: String) -> Result<String, String> {
+    if !cfg!(debug_assertions) && !diagnostic_snapshots_enabled(&app) {
+        return Err(
+            "DOM snapshots are disabled (enable diagnostic snapshots in settings)".to_string(),
+        );
     }
 
     let sanitized_reason: String = reason
@@ -1161,7 +1165,52 @@ fn save_dom_snapshot(html: String, reason: String) -> Result<String, String> {
 
     let path = dir.join(format!("dom-{}-{}.html", sanitized_reason, now_ms()));
     fs::write(&path, html).map_err(|e| e.to_string())?;
+    prune_old_snapshots(&dir, MAX_DIAGNOSTIC_SNAPSHOTS);
     Ok(path.to_string_lossy().to_string())
+}
+
+const MAX_DIAGNOSTIC_SNAPSHOTS: usize = 10;
+
+fn diagnostic_snapshots_enabled(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|state| {
+            state
+                .settings
+                .lock()
+                .unwrap()
+                .tauri
+                .as_ref()
+                .map(|t| t.diagnostic_snapshots_enabled)
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+/// Keep only the newest `keep` snapshot files (by mtime) so an opt-in user
+/// cannot accumulate unbounded multi-megabyte HTML dumps.
+fn prune_old_snapshots(dir: &std::path::Path, keep: usize) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut snapshots: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            if !name.starts_with("dom-") || !name.ends_with(".html") {
+                return None;
+            }
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            Some((modified, path))
+        })
+        .collect();
+    if snapshots.len() <= keep {
+        return;
+    }
+    snapshots.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, path) in snapshots.into_iter().skip(keep) {
+        let _ = fs::remove_file(path);
+    }
 }
 
 pub(crate) fn ensure_settings_window(app: &AppHandle) -> Result<(), String> {
@@ -1363,6 +1412,13 @@ fn build_settings_change_summary(
         "tauri.logLevel",
         before_tauri.log_level,
         after_tauri.log_level,
+        &mut changed_keys,
+        &mut changes,
+    );
+    add_change(
+        "tauri.diagnosticSnapshotsEnabled",
+        before_tauri.diagnostic_snapshots_enabled,
+        after_tauri.diagnostic_snapshots_enabled,
         &mut changed_keys,
         &mut changes,
     );

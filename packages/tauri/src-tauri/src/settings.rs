@@ -72,6 +72,11 @@ pub struct TauriSettings {
 
     #[serde(default = "default_log_level")]
     pub log_level: LogLevel,
+
+    /// Allow DOM snapshots in release builds when detection fails.
+    /// Snapshots may contain personal data, so this is a deliberate opt-in.
+    #[serde(default = "default_diagnostic_snapshots_enabled")]
+    pub diagnostic_snapshots_enabled: bool,
 }
 
 impl Default for TauriSettings {
@@ -84,6 +89,7 @@ impl Default for TauriSettings {
             tray_show_meeting_title: defaults.tauri.tray_show_meeting_title,
             log_collection_enabled: defaults.tauri.log_collection_enabled,
             log_level: defaults.tauri.log_level.clone(),
+            diagnostic_snapshots_enabled: defaults.tauri.diagnostic_snapshots_enabled,
         }
     }
 }
@@ -144,6 +150,7 @@ struct DefaultsTauriSettings {
     tray_show_meeting_title: bool,
     log_collection_enabled: bool,
     log_level: LogLevel,
+    diagnostic_snapshots_enabled: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -236,6 +243,10 @@ fn default_log_collection_enabled() -> bool {
 
 fn default_log_level() -> LogLevel {
     defaults().tauri.log_level.clone()
+}
+
+fn default_diagnostic_snapshots_enabled() -> bool {
+    defaults().tauri.diagnostic_snapshots_enabled
 }
 
 impl Default for Settings {
@@ -441,6 +452,7 @@ mod tests {
                 tray_show_meeting_title: true,
                 log_collection_enabled: true,
                 log_level: LogLevel::Debug,
+                diagnostic_snapshots_enabled: true,
             }),
         };
 
@@ -465,5 +477,6 @@ mod tests {
         assert!(tauri.tray_show_meeting_title);
         assert!(tauri.log_collection_enabled);
         assert_eq!(tauri.log_level, LogLevel::Debug);
+        assert!(tauri.diagnostic_snapshots_enabled);
     }
 }

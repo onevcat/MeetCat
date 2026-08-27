@@ -19,6 +19,7 @@
     "trayDisplayMode": "iconOnly",
     "trayShowMeetingTitle": false,
     "logCollectionEnabled": false,
-    "logLevel": "info"
+    "logLevel": "info",
+    "diagnosticSnapshotsEnabled": false
   }
 }

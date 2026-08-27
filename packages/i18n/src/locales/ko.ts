@@ -51,6 +51,9 @@ const ko = {
     logLevel: "로그 레벨",
     logLevelHint: "설정 레벨 이상의 로그가 기록됩니다",
     openLogFolder: "로그 폴더 열기",
+    diagnosticSnapshots: "진단용 페이지 스냅샷 저장",
+    diagnosticSnapshotsHint:
+      "Meet 페이지 구문 분석에 실패하면 페이지 DOM 스냅샷을 로컬에 저장합니다(스크립트 내용 제거). 회의 제목이 포함될 수 있으며 업로드되지 않습니다.",
 
     loading: "설정 불러오는 중...",
     saving: "저장 중...",

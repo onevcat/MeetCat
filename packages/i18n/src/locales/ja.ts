@@ -51,6 +51,9 @@ const ja = {
     logLevel: "ログレベル",
     logLevelHint: "設定レベル以上のログが記録されます",
     openLogFolder: "ログフォルダを開く",
+    diagnosticSnapshots: "診断用ページスナップショットを保存",
+    diagnosticSnapshotsHint:
+      "Meet ページの解析に失敗したとき、ページ DOM のスナップショットをローカルに保存します（スクリプト内容は除去）。会議タイトルを含む場合がありますが、アップロードされることはありません。",
 
     loading: "設定を読み込み中...",
     saving: "保存中...",
