@@ -258,6 +258,18 @@ function logRecoveryDecision(
     return;
   }
 
+  if (
+    evaluation.reason === "empty_regression" ||
+    evaluation.reason === "empty_regression_visible" ||
+    evaluation.reason === "empty_regression_focused"
+  ) {
+    console.warn(
+      `[MeetCat SW] Homepage parsed empty after a reload (${source}), retrying (${evaluation.reason}, focus=${evaluation.focus})`
+    );
+    state.lastRecoveryLogKey = null;
+    return;
+  }
+
   if (evaluation.action === "reload") {
     console.warn(
       `[MeetCat SW] Reloading stale homepage (${source}), stale=${Math.round(
@@ -268,7 +280,12 @@ function logRecoveryDecision(
     return;
   }
 
-  if (evaluation.reason === "cooldown" || evaluation.reason === "daily_limit") {
+  if (
+    evaluation.reason === "cooldown" ||
+    evaluation.reason === "daily_limit" ||
+    evaluation.reason === "upcoming_meeting" ||
+    evaluation.reason === "empty_regression_waiting"
+  ) {
     const logKey = evaluation.reason;
     if (state.lastRecoveryLogKey !== logKey) {
       if (evaluation.reason === "cooldown") {
@@ -276,6 +293,14 @@ function logRecoveryDecision(
           `[MeetCat SW] Homepage stale reload cooling down (${source}), remaining=${Math.round(
             evaluation.cooldownRemainingMs / 1000
           )}s`
+        );
+      } else if (evaluation.reason === "upcoming_meeting") {
+        console.log(
+          `[MeetCat SW] Homepage stale reload deferred (${source}), next meeting is close`
+        );
+      } else if (evaluation.reason === "empty_regression_waiting") {
+        console.warn(
+          `[MeetCat SW] Homepage still parses empty after a reload (${source}), waiting to retry`
         );
       } else {
         console.warn(
@@ -303,10 +328,23 @@ async function evaluateHomepageRecovery(
     nowMs,
     isHomepage: isHomepageTab(targetTab),
     isForeground: await isTabForeground(targetTab),
+    isVisible: targetTab.active === true,
   });
   logRecoveryDecision(source, decision.fingerprint, decision);
 
   if (decision.evaluation.action !== "reload") return;
+  if (decision.evaluation.focus) {
+    // Rescue reload right before a meeting: surface the tab so the reload
+    // happens visibly (background reloads are what broke the page)
+    try {
+      await chrome.tabs.update(targetTab.id, { active: true });
+      if (typeof targetTab.windowId === "number") {
+        await chrome.windows.update(targetTab.windowId, { focused: true });
+      }
+    } catch (error) {
+      console.warn("[MeetCat SW] Failed to focus tab for rescue reload", error);
+    }
+  }
   await chrome.tabs.reload(targetTab.id);
 }
 

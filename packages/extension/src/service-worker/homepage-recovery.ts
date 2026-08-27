@@ -1,6 +1,7 @@
 import {
   createHomepageReloadWatchdog,
   createMeetingsFingerprint,
+  msUntilNextRelevantMeeting,
   type HomepageReloadWatchdogConfig,
   type HomepageReloadWatchdogEvaluation,
   type Meeting,
@@ -21,6 +22,8 @@ export interface HomepageRecoveryInput {
   nowMs: number;
   isHomepage: boolean;
   isForeground: boolean;
+  /** Tab visible to the user (active in its window); defaults to isForeground. */
+  isVisible?: boolean;
 }
 
 export interface HomepageRecoveryDecision {
@@ -48,6 +51,10 @@ export class HomepageRecoveryController {
     return this.watchdog.hasPendingReload();
   }
 
+  hasOpenEmptyRegression(): boolean {
+    return this.watchdog.hasOpenEmptyRegression();
+  }
+
   evaluate(input: HomepageRecoveryInput): HomepageRecoveryDecision {
     const fingerprint = createMeetingsFingerprint(input.meetings);
     const evaluation = this.watchdog.evaluate({
@@ -55,6 +62,8 @@ export class HomepageRecoveryController {
       nowMs: input.nowMs,
       isHomepage: input.isHomepage,
       isForeground: input.isForeground,
+      isVisible: input.isVisible,
+      msUntilNextMeeting: msUntilNextRelevantMeeting(input.meetings, input.nowMs),
     });
     return { fingerprint, evaluation };
   }

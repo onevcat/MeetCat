@@ -735,7 +735,7 @@ describe("watchdog sessionStorage persistence", () => {
     sessionStorage.clear();
   });
 
-  it("restores watchdog state from sessionStorage on init", async () => {
+  it("restores watchdog state from sessionStorage on init and keeps persisting", async () => {
     // Pre-seed sessionStorage with persisted state
     sessionStorage.setItem(
       STORAGE_KEY,
@@ -750,8 +750,13 @@ describe("watchdog sessionStorage persistence", () => {
     const module = await import("../src/inject.js");
     await flushPromises();
 
-    // sessionStorage item should be consumed (removed) after restore
-    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+    // State stays persisted (re-saved after each evaluation) so the
+    // fingerprint baseline survives navigations MeetCat did not initiate
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    const persisted = JSON.parse(raw as string);
+    expect(persisted.consecutiveReloadsWithoutChange).toBe(3);
+    expect(persisted.reloadCountToday).toBe(5);
 
     module.cleanup();
   });
@@ -763,7 +768,10 @@ describe("watchdog sessionStorage persistence", () => {
     const module = await import("../src/inject.js");
     await flushPromises();
 
-    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+    // The corrupt payload gets overwritten by the next valid save
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+    expect(() => JSON.parse(raw as string)).not.toThrow();
 
     module.cleanup();
   });
