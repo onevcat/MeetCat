@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   createHomepageReloadWatchdog,
   createMeetingsFingerprint,
+  msUntilNextRelevantMeeting,
   DEFAULT_HOMEPAGE_FORCE_STALE_THRESHOLD_MS,
+  DEFAULT_HOMEPAGE_UPCOMING_MEETING_GUARD_MS,
 } from "../src/utils/homepage-reload-watchdog.js";
 import type { Meeting } from "../src/types.js";
 
@@ -483,16 +485,26 @@ describe("HomepageReloadWatchdog", () => {
     const persisted = watchdog.getPersistableState();
     const keys = Object.keys(persisted).sort();
     expect(keys).toEqual([
+      "baselineAtMs",
+      "baselineFingerprint",
+      "baselineNextMeetingStartMs",
       "consecutiveReloadsWithoutChange",
+      "lastFingerprint",
+      "lastFingerprintChangedAtMs",
       "lastReloadAtMs",
+      "regression",
       "reloadCountToday",
       "reloadDayKey",
     ]);
     expect(persisted.consecutiveReloadsWithoutChange).toBe(1);
     expect(persisted.reloadCountToday).toBe(1);
     expect(persisted.lastReloadAtMs).toBe(1_200);
-    // Should NOT contain fingerprint or pendingReload
-    expect(persisted).not.toHaveProperty("lastFingerprint");
+    expect(persisted.lastFingerprint).toBe(fingerprint);
+    expect(persisted.lastFingerprintChangedAtMs).toBe(0);
+    expect(persisted.baselineFingerprint).toBe(fingerprint);
+    expect(persisted.baselineAtMs).toBe(1_200);
+    expect(persisted.regression).toBeNull();
+    // Runtime-only flags stay out of the persisted state
     expect(persisted).not.toHaveProperty("pendingReload");
   });
 
@@ -542,5 +554,403 @@ describe("HomepageReloadWatchdog", () => {
     });
     expect(result.action).toBe("reload");
     expect(result.consecutiveReloadsWithoutChange).toBe(1); // fresh start
+  });
+});
+
+describe("msUntilNextRelevantMeeting", () => {
+  it("returns null when there are no meetings", () => {
+    expect(msUntilNextRelevantMeeting([], 0)).toBeNull();
+  });
+
+  it("ignores meetings that already ended", () => {
+    const ended = meeting({
+      beginTime: new Date(1_000),
+      endTime: new Date(2_000),
+    });
+    expect(msUntilNextRelevantMeeting([ended], 3_000)).toBeNull();
+  });
+
+  it("returns time until the earliest upcoming meeting", () => {
+    const near = meeting({
+      callId: "aaa-bbbb-ccc",
+      beginTime: new Date(5_000),
+      endTime: new Date(6_000),
+    });
+    const far = meeting({
+      callId: "xxx-yyyy-zzz",
+      beginTime: new Date(9_000),
+      endTime: new Date(10_000),
+    });
+    expect(msUntilNextRelevantMeeting([far, near], 1_000)).toBe(4_000);
+  });
+
+  it("returns a negative value for a meeting in progress", () => {
+    const ongoing = meeting({
+      beginTime: new Date(1_000),
+      endTime: new Date(10_000),
+    });
+    expect(msUntilNextRelevantMeeting([ongoing], 3_000)).toBe(-2_000);
+  });
+});
+
+describe("HomepageReloadWatchdog upcoming-meeting guard", () => {
+  const guardConfig = {
+    staleThresholdMs: 1_000,
+    backoffScheduleMs: [1_000, 2_000, 4_000],
+    dailyReloadLimit: 5,
+    getDayKey: () => "day",
+    upcomingMeetingGuardMs: 2_000,
+    forceStaleThresholdMs: 5_000,
+  };
+  const fingerprint = createMeetingsFingerprint([meeting()]);
+
+  it("exports a 45-minute default guard window", () => {
+    expect(DEFAULT_HOMEPAGE_UPCOMING_MEETING_GUARD_MS).toBe(45 * 60 * 1000);
+  });
+
+  it("defers a stale reload when the next meeting starts within the guard window", () => {
+    const watchdog = createHomepageReloadWatchdog(guardConfig);
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    const guarded = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+      msUntilNextMeeting: 1_500,
+    });
+    expect(guarded.action).toBe("none");
+    expect(guarded.reason).toBe("upcoming_meeting");
+  });
+
+  it("guards while a meeting is in progress (negative msUntilNextMeeting)", () => {
+    const watchdog = createHomepageReloadWatchdog(guardConfig);
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    const guarded = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+      msUntilNextMeeting: -100,
+    });
+    expect(guarded.action).toBe("none");
+    expect(guarded.reason).toBe("upcoming_meeting");
+  });
+
+  it("reloads when the next meeting is beyond the guard window or unknown", () => {
+    const watchdog = createHomepageReloadWatchdog(guardConfig);
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    const farMeeting = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+      msUntilNextMeeting: 10_000,
+    });
+    expect(farMeeting.action).toBe("reload");
+
+    const other = createHomepageReloadWatchdog(guardConfig);
+    other.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+    const unknown = other.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(unknown.action).toBe("reload");
+  });
+
+  it("guard overrides force_stale in foreground", () => {
+    const watchdog = createHomepageReloadWatchdog(guardConfig);
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: true });
+
+    const guarded = watchdog.evaluate({
+      fingerprint,
+      nowMs: 6_000, // beyond forceStaleThresholdMs (5_000)
+      isHomepage: true,
+      isForeground: true,
+      msUntilNextMeeting: 1_000,
+    });
+    expect(guarded.action).toBe("none");
+    expect(guarded.reason).toBe("upcoming_meeting");
+  });
+
+  it("does not consume backoff or daily counters while guarded", () => {
+    const watchdog = createHomepageReloadWatchdog(guardConfig);
+    watchdog.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_200,
+      isHomepage: true,
+      isForeground: false,
+      msUntilNextMeeting: 1_500,
+    });
+
+    const afterGuard = watchdog.evaluate({
+      fingerprint,
+      nowMs: 1_300,
+      isHomepage: true,
+      isForeground: false,
+      msUntilNextMeeting: 10_000,
+    });
+    expect(afterGuard.action).toBe("reload");
+    expect(afterGuard.backoffMs).toBe(1_000); // still at level 0
+    expect(afterGuard.reloadCountToday).toBe(1);
+  });
+});
+
+describe("HomepageReloadWatchdog fingerprint persistence", () => {
+  const persistConfig = {
+    staleThresholdMs: 1_000,
+    backoffScheduleMs: [1_000, 2_000, 4_000],
+    dailyReloadLimit: 5,
+    getDayKey: () => "day",
+  };
+  const fingerprint = createMeetingsFingerprint([meeting()]);
+
+  it("staleness survives a page reload via restored fingerprint state", () => {
+    const first = createHomepageReloadWatchdog(persistConfig);
+    first.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+    first.evaluate({ fingerprint, nowMs: 100, isHomepage: true, isForeground: false });
+
+    const second = createHomepageReloadWatchdog({
+      ...persistConfig,
+      restoredState: first.getPersistableState(),
+    });
+
+    // Same fingerprint after reload: staleness clock keeps running from t=0
+    // instead of re-initializing, so the stale reload fires immediately.
+    const result = second.evaluate({
+      fingerprint,
+      nowMs: 1_500,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(result.action).toBe("reload");
+    expect(result.staleForMs).toBe(1_500);
+  });
+
+  it("a different fingerprint after restore counts as a healthy change", () => {
+    const first = createHomepageReloadWatchdog(persistConfig);
+    first.evaluate({ fingerprint, nowMs: 0, isHomepage: true, isForeground: false });
+
+    const second = createHomepageReloadWatchdog({
+      ...persistConfig,
+      restoredState: first.getPersistableState(),
+    });
+    const changed = second.evaluate({
+      fingerprint: createMeetingsFingerprint([meeting({ title: "Other" })]),
+      nowMs: 200,
+      isHomepage: true,
+      isForeground: false,
+    });
+    expect(changed.reason).toBe("fingerprint_changed");
+  });
+});
+
+describe("HomepageReloadWatchdog empty-regression recovery", () => {
+  const rConfig = {
+    staleThresholdMs: 1_000,
+    backoffScheduleMs: [1_000, 2_000, 4_000],
+    dailyReloadLimit: 5,
+    getDayKey: () => "day",
+    upcomingMeetingGuardMs: 2_000,
+    regressionArmWindowMs: 500,
+    regressionConfirmChecks: 3,
+    regressionRetryCooldownMs: 300,
+    regressionMaxSilentRetries: 2,
+    regressionFocusLeadMs: 900,
+    regressionFocusGraceMs: 600,
+  };
+  const fp = createMeetingsFingerprint([meeting()]);
+  const emptyFp = createMeetingsFingerprint([]);
+
+  function base(nowMs: number, fingerprint: string) {
+    return { fingerprint, nowMs, isHomepage: true, isForeground: false };
+  }
+
+  it("arms after restore and retries silently once empties are confirmed", () => {
+    const before = createHomepageReloadWatchdog(rConfig);
+    before.evaluate({ ...base(0, fp), msUntilNextMeeting: 10_000 });
+    before.evaluate({ ...base(100, fp), msUntilNextMeeting: 9_900 });
+
+    const after = createHomepageReloadWatchdog({
+      ...rConfig,
+      restoredState: before.getPersistableState(),
+    });
+
+    const e1 = after.evaluate(base(400, emptyFp));
+    expect(e1.action).toBe("none");
+    expect(e1.reason).toBe("empty_regression_waiting");
+
+    const e2 = after.evaluate(base(500, emptyFp));
+    expect(e2.action).toBe("none");
+    expect(e2.reason).toBe("empty_regression_waiting");
+
+    const e3 = after.evaluate(base(600, emptyFp));
+    expect(e3.action).toBe("reload");
+    expect(e3.reason).toBe("empty_regression");
+    expect(e3.focus).toBe(false);
+    expect(after.hasOpenEmptyRegression()).toBe(true);
+  });
+
+  it("does not arm when the restored baseline is stale", () => {
+    const before = createHomepageReloadWatchdog(rConfig);
+    before.evaluate({ ...base(0, fp), msUntilNextMeeting: 10_000 });
+
+    const after = createHomepageReloadWatchdog({
+      ...rConfig,
+      restoredState: before.getPersistableState(),
+    });
+
+    // First empty arrives past the arm window → legit empty adoption
+    const e1 = after.evaluate(base(700, emptyFp));
+    expect(e1.reason).toBe("fingerprint_changed");
+    expect(after.hasOpenEmptyRegression()).toBe(false);
+  });
+
+  it("does not arm for in-page transitions to empty without a reload", () => {
+    const watchdog = createHomepageReloadWatchdog(rConfig);
+    watchdog.evaluate({ ...base(0, fp), msUntilNextMeeting: 10_000 });
+
+    const e1 = watchdog.evaluate(base(100, emptyFp));
+    expect(e1.reason).toBe("fingerprint_changed");
+
+    const e2 = watchdog.evaluate(base(200, emptyFp));
+    expect(e2.reason).toBe("not_stale");
+    expect(watchdog.hasOpenEmptyRegression()).toBe(false);
+  });
+
+  it("arms in-page when its own reload precedes the empties (extension path)", () => {
+    const watchdog = createHomepageReloadWatchdog(rConfig);
+    watchdog.evaluate({ ...base(0, fp), msUntilNextMeeting: 6_000 });
+
+    const reload = watchdog.evaluate({ ...base(1_200, fp), msUntilNextMeeting: 4_800 });
+    expect(reload.action).toBe("reload");
+
+    watchdog.evaluate(base(1_500, emptyFp));
+    watchdog.evaluate(base(1_800, emptyFp));
+    const e3 = watchdog.evaluate(base(2_100, emptyFp));
+    expect(e3.action).toBe("reload");
+    expect(e3.reason).toBe("empty_regression");
+    expect(watchdog.hasOpenEmptyRegression()).toBe(true);
+  });
+
+  it("escalates: silent retries with cooldown, then focused near meeting start, then visible", () => {
+    const watchdog = createHomepageReloadWatchdog(rConfig);
+    // Meeting starts at t=6_000 (captured in the baseline)
+    watchdog.evaluate({ ...base(0, fp), msUntilNextMeeting: 6_000 });
+    const staleReload = watchdog.evaluate({ ...base(1_200, fp), msUntilNextMeeting: 4_800 });
+    expect(staleReload.action).toBe("reload");
+    const consecutiveBefore = staleReload.consecutiveReloadsWithoutChange;
+
+    watchdog.evaluate(base(1_500, emptyFp));
+    watchdog.evaluate(base(1_800, emptyFp));
+    const silent1 = watchdog.evaluate(base(2_100, emptyFp));
+    expect(silent1.reason).toBe("empty_regression");
+
+    // Cooldown (300ms) not yet elapsed
+    const waiting = watchdog.evaluate(base(2_200, emptyFp));
+    expect(waiting.action).toBe("none");
+    expect(waiting.reason).toBe("empty_regression_waiting");
+
+    const silent2 = watchdog.evaluate(base(2_500, emptyFp));
+    expect(silent2.reason).toBe("empty_regression");
+
+    // Silent retries exhausted (max 2)
+    const exhausted = watchdog.evaluate(base(2_900, emptyFp));
+    expect(exhausted.action).toBe("none");
+    expect(exhausted.reason).toBe("empty_regression_waiting");
+
+    // Inside the focus window [5_100, 6_600] → focused reload, once
+    const focused = watchdog.evaluate(base(5_200, emptyFp));
+    expect(focused.action).toBe("reload");
+    expect(focused.reason).toBe("empty_regression_focused");
+    expect(focused.focus).toBe(true);
+
+    const afterFocused = watchdog.evaluate(base(5_300, emptyFp));
+    expect(afterFocused.reason).toBe("empty_regression_waiting");
+
+    // Page becomes visible → one visible retry
+    const visible = watchdog.evaluate({ ...base(5_400, emptyFp), isVisible: true });
+    expect(visible.action).toBe("reload");
+    expect(visible.reason).toBe("empty_regression_visible");
+    expect(visible.focus).toBe(false);
+
+    const afterVisible = watchdog.evaluate({ ...base(5_500, emptyFp), isVisible: true });
+    expect(afterVisible.reason).toBe("empty_regression_waiting");
+
+    // Regression retries never escalate the stale-reload backoff
+    expect(afterVisible.consecutiveReloadsWithoutChange).toBe(consecutiveBefore);
+
+    // A healthy parse closes the episode
+    const recovered = watchdog.evaluate({
+      ...base(5_600, createMeetingsFingerprint([meeting({ title: "Other" })])),
+      msUntilNextMeeting: 400,
+    });
+    expect(recovered.reason).toBe("fingerprint_changed");
+    expect(watchdog.hasOpenEmptyRegression()).toBe(false);
+  });
+
+  it("prefers a visible retry as the first attempt when the page is visible", () => {
+    const watchdog = createHomepageReloadWatchdog(rConfig);
+    watchdog.evaluate({ ...base(0, fp), msUntilNextMeeting: 6_000 });
+    const reload = watchdog.evaluate({ ...base(1_200, fp), msUntilNextMeeting: 4_800 });
+    expect(reload.action).toBe("reload");
+
+    watchdog.evaluate({ ...base(1_500, emptyFp), isVisible: true });
+    watchdog.evaluate({ ...base(1_800, emptyFp), isVisible: true });
+    const first = watchdog.evaluate({ ...base(2_100, emptyFp), isVisible: true });
+    expect(first.action).toBe("reload");
+    expect(first.reason).toBe("empty_regression_visible");
+  });
+
+  it("regression retries bypass the daily reload limit", () => {
+    const watchdog = createHomepageReloadWatchdog({ ...rConfig, dailyReloadLimit: 1 });
+    watchdog.evaluate({ ...base(0, fp), msUntilNextMeeting: 6_000 });
+    const reload = watchdog.evaluate({ ...base(1_200, fp), msUntilNextMeeting: 4_800 });
+    expect(reload.action).toBe("reload");
+    expect(reload.reloadCountToday).toBe(1); // daily limit reached
+
+    watchdog.evaluate(base(1_500, emptyFp));
+    watchdog.evaluate(base(1_800, emptyFp));
+    const retry = watchdog.evaluate(base(2_100, emptyFp));
+    expect(retry.action).toBe("reload");
+    expect(retry.reason).toBe("empty_regression");
+  });
+
+  it("an open episode survives persistence across reloads with its retry budget", () => {
+    const first = createHomepageReloadWatchdog(rConfig);
+    first.evaluate({ ...base(0, fp), msUntilNextMeeting: 6_000 });
+    first.evaluate({ ...base(1_200, fp), msUntilNextMeeting: 4_800 });
+    first.evaluate(base(1_500, emptyFp));
+    first.evaluate(base(1_800, emptyFp));
+    const silent1 = first.evaluate(base(2_100, emptyFp));
+    expect(silent1.reason).toBe("empty_regression");
+
+    const second = createHomepageReloadWatchdog({
+      ...rConfig,
+      restoredState: first.getPersistableState(),
+    });
+    expect(second.hasOpenEmptyRegression()).toBe(true);
+
+    // Empty confirmation restarts per page load, even though the streak start
+    // is now beyond the arm window (the episode itself keeps it armed)
+    second.evaluate(base(2_200, emptyFp));
+    second.evaluate(base(2_250, emptyFp));
+    const confirmed = second.evaluate(base(2_300, emptyFp));
+    // Cooldown from the restored lastReloadAtMs (2_100) still applies
+    expect(confirmed.reason).toBe("empty_regression_waiting");
+
+    const silent2 = second.evaluate(base(2_500, emptyFp));
+    expect(silent2.action).toBe("reload");
+    expect(silent2.reason).toBe("empty_regression");
+
+    // Budget exhausted
+    const waiting = second.evaluate(base(2_900, emptyFp));
+    expect(waiting.reason).toBe("empty_regression_waiting");
   });
 });

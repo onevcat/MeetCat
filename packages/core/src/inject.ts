@@ -75,6 +75,7 @@ import { INJECT_FALLBACK_SETTINGS } from "./inject-defaults.js";
 import {
   createHomepageReloadWatchdog,
   createMeetingsFingerprint,
+  msUntilNextRelevantMeeting,
   type HomepageReloadPersistableState,
 } from "./utils/homepage-reload-watchdog.js";
 import { createWakeDetector, type WakeDetector } from "./utils/wake-detector.js";
@@ -109,7 +110,6 @@ function restoreWatchdogState(): HomepageReloadPersistableState | undefined {
   try {
     const raw = sessionStorage.getItem(WATCHDOG_STORAGE_KEY);
     if (!raw) return undefined;
-    sessionStorage.removeItem(WATCHDOG_STORAGE_KEY);
     const parsed = JSON.parse(raw);
     if (
       typeof parsed === "object" && parsed !== null &&
@@ -872,6 +872,34 @@ function logHomepageRecovery(
     return;
   }
 
+  if (
+    evaluation.reason === "empty_regression" ||
+    evaluation.reason === "empty_regression_visible" ||
+    evaluation.reason === "empty_regression_focused"
+  ) {
+    logToDisk("warn", "homepage", "homepage.regression.retry",
+      "Homepage parsed empty after a navigation, retrying reload", {
+        source,
+        reason: evaluation.reason,
+        focus: evaluation.focus,
+        reloadCountToday: evaluation.reloadCountToday,
+      });
+    lastHomepageRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.reason === "empty_regression_waiting") {
+    const logKey = evaluation.reason;
+    if (lastHomepageRecoveryLogKey === logKey) return;
+    lastHomepageRecoveryLogKey = logKey;
+    logToDisk("warn", "homepage", "homepage.regression.waiting",
+      "Homepage still parses empty after a navigation, waiting to retry", {
+        source,
+        cooldownRemainingMs: evaluation.cooldownRemainingMs,
+      });
+    return;
+  }
+
   if (evaluation.action === "reload") {
     logToDisk("warn", "homepage", "homepage.reload.triggered", "Reloading stale homepage", {
       source,
@@ -881,6 +909,18 @@ function logHomepageRecovery(
       consecutiveReloadsWithoutChange: evaluation.consecutiveReloadsWithoutChange,
     });
     lastHomepageRecoveryLogKey = null;
+    return;
+  }
+
+  if (evaluation.reason === "upcoming_meeting") {
+    const logKey = evaluation.reason;
+    if (lastHomepageRecoveryLogKey === logKey) return;
+    lastHomepageRecoveryLogKey = logKey;
+    logToDisk("debug", "homepage", "homepage.reload.guarded",
+      "Stale homepage reload deferred: next meeting is close", {
+        source,
+        staleForMs: evaluation.staleForMs,
+      });
     return;
   }
 
@@ -937,13 +977,17 @@ function evaluateHomepageRecovery(
     nowMs,
     isHomepage: true,
     isForeground: isHomepageForeground(),
+    isVisible: document.visibilityState === "visible",
+    msUntilNextMeeting: msUntilNextRelevantMeeting(meetings, nowMs),
   });
 
   logHomepageRecovery(source, fingerprint, evaluation);
+  // Persist continuously so the fingerprint baseline survives navigations we
+  // did not initiate (Meet SPA navigations, auth redirects)
+  saveWatchdogState();
   if (evaluation.action !== "reload") return false;
 
-  saveWatchdogState();
-  void safeNavigateHome("homepage-recovery:" + source);
+  void safeNavigateHome("homepage-recovery:" + source, evaluation.focus);
   return true;
 }
 
@@ -956,7 +1000,14 @@ function attachHomepageRecoveryListeners(): void {
   if (homepageVisibilityHandler || homepageBlurHandler) return;
 
   homepageVisibilityHandler = () => {
-    if (document.visibilityState === "visible") return;
+    if (document.visibilityState === "visible") {
+      // Reloads while visible are the ones observed to bring back a
+      // parseable homepage — retry a broken page as soon as the user looks
+      if (homepageReloadWatchdog.hasOpenEmptyRegression()) {
+        evaluateHomepageRecovery("visibilitychange-visible", lastMeetings);
+      }
+      return;
+    }
     flushPendingHomepageReload("visibilitychange");
   };
   homepageBlurHandler = () => {
