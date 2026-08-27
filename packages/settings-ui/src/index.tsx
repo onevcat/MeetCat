@@ -301,6 +301,9 @@ export function SettingsView({
   const logCollectionEnabled =
     settings.tauri?.logCollectionEnabled ?? DEFAULT_TAURI_SETTINGS.logCollectionEnabled;
   const logLevel = settings.tauri?.logLevel ?? DEFAULT_TAURI_SETTINGS.logLevel;
+  const diagnosticSnapshotsEnabled =
+    settings.tauri?.diagnosticSnapshotsEnabled ??
+    DEFAULT_TAURI_SETTINGS.diagnosticSnapshotsEnabled;
 
   const titleExcludeFilters = settings.titleExcludeFilters ?? [];
 
@@ -681,6 +684,29 @@ export function SettingsView({
                 <option value="trace">Trace</option>
               </select>
               <p className="form-hint">{t("settings.logLevelHint")}</p>
+            </div>
+
+            <div className="form-group">
+              <div className="form-checkbox-group">
+                <input
+                  type="checkbox"
+                  id="diagnosticSnapshotsEnabled"
+                  className="form-checkbox"
+                  checked={diagnosticSnapshotsEnabled}
+                  onChange={(e) =>
+                    updateTauriSettings({
+                      diagnosticSnapshotsEnabled: e.target.checked,
+                    })
+                  }
+                />
+                <label
+                  htmlFor="diagnosticSnapshotsEnabled"
+                  className="form-checkbox-label"
+                >
+                  {t("settings.diagnosticSnapshots")}
+                </label>
+              </div>
+              <p className="form-hint">{t("settings.diagnosticSnapshotsHint")}</p>
             </div>
           </section>
         )}

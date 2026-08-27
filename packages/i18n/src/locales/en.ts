@@ -51,6 +51,9 @@ const en = {
     logLevel: "Log level",
     logLevelHint: "Logs at or above this level will be recorded",
     openLogFolder: "Open log folder",
+    diagnosticSnapshots: "Save diagnostic page snapshots",
+    diagnosticSnapshotsHint:
+      "When Meet parsing fails, saves a snapshot of the page DOM locally (script contents removed). May include meeting titles; never uploaded.",
 
     loading: "Loading settings...",
     saving: "Saving...",

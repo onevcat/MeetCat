@@ -78,6 +78,7 @@ import {
   type HomepageReloadPersistableState,
 } from "./utils/homepage-reload-watchdog.js";
 import { createWakeDetector, type WakeDetector } from "./utils/wake-detector.js";
+import { captureSnapshotHtml } from "./utils/dom-snapshot.js";
 
 // Module state
 let settings: TauriSettings | null = null;
@@ -321,15 +322,16 @@ let zeroCardChecks = 0;
 
 /**
  * Capture the live DOM when detection fails so a redesign can be diagnosed
- * from real markup. Debug builds only — the Rust side rejects the write in
- * release builds, so this stays a best-effort no-op for end users.
+ * from real markup. Script contents are stripped before sending. The Rust
+ * side rejects the write in release builds unless the user opted in via the
+ * diagnostic-snapshots setting, so this stays best-effort for end users.
  */
 function attemptDomSnapshot(reason: string): void {
   if (domSnapshotAttempted) return;
   domSnapshotAttempted = true;
   if (!isTauriEnvironment()) return;
 
-  saveDomSnapshot(document.documentElement.outerHTML, reason)
+  saveDomSnapshot(captureSnapshotHtml(document), reason)
     .then((path) => {
       logToConsole("info", "[MeetCat] DOM snapshot saved", { reason, path });
       logToDisk("info", "inject", "snapshot.saved", "DOM snapshot saved", {
