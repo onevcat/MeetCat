@@ -48,6 +48,7 @@ const tauriMocks = vi.hoisted(() => ({
   reportMeetingClosed: vi.fn().mockResolvedValue(undefined),
   logEvent: vi.fn().mockResolvedValue(undefined),
   requestNavigateHome: vi.fn().mockResolvedValue(undefined),
+  saveDomSnapshot: vi.fn().mockResolvedValue("/tmp/snapshot.html"),
 }));
 
 vi.mock("../src/parser/index.js", () => parserMocks);
@@ -784,5 +785,107 @@ describe("watchdog sessionStorage persistence", () => {
     await flushPromises();
 
     module.cleanup();
+  });
+});
+
+describe("post-load re-parse burst", () => {
+  const meeting = {
+    callId: "abc123_20260827T060000Z",
+    url: "https://meet.google.com/lookup/abc123_20260827T060000Z",
+    title: "Team Time",
+    displayTime: "15:00",
+    beginTime: new Date(Date.now() + 60 * 60 * 1000),
+    endTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    eventId: "abc123",
+    startsInMinutes: 60,
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    tauriMocks.isTauriEnvironment.mockReturnValue(true);
+    tauriMocks.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS });
+    tauriMocks.onCheckMeetings.mockResolvedValue(() => {});
+    tauriMocks.onNavigateAndJoin.mockResolvedValue(() => {});
+    tauriMocks.onSettingsChanged.mockResolvedValue(() => {});
+    tauriMocks.onUpdateAvailable.mockResolvedValue(() => {});
+    tauriMocks.onUpdatePromptPreferenceChanged.mockResolvedValue(() => {});
+    tauriMocks.getUpdatePromptPreference.mockResolvedValue({});
+    tauriMocks.getUpdateInfo.mockResolvedValue(null);
+    parserMocks.parseMeetingCards.mockReturnValue({ meetings: [], cardsFound: 0 });
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    document.body.innerHTML = "<div></div>";
+    window.history.pushState({}, "", "/");
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    sessionStorage.clear();
+  });
+
+  it("re-parses on a short backoff until cards appear, then stops", async () => {
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1); // init pass
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(2); // burst #1
+
+    // Meet finishes rendering before the next attempt
+    parserMocks.parseMeetingCards.mockReturnValue({
+      meetings: [meeting],
+      cardsFound: 1,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(3); // burst #2
+    expect(tauriMocks.reportMeetings).toHaveBeenLastCalledWith([meeting]);
+
+    // Cards found: remaining attempts are cancelled
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(3);
+
+    module.cleanup();
+  });
+
+  it("does not burst when the init parse already finds cards", async () => {
+    parserMocks.parseMeetingCards.mockReturnValue({
+      meetings: [meeting],
+      cardsFound: 1,
+    });
+
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1);
+
+    module.cleanup();
+  });
+
+  it("empty burst parses trigger neither the snapshot nor a recovery reload", async () => {
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Exhaust every burst attempt with an empty page
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(5); // init + 4 bursts
+    expect(tauriMocks.saveDomSnapshot).not.toHaveBeenCalled();
+    expect(tauriMocks.requestNavigateHome).not.toHaveBeenCalled();
+
+    module.cleanup();
+  });
+
+  it("cleanup cancels a pending burst attempt", async () => {
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1);
+
+    module.cleanup();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1);
   });
 });
