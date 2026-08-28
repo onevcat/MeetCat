@@ -954,3 +954,158 @@ describe("HomepageReloadWatchdog empty-regression recovery", () => {
     expect(waiting.reason).toBe("empty_regression_waiting");
   });
 });
+
+describe("HomepageReloadWatchdog external navigation + post-load rescue", () => {
+  const xConfig = {
+    staleThresholdMs: 1_000,
+    backoffScheduleMs: [1_000, 2_000, 4_000],
+    dailyReloadLimit: 5,
+    getDayKey: () => "day",
+    regressionConfirmChecks: 3,
+    postLoadRescueWindowMs: 5_000,
+  };
+  const fp = createMeetingsFingerprint([meeting()]);
+  const emptyFp = createMeetingsFingerprint([]);
+
+  function base(nowMs: number, fingerprint: string) {
+    return { fingerprint, nowMs, isHomepage: true, isForeground: false };
+  }
+
+  // Persisted state matching the observed overnight shape: long-empty page,
+  // escalated failure streak, recent reload holding an active cooldown.
+  function overnightState(overrides: Record<string, unknown> = {}) {
+    return {
+      consecutiveReloadsWithoutChange: 2,
+      lastReloadAtMs: 9_500,
+      reloadCountToday: 3,
+      reloadDayKey: "day",
+      lastFingerprint: emptyFp,
+      lastFingerprintChangedAtMs: 1_000,
+      baselineFingerprint: null,
+      baselineAtMs: null,
+      baselineNextMeetingStartMs: null,
+      regression: null,
+      ...overrides,
+    };
+  }
+
+  it("an external load resets the reload-failure streak", () => {
+    const restored = overnightState({
+      lastFingerprint: fp,
+      lastReloadAtMs: 1_500,
+    });
+
+    const selfLoad = createHomepageReloadWatchdog({
+      ...xConfig,
+      restoredState: restored,
+    });
+    const selfReload = selfLoad.evaluate(base(10_000, fp));
+    expect(selfReload.action).toBe("reload");
+    expect(selfReload.backoffMs).toBe(4_000); // streak preserved: level 2
+
+    const externalLoad = createHomepageReloadWatchdog({
+      ...xConfig,
+      restoredState: restored,
+      externalNavigation: true,
+    });
+    const externalReload = externalLoad.evaluate(base(10_000, fp));
+    expect(externalReload.action).toBe("reload");
+    expect(externalReload.backoffMs).toBe(1_000); // streak reset: level 0
+  });
+
+  it("rescues a stale empty page past the cooldown after confirm checks", () => {
+    const watchdog = createHomepageReloadWatchdog({
+      ...xConfig,
+      restoredState: overnightState(),
+      externalNavigation: true,
+    });
+
+    const e1 = watchdog.evaluate(base(10_000, emptyFp));
+    expect(e1.action).toBe("none");
+    expect(e1.reason).toBe("cooldown");
+
+    const e2 = watchdog.evaluate(base(10_030, emptyFp));
+    expect(e2.reason).toBe("cooldown");
+
+    const e3 = watchdog.evaluate(base(10_060, emptyFp));
+    expect(e3.action).toBe("reload");
+    expect(e3.reason).toBe("post_load_empty");
+    // Error recovery: the rescue does not escalate the stale backoff
+    expect(e3.consecutiveReloadsWithoutChange).toBe(0);
+    expect(e3.reloadCountToday).toBe(4);
+  });
+
+  it("the rescue is one-shot per page load", () => {
+    const watchdog = createHomepageReloadWatchdog({
+      ...xConfig,
+      restoredState: overnightState(),
+      externalNavigation: true,
+    });
+
+    watchdog.evaluate(base(10_000, emptyFp));
+    watchdog.evaluate(base(10_030, emptyFp));
+    const rescued = watchdog.evaluate(base(10_060, emptyFp));
+    expect(rescued.reason).toBe("post_load_empty");
+
+    const after = watchdog.evaluate(base(10_090, emptyFp));
+    expect(after.action).toBe("none");
+    expect(after.reason).toBe("cooldown");
+  });
+
+  it("the rescue expires outside its window", () => {
+    const watchdog = createHomepageReloadWatchdog({
+      ...xConfig,
+      restoredState: overnightState({ lastReloadAtMs: 19_500 }),
+      externalNavigation: true,
+    });
+
+    // Window opens at the first evaluate (10_000) and closes at 15_000
+    watchdog.evaluate(base(10_000, emptyFp));
+    watchdog.evaluate(base(10_030, emptyFp));
+    const late = watchdog.evaluate(base(20_030, emptyFp));
+    expect(late.action).toBe("none");
+    expect(late.reason).toBe("cooldown");
+  });
+
+  it("does not rescue after a self-initiated load", () => {
+    const watchdog = createHomepageReloadWatchdog({
+      ...xConfig,
+      restoredState: overnightState(),
+    });
+
+    watchdog.evaluate(base(10_000, emptyFp));
+    watchdog.evaluate(base(10_030, emptyFp));
+    const e3 = watchdog.evaluate(base(10_060, emptyFp));
+    expect(e3.action).toBe("none");
+    expect(e3.reason).toBe("cooldown");
+    expect(e3.backoffMs).toBe(4_000); // streak preserved too
+  });
+
+  it("the rescue respects the daily reload limit", () => {
+    const watchdog = createHomepageReloadWatchdog({
+      ...xConfig,
+      restoredState: overnightState({ reloadCountToday: 5 }),
+      externalNavigation: true,
+    });
+
+    watchdog.evaluate(base(10_000, emptyFp));
+    watchdog.evaluate(base(10_030, emptyFp));
+    const e3 = watchdog.evaluate(base(10_060, emptyFp));
+    expect(e3.action).toBe("none");
+  });
+
+  it("never rescues on a brand-new session without restored state", () => {
+    const watchdog = createHomepageReloadWatchdog({
+      ...xConfig,
+      externalNavigation: true,
+    });
+
+    // Legitimately empty schedule on first launch: stays quiet even once
+    // the empty fingerprint turns stale within the rescue window
+    watchdog.evaluate(base(0, emptyFp));
+    watchdog.evaluate(base(1_100, emptyFp));
+    watchdog.evaluate(base(1_200, emptyFp));
+    const e4 = watchdog.evaluate(base(1_300, emptyFp));
+    expect(e4.reason).not.toBe("post_load_empty");
+  });
+});

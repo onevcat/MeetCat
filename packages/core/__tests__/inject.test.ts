@@ -737,7 +737,9 @@ describe("watchdog sessionStorage persistence", () => {
   });
 
   it("restores watchdog state from sessionStorage on init and keeps persisting", async () => {
-    // Pre-seed sessionStorage with persisted state
+    // Pre-seed sessionStorage with persisted state, marking the page load as
+    // self-initiated so the failure streak survives (external loads reset it)
+    sessionStorage.setItem("__meetcat_self_nav_at", String(Date.now()));
     sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -757,6 +759,29 @@ describe("watchdog sessionStorage persistence", () => {
     expect(raw).not.toBeNull();
     const persisted = JSON.parse(raw as string);
     expect(persisted.consecutiveReloadsWithoutChange).toBe(3);
+    expect(persisted.reloadCountToday).toBe(5);
+
+    module.cleanup();
+  });
+
+  it("an external page load resets the persisted failure streak", async () => {
+    // No self-navigation marker: this load came from a login redirect or a
+    // user navigation, which invalidates the previous page's streak
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        consecutiveReloadsWithoutChange: 3,
+        lastReloadAtMs: Date.now() - 1000,
+        reloadCountToday: 5,
+        reloadDayKey: new Date().toISOString().slice(0, 10),
+      })
+    );
+
+    const module = await import("../src/inject.js");
+    await flushPromises();
+
+    const persisted = JSON.parse(sessionStorage.getItem(STORAGE_KEY) as string);
+    expect(persisted.consecutiveReloadsWithoutChange).toBe(0);
     expect(persisted.reloadCountToday).toBe(5);
 
     module.cleanup();
@@ -887,5 +912,256 @@ describe("post-load re-parse burst", () => {
     module.cleanup();
     await vi.advanceTimersByTimeAsync(20_000);
     expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("diagnostic snapshot hardening", () => {
+  type CheckCallback = (payload: {
+    checkId: number;
+    intervalSeconds: number;
+    emittedAtMs: number;
+  }) => Promise<void>;
+  let checkCb: CheckCallback;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    tauriMocks.isTauriEnvironment.mockReturnValue(true);
+    tauriMocks.getSettings.mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      tauri: { ...DEFAULT_TAURI_SETTINGS, logCollectionEnabled: true, logLevel: "debug" },
+    });
+    tauriMocks.onCheckMeetings.mockImplementation(async (cb: CheckCallback) => {
+      checkCb = cb;
+      return () => {};
+    });
+    tauriMocks.onNavigateAndJoin.mockResolvedValue(() => {});
+    tauriMocks.onSettingsChanged.mockResolvedValue(() => {});
+    tauriMocks.onUpdateAvailable.mockResolvedValue(() => {});
+    tauriMocks.onUpdatePromptPreferenceChanged.mockResolvedValue(() => {});
+    tauriMocks.getUpdatePromptPreference.mockResolvedValue({});
+    tauriMocks.getUpdateInfo.mockResolvedValue(null);
+    parserMocks.parseMeetingCards.mockReturnValue({ meetings: [], cardsFound: 0 });
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    document.body.innerHTML = "<div></div>";
+    window.history.pushState({}, "", "/");
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    sessionStorage.clear();
+  });
+
+  async function driveChecks(count: number, startId = 1): Promise<void> {
+    for (let i = 0; i < count; i += 1) {
+      await checkCb({
+        checkId: startId + i,
+        intervalSeconds: 30,
+        emittedAtMs: Date.now(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+  }
+
+  it("a synchronous snapshot throw is logged and does not abort the check", async () => {
+    tauriMocks.saveDomSnapshot.mockImplementation(() => {
+      throw new Error("payload too large");
+    });
+
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Second zero-card check crosses the snapshot threshold
+    await driveChecks(2);
+
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "snapshot.failed",
+        context: expect.objectContaining({
+          sync: true,
+          error: "payload too large",
+        }),
+      })
+    );
+    // The check that attempted the snapshot still completed its report
+    expect(tauriMocks.reportMeetings).toHaveBeenCalledTimes(3); // init + 2 checks
+
+    module.cleanup();
+  });
+
+  it("failed snapshot attempts retry with a bounded budget", async () => {
+    tauriMocks.saveDomSnapshot.mockImplementation(() => {
+      throw new Error("boom");
+    });
+
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+
+    await driveChecks(6);
+
+    // Attempts on checks 2..4, then the budget (3) is exhausted
+    expect(tauriMocks.saveDomSnapshot).toHaveBeenCalledTimes(3);
+
+    module.cleanup();
+  });
+
+  it("a successful snapshot stops further attempts", async () => {
+    tauriMocks.saveDomSnapshot.mockResolvedValue("/tmp/snapshot.html");
+
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+
+    await driveChecks(5);
+
+    expect(tauriMocks.saveDomSnapshot).toHaveBeenCalledTimes(1);
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "snapshot.saved" })
+    );
+
+    module.cleanup();
+  });
+
+  it("an async snapshot rejection is logged and retried", async () => {
+    tauriMocks.saveDomSnapshot.mockRejectedValue(new Error("disabled"));
+
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+
+    await driveChecks(3);
+
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "snapshot.failed",
+        context: expect.objectContaining({ error: "disabled" }),
+      })
+    );
+    expect(tauriMocks.saveDomSnapshot).toHaveBeenCalledTimes(2);
+
+    module.cleanup();
+  });
+});
+
+describe("visibility recheck", () => {
+  const meeting = {
+    callId: "abc123_20260828T060000Z",
+    url: "https://meet.google.com/lookup/abc123_20260828T060000Z",
+    title: "Team Time",
+    displayTime: "15:00",
+    beginTime: new Date(Date.now() + 60 * 60 * 1000),
+    endTime: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    eventId: "abc123",
+    startsInMinutes: 60,
+  };
+  let visibilityState = "visible";
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    tauriMocks.isTauriEnvironment.mockReturnValue(true);
+    tauriMocks.getSettings.mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      tauri: { ...DEFAULT_TAURI_SETTINGS, logCollectionEnabled: true, logLevel: "debug" },
+    });
+    tauriMocks.onCheckMeetings.mockResolvedValue(() => {});
+    tauriMocks.onNavigateAndJoin.mockResolvedValue(() => {});
+    tauriMocks.onSettingsChanged.mockResolvedValue(() => {});
+    tauriMocks.onUpdateAvailable.mockResolvedValue(() => {});
+    tauriMocks.onUpdatePromptPreferenceChanged.mockResolvedValue(() => {});
+    tauriMocks.getUpdatePromptPreference.mockResolvedValue({});
+    tauriMocks.getUpdateInfo.mockResolvedValue(null);
+    parserMocks.parseMeetingCards.mockReturnValue({ meetings: [], cardsFound: 0 });
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    document.body.innerHTML = "<div></div>";
+    window.history.pushState({}, "", "/");
+    sessionStorage.clear();
+    visibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibilityState,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (window as unknown as { __meetcatInitialized?: string }).__meetcatInitialized;
+    sessionStorage.clear();
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+  });
+
+  it("re-parses immediately when the page surfaces with no known meetings", async () => {
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Exhaust the post-load burst on an empty page: init + 4 bursts
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(5);
+
+    visibilityState = "hidden";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(5);
+
+    visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(6);
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "visibility.recheck",
+        context: expect.objectContaining({ trigger: "visibilitychange" }),
+      })
+    );
+
+    // A second transition within the debounce window is ignored
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(6);
+
+    // The recheck armed a fresh burst for Meet's post-focus render
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(7);
+
+    module.cleanup();
+  });
+
+  it("window focus triggers the same recheck", async () => {
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(5);
+
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(6);
+    expect(tauriMocks.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "visibility.recheck",
+        context: expect.objectContaining({ trigger: "window-focus" }),
+      })
+    );
+
+    module.cleanup();
+  });
+
+  it("does not recheck when meetings are already known", async () => {
+    parserMocks.parseMeetingCards.mockReturnValue({
+      meetings: [meeting],
+      cardsFound: 1,
+    });
+
+    const module = await import("../src/inject.js");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(parserMocks.parseMeetingCards).toHaveBeenCalledTimes(1);
+
+    module.cleanup();
   });
 });

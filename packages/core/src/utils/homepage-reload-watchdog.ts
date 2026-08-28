@@ -29,6 +29,15 @@ export const DEFAULT_HOMEPAGE_REGRESSION_RETRY_COOLDOWN_MS = 5 * MINUTE_MS;
 export const DEFAULT_HOMEPAGE_REGRESSION_MAX_SILENT_RETRIES = 2;
 export const DEFAULT_HOMEPAGE_REGRESSION_FOCUS_LEAD_MS = 15 * MINUTE_MS;
 export const DEFAULT_HOMEPAGE_REGRESSION_FOCUS_GRACE_MS = 10 * MINUTE_MS;
+/**
+ * Post-load rescue tuning. A page load we did not initiate (login redirect,
+ * user navigation) invalidates the reload-failure streak accumulated on the
+ * previous page — observed after an overnight forced re-login, where the
+ * escalated 2h cooldown kept blocking recovery of a fresh page that parsed
+ * zero cards for 43 minutes. Within this window after such a load, one stale
+ * empty page gets a recovery reload that bypasses the cooldown.
+ */
+export const DEFAULT_HOMEPAGE_POST_LOAD_RESCUE_WINDOW_MS = 10 * MINUTE_MS;
 
 export const EMPTY_MEETINGS_FINGERPRINT = "0:empty";
 
@@ -44,6 +53,7 @@ export type HomepageReloadReason =
   | "daily_limit"
   | "force_stale"
   | "reload"
+  | "post_load_empty"
   | "empty_regression"
   | "empty_regression_visible"
   | "empty_regression_focused"
@@ -80,6 +90,13 @@ export interface HomepageReloadWatchdogConfig {
   regressionMaxSilentRetries?: number;
   regressionFocusLeadMs?: number;
   regressionFocusGraceMs?: number;
+  /**
+   * The page load that created this instance was NOT initiated by MeetCat
+   * (login redirect, user navigation, first launch). Resets the reload-failure
+   * streak and arms a one-shot post-load rescue for a stale empty page.
+   */
+  externalNavigation?: boolean;
+  postLoadRescueWindowMs?: number;
   getDayKey?: (nowMs: number) => string;
   restoredState?: HomepageReloadPersistableState;
 }
@@ -250,6 +267,9 @@ export class HomepageReloadWatchdog {
   private restoredDisruption: boolean;
   private emptyStreak = 0;
   private emptyStreakStartMs: number | null = null;
+  private readonly postLoadRescueWindowMs: number;
+  private postLoadRescueArmed: boolean;
+  private postLoadRescueDeadlineMs: number | null = null;
 
   constructor(config: HomepageReloadWatchdogConfig = {}) {
     this.staleThresholdMs = Math.max(
@@ -294,14 +314,27 @@ export class HomepageReloadWatchdog {
       config.regressionFocusGraceMs ?? DEFAULT_HOMEPAGE_REGRESSION_FOCUS_GRACE_MS
     );
     this.getDayKey = config.getDayKey ?? defaultDayKey;
+    this.postLoadRescueWindowMs = Math.max(
+      0,
+      config.postLoadRescueWindowMs ?? DEFAULT_HOMEPAGE_POST_LOAD_RESCUE_WINDOW_MS
+    );
     const restored = config.restoredState;
+    // Rescue needs a previous page in this session (restored state): on a
+    // brand-new launch an empty parse means an empty schedule, not a page
+    // that lost its cards.
+    this.postLoadRescueArmed =
+      config.externalNavigation === true && restored !== undefined;
     this.restoredDisruption = restored !== undefined;
     this.state = {
       lastFingerprint: restoreStringOrNull(restored?.lastFingerprint),
       lastFingerprintChangedAtMs: restoreNumberOrNull(
         restored?.lastFingerprintChangedAtMs
       ),
-      consecutiveReloadsWithoutChange: restored?.consecutiveReloadsWithoutChange ?? 0,
+      // An external page load (login redirect, user navigation) invalidates
+      // the failure streak: it described a page state that no longer exists.
+      consecutiveReloadsWithoutChange: this.postLoadRescueArmed
+        ? 0
+        : restored?.consecutiveReloadsWithoutChange ?? 0,
       lastReloadAtMs: restoreNumberOrNull(restored?.lastReloadAtMs),
       pendingReload: false,
       reloadCountToday: restored?.reloadCountToday ?? 0,
@@ -347,6 +380,10 @@ export class HomepageReloadWatchdog {
 
   evaluate(input: HomepageReloadWatchdogInput): HomepageReloadWatchdogEvaluation {
     this.resetDailyCounterIfNeeded(input.nowMs);
+
+    if (this.postLoadRescueArmed && this.postLoadRescueDeadlineMs === null) {
+      this.postLoadRescueDeadlineMs = input.nowMs + this.postLoadRescueWindowMs;
+    }
 
     if (isEmptyFingerprint(input.fingerprint)) {
       if (this.emptyStreakStartMs === null) {
@@ -472,6 +509,30 @@ export class HomepageReloadWatchdog {
       });
     }
 
+    // One-shot rescue for a stale empty page right after an external load:
+    // the failure streak and its cooldown belong to the previous page, while
+    // this one (e.g. fresh from a forced re-login) never got a recovery try.
+    if (
+      isEmptyFingerprint(input.fingerprint) &&
+      this.postLoadRescueArmed &&
+      this.postLoadRescueDeadlineMs !== null &&
+      input.nowMs <= this.postLoadRescueDeadlineMs &&
+      this.emptyStreak >= this.regressionConfirmChecks &&
+      this.state.reloadCountToday < this.dailyReloadLimit
+    ) {
+      this.postLoadRescueArmed = false;
+      this.recordRecoveryReload(input.nowMs);
+      return this.createEvaluation({
+        action: "reload",
+        reason: "post_load_empty",
+        staleForMs,
+        backoffMs: this.getCurrentBackoffMs(),
+        cooldownRemainingMs: 0,
+        fingerprintChanged: false,
+        stateChanged: true,
+      });
+    }
+
     const backoffMs = this.getCurrentBackoffMs();
     const cooldownRemainingMs = this.getCooldownRemainingMs(input.nowMs, backoffMs);
     if (cooldownRemainingMs > 0) {
@@ -582,7 +643,7 @@ export class HomepageReloadWatchdog {
     // parseable DOM, so a visible page gets the first (and instant) retry.
     if (isVisible && !regression.visibleRetryDone) {
       regression.visibleRetryDone = true;
-      this.recordRegressionReload(input.nowMs);
+      this.recordRecoveryReload(input.nowMs);
       return this.createRegressionEvaluation("reload", "empty_regression_visible", {
         nowMs: input.nowMs,
         stateChanged: true,
@@ -591,7 +652,7 @@ export class HomepageReloadWatchdog {
 
     if (this.isWithinFocusWindow(input.nowMs) && !regression.focusedRetryDone) {
       regression.focusedRetryDone = true;
-      this.recordRegressionReload(input.nowMs);
+      this.recordRecoveryReload(input.nowMs);
       return this.createRegressionEvaluation("reload", "empty_regression_focused", {
         nowMs: input.nowMs,
         focus: true,
@@ -611,7 +672,7 @@ export class HomepageReloadWatchdog {
       cooldownRemainingMs === 0
     ) {
       regression.silentRetries += 1;
-      this.recordRegressionReload(input.nowMs);
+      this.recordRecoveryReload(input.nowMs);
       return this.createRegressionEvaluation("reload", "empty_regression", {
         nowMs: input.nowMs,
         stateChanged: true,
@@ -635,11 +696,12 @@ export class HomepageReloadWatchdog {
   }
 
   /**
-   * Regression retries are error recovery, not staleness maintenance: they
-   * bypass the backoff escalation and the daily limit (bounded instead by the
-   * per-episode retry budget), and they do not count as "no change" reloads.
+   * Regression retries and post-load rescues are error recovery, not
+   * staleness maintenance: they bypass the backoff escalation (regression
+   * retries also bypass the daily limit, bounded instead by the per-episode
+   * retry budget), and they do not count as "no change" reloads.
    */
-  private recordRegressionReload(nowMs: number): void {
+  private recordRecoveryReload(nowMs: number): void {
     this.state.pendingReload = false;
     this.state.lastReloadAtMs = nowMs;
     this.state.reloadCountToday += 1;
