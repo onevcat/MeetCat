@@ -69,7 +69,7 @@ import {
   type UpdateInfo,
   type UpdatePromptPreference,
 } from "./tauri-bridge.js";
-import type { Meeting } from "./types.js";
+import type { Meeting, ParseResult } from "./types.js";
 import { initI18n, changeLanguage, type LanguageSetting } from "@meetcat/i18n";
 import { INJECT_FALLBACK_SETTINGS } from "./inject-defaults.js";
 import {
@@ -141,6 +141,11 @@ let wakeDetector: WakeDetector | null = null;
 let wakeReloadTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let reloadInFlightSince: number | null = null;
 const RELOAD_IN_FLIGHT_TTL_MS = 30_000;
+
+// Cumulative deadlines (from homepage init) for the post-load re-parse burst
+const POST_LOAD_REPARSE_DELAYS_MS = [1_000, 2_000, 4_000, 8_000];
+let postLoadReparseTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let lastParseCardsFound = 0;
 
 async function safeNavigateHome(source: string, focus = false): Promise<void> {
   if (reloadInFlightSince !== null) {
@@ -693,8 +698,12 @@ async function initHomepage(): Promise<void> {
     }
   }
 
-  // Initial check
-  await checkAndReportMeetings({ source: "init" });
+  // Initial check; when it lands before Meet has rendered the schedule,
+  // follow up quickly instead of waiting for the next daemon tick
+  const initResult = await checkAndReportMeetings({ source: "init" });
+  if (initResult.cardsFound === 0) {
+    schedulePostLoadReparse();
+  }
 
   if (!isTauri || !hasCheckListener) {
     startFallbackInterval();
@@ -705,9 +714,9 @@ async function initHomepage(): Promise<void> {
  * Parse meetings from DOM and report to Rust backend
  */
 async function checkAndReportMeetings(meta: {
-  source?: "init" | "check-meetings" | "fallback-interval";
+  source?: "init" | "check-meetings" | "fallback-interval" | "post-load-reparse";
   checkId?: number;
-} = {}): Promise<void> {
+} = {}): Promise<ParseResult> {
   // Ensure wake detector is running — it may have been stopped by a failed reload
   if (!wakeDetector?.isRunning()) {
     startWakeDetector();
@@ -715,6 +724,7 @@ async function checkAndReportMeetings(meta: {
 
   const result = parseMeetingCards(document);
   lastMeetings = result.meetings;
+  lastParseCardsFound = result.cardsFound;
 
   logToConsole("info", "[MeetCat] Parsed meetings", {
     meetingsCount: result.meetings.length,
@@ -732,10 +742,15 @@ async function checkAndReportMeetings(meta: {
     hiddenReasons: result.hiddenReasons ?? {},
   });
 
+  // Empty parses right after a page load are expected (Meet renders its
+  // schedule asynchronously): init and re-parse burst passes feed neither
+  // the zero-card snapshot nor the recovery watchdog.
+  const isPostLoadPass =
+    meta.source === "init" || meta.source === "post-load-reparse";
+
   // Snapshot the DOM if the homepage repeatedly parses to zero cards
-  // (skip the init pass — Meet renders its schedule asynchronously)
   if (result.cardsFound === 0) {
-    if (meta.source !== "init") {
+    if (!isPostLoadPass) {
       zeroCardChecks += 1;
       if (zeroCardChecks >= 2) {
         attemptDomSnapshot("homepage-zero-cards");
@@ -745,8 +760,11 @@ async function checkAndReportMeetings(meta: {
     zeroCardChecks = 0;
   }
 
-  if (evaluateHomepageRecovery(meta.source ?? "unknown", result.meetings)) {
-    return;
+  if (
+    meta.source !== "post-load-reparse" &&
+    evaluateHomepageRecovery(meta.source ?? "unknown", result.meetings)
+  ) {
+    return result;
   }
 
   // Update overlay with next meeting
@@ -793,6 +811,59 @@ async function checkAndReportMeetings(meta: {
       checkId: meta.checkId,
     });
   }
+
+  return result;
+}
+
+/**
+ * Meet renders its schedule seconds after a page load, while the daemon only
+ * re-checks every 30s — without this, every launch or reload waits up to a
+ * full tick before meetings are detected again. Re-parse on a short backoff
+ * until cards appear or another check sees them first.
+ */
+function schedulePostLoadReparse(attempt = 0, startedAtMs = Date.now()): void {
+  if (attempt >= POST_LOAD_REPARSE_DELAYS_MS.length) return;
+  const previousDeadline =
+    attempt === 0 ? 0 : POST_LOAD_REPARSE_DELAYS_MS[attempt - 1];
+  const delayMs = POST_LOAD_REPARSE_DELAYS_MS[attempt] - previousDeadline;
+
+  postLoadReparseTimeoutId = setTimeout(() => {
+    postLoadReparseTimeoutId = null;
+    void (async () => {
+      if (lastParseCardsFound > 0) return;
+      try {
+        const result = await checkAndReportMeetings({ source: "post-load-reparse" });
+        if (result.cardsFound > 0) {
+          logToDisk("info", "homepage", "reparse.settled",
+            "Post-load re-parse found cards", {
+              attempt: attempt + 1,
+              cardsFound: result.cardsFound,
+              elapsedMs: Date.now() - startedAtMs,
+            });
+          return;
+        }
+      } catch (e) {
+        logToConsole("warn", "[MeetCat] Post-load re-parse failed", {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+      if (attempt + 1 >= POST_LOAD_REPARSE_DELAYS_MS.length) {
+        logToDisk("info", "homepage", "reparse.exhausted",
+          "Post-load re-parse gave up without cards", {
+            attempts: POST_LOAD_REPARSE_DELAYS_MS.length,
+            elapsedMs: Date.now() - startedAtMs,
+          });
+        return;
+      }
+      schedulePostLoadReparse(attempt + 1, startedAtMs);
+    })();
+  }, delayMs);
+}
+
+function cancelPostLoadReparse(): void {
+  if (postLoadReparseTimeoutId === null) return;
+  clearTimeout(postLoadReparseTimeoutId);
+  postLoadReparseTimeoutId = null;
 }
 
 /**
@@ -1435,6 +1506,9 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
     window.removeEventListener("blur", homepageBlurHandler, true);
     homepageBlurHandler = null;
   }
+
+  cancelPostLoadReparse();
+  lastParseCardsFound = 0;
 
   lastHomepageRecoveryLogKey = null;
   reloadInFlightSince = null;
