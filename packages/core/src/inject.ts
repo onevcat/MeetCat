@@ -104,6 +104,7 @@ let homepageKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 let meetingEntryObserver: MutationObserver | null = null;
 let homepageVisibilityHandler: (() => void) | null = null;
 let homepageBlurHandler: (() => void) | null = null;
+let homepageFocusHandler: (() => void) | null = null;
 let lastHomepageRecoveryLogKey: string | null = null;
 const WATCHDOG_STORAGE_KEY = "__meetcat_reload_watchdog";
 
@@ -134,8 +135,40 @@ function saveWatchdogState(): void {
   }
 }
 
+const SELF_NAV_STORAGE_KEY = "__meetcat_self_nav_at";
+const SELF_NAV_WINDOW_MS = 90_000;
+
+/** Mark that the next page load was initiated by MeetCat itself. */
+function markSelfNavigation(): void {
+  try {
+    sessionStorage.setItem(SELF_NAV_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // sessionStorage unavailable — the next load will look external, which
+    // only makes recovery more eager, never less safe
+  }
+}
+
+/** True when the current page load resulted from our own navigation. */
+function consumeSelfNavigationMarker(): boolean {
+  try {
+    const raw = sessionStorage.getItem(SELF_NAV_STORAGE_KEY);
+    if (!raw) return false;
+    sessionStorage.removeItem(SELF_NAV_STORAGE_KEY);
+    const markedAtMs = Number(raw);
+    return (
+      Number.isFinite(markedAtMs) && Date.now() - markedAtMs <= SELF_NAV_WINDOW_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
 let homepageReloadWatchdog = createHomepageReloadWatchdog({
   restoredState: restoreWatchdogState(),
+  // Login redirects and user navigations land here without the marker: they
+  // invalidate the previous page's reload-failure streak and arm the
+  // post-load rescue for a page that stays unparseable after the load
+  externalNavigation: !consumeSelfNavigationMarker(),
 });
 let wakeDetector: WakeDetector | null = null;
 let wakeReloadTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -161,6 +194,7 @@ async function safeNavigateHome(source: string, focus = false): Promise<void> {
     reloadInFlightSince = null;
   }
   reloadInFlightSince = Date.now();
+  markSelfNavigation();
   logToDisk("info", "homepage", "reload.navigate_home",
     "Navigating home via Rust bridge", { source, focus });
   try {
@@ -322,7 +356,9 @@ function reportPageDetectedForNativeState(
   });
 }
 
-let domSnapshotAttempted = false;
+const MAX_DOM_SNAPSHOT_ATTEMPTS = 3;
+let domSnapshotAttempts = 0;
+let domSnapshotSaved = false;
 let zeroCardChecks = 0;
 
 /**
@@ -330,30 +366,56 @@ let zeroCardChecks = 0;
  * from real markup. Script contents are stripped before sending. The Rust
  * side rejects the write in release builds unless the user opted in via the
  * diagnostic-snapshots setting, so this stays best-effort for end users.
+ *
+ * Every failure path must be logged and must never propagate: a synchronous
+ * throw here once aborted the whole meeting check silently and burned the
+ * only capture attempt of the page (observed 2026-08-28, zero snapshot logs
+ * across a 22h session). Failures keep a small retry budget per page load.
  */
 function attemptDomSnapshot(reason: string): void {
-  if (domSnapshotAttempted) return;
-  domSnapshotAttempted = true;
+  if (domSnapshotSaved || domSnapshotAttempts >= MAX_DOM_SNAPSHOT_ATTEMPTS) return;
   if (!isTauriEnvironment()) return;
+  domSnapshotAttempts += 1;
+  const attempt = domSnapshotAttempts;
 
-  saveDomSnapshot(captureSnapshotHtml(document), reason)
-    .then((path) => {
-      logToConsole("info", "[MeetCat] DOM snapshot saved", { reason, path });
-      logToDisk("info", "inject", "snapshot.saved", "DOM snapshot saved", {
-        reason,
-        path,
+  let htmlChars = 0;
+  try {
+    const html = captureSnapshotHtml(document);
+    htmlChars = html.length;
+    saveDomSnapshot(html, reason)
+      .then((path) => {
+        domSnapshotSaved = true;
+        logToConsole("info", "[MeetCat] DOM snapshot saved", { reason, path });
+        logToDisk("info", "inject", "snapshot.saved", "DOM snapshot saved", {
+          reason,
+          path,
+          htmlChars,
+        });
+      })
+      .catch((e) => {
+        // Expected in release builds without the opt-in (command rejects);
+        // log so debug-build failures (e.g. missing capability permissions)
+        // stay visible
+        const error = e instanceof Error ? e.message : String(e);
+        logToConsole("warn", "[MeetCat] DOM snapshot failed", { reason, error });
+        logToDisk("warn", "inject", "snapshot.failed", "DOM snapshot failed", {
+          reason,
+          error,
+          attempt,
+          htmlChars,
+        });
       });
-    })
-    .catch((e) => {
-      // Expected in release builds (command rejects); log so debug-build
-      // failures (e.g. missing capability permissions) stay visible
-      const error = e instanceof Error ? e.message : String(e);
-      logToConsole("warn", "[MeetCat] DOM snapshot failed", { reason, error });
-      logToDisk("warn", "inject", "snapshot.failed", "DOM snapshot failed", {
-        reason,
-        error,
-      });
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    logToConsole("warn", "[MeetCat] DOM snapshot threw", { reason, error });
+    logToDisk("warn", "inject", "snapshot.failed", "DOM snapshot threw", {
+      reason,
+      error,
+      attempt,
+      htmlChars,
+      sync: true,
     });
+  }
 }
 
 function isUpdateNoticeSuppressed(
@@ -714,7 +776,12 @@ async function initHomepage(): Promise<void> {
  * Parse meetings from DOM and report to Rust backend
  */
 async function checkAndReportMeetings(meta: {
-  source?: "init" | "check-meetings" | "fallback-interval" | "post-load-reparse";
+  source?:
+    | "init"
+    | "check-meetings"
+    | "fallback-interval"
+    | "post-load-reparse"
+    | "visibility";
   checkId?: number;
 } = {}): Promise<ParseResult> {
   // Ensure wake detector is running — it may have been stopped by a failed reload
@@ -976,6 +1043,7 @@ function logHomepageRecovery(
   if (evaluation.action === "reload") {
     logToDisk("warn", "homepage", "homepage.reload.triggered", "Reloading stale homepage", {
       source,
+      reason: evaluation.reason,
       staleForMs: evaluation.staleForMs,
       backoffMs: evaluation.backoffMs,
       reloadCountToday: evaluation.reloadCountToday,
@@ -1069,6 +1137,37 @@ function flushPendingHomepageReload(source: string): boolean {
   return evaluateHomepageRecovery(source, lastMeetings);
 }
 
+const VISIBILITY_RECHECK_DEBOUNCE_MS = 10_000;
+let lastVisibilityRecheckAtMs = 0;
+
+/**
+ * Meet renders its schedule lazily and may skip DOM updates entirely while
+ * the window is hidden — the user then sees an overlay with no meeting on a
+ * page that visibly shows cards. When the page surfaces with no known
+ * meetings, re-parse right away (and burst briefly for Meet's post-focus
+ * render) instead of waiting for the next 30s daemon tick.
+ */
+function scheduleVisibilityRecheck(trigger: string): void {
+  if (lastParseCardsFound > 0) return;
+  const nowMs = Date.now();
+  if (nowMs - lastVisibilityRecheckAtMs < VISIBILITY_RECHECK_DEBOUNCE_MS) return;
+  lastVisibilityRecheckAtMs = nowMs;
+
+  logToDisk("info", "homepage", "visibility.recheck",
+    "Page surfaced with no known meetings, re-checking", { trigger });
+  checkAndReportMeetings({ source: "visibility" })
+    .then((result) => {
+      if (result.cardsFound === 0 && postLoadReparseTimeoutId === null) {
+        schedulePostLoadReparse();
+      }
+    })
+    .catch((e) => {
+      logToConsole("warn", "[MeetCat] Visibility re-check failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+}
+
 function attachHomepageRecoveryListeners(): void {
   if (homepageVisibilityHandler || homepageBlurHandler) return;
 
@@ -1079,6 +1178,7 @@ function attachHomepageRecoveryListeners(): void {
       if (homepageReloadWatchdog.hasOpenEmptyRegression()) {
         evaluateHomepageRecovery("visibilitychange-visible", lastMeetings);
       }
+      scheduleVisibilityRecheck("visibilitychange");
       return;
     }
     flushPendingHomepageReload("visibilitychange");
@@ -1086,9 +1186,13 @@ function attachHomepageRecoveryListeners(): void {
   homepageBlurHandler = () => {
     flushPendingHomepageReload("window-blur");
   };
+  homepageFocusHandler = () => {
+    scheduleVisibilityRecheck("window-focus");
+  };
 
   document.addEventListener("visibilitychange", homepageVisibilityHandler, true);
   window.addEventListener("blur", homepageBlurHandler, true);
+  window.addEventListener("focus", homepageFocusHandler, true);
 }
 
 function attachHomepageShortcuts(): void {
@@ -1201,11 +1305,13 @@ function handleNavigateAndJoin(cmd: NavigateAndJoinCommand): void {
   // and let Meet resolve the meeting itself
   const cardTarget = getCardJoinTarget(cmd.url);
   if (cardTarget) {
+    markSelfNavigation();
     void joinByCardClick(cardTarget);
     return;
   }
 
   // Navigate to meeting URL
+  markSelfNavigation();
   location.href = appendAutoJoinParam(cmd.url);
 }
 
@@ -1507,12 +1613,19 @@ function cleanup(reason: "beforeunload" | "navigation" | "manual" = "manual"): v
     homepageBlurHandler = null;
   }
 
+  if (homepageFocusHandler) {
+    window.removeEventListener("focus", homepageFocusHandler, true);
+    homepageFocusHandler = null;
+  }
+
   cancelPostLoadReparse();
   lastParseCardsFound = 0;
+  lastVisibilityRecheckAtMs = 0;
 
   lastHomepageRecoveryLogKey = null;
   reloadInFlightSince = null;
-  domSnapshotAttempted = false;
+  domSnapshotAttempts = 0;
+  domSnapshotSaved = false;
   zeroCardChecks = 0;
 }
 
