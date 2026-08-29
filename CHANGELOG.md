@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-29
+
+Makes meeting detection on the Google Meet homepage recover on its own
+after reloads, forced re-logins, and slow renders, and adds an opt-in
+diagnostic setting for troubleshooting parsing problems in release builds.
+
+### Added
+
+- Added a "diagnostic DOM snapshots" toggle in the Developer section of
+  the settings. When enabled, release builds save a snapshot of the
+  homepage whenever parsing finds no meetings, keeping only the newest 10
+  on disk. Inline script contents are stripped before saving. (Tauri)
+
+### Changed
+
+- Changed meeting detection after app launch or a page reload to re-check
+  the homepage on a short backoff instead of waiting for the next
+  30-second tick. Meetings now typically appear within about 2 seconds of
+  launch and 1 second of a reload. (Tauri)
+- Changed the homepage reload watchdog to hold off on reloading a stale
+  page while the next meeting starts within 45 minutes, so a reload can
+  no longer cancel an imminent auto-join. (Tauri and extension)
+
+### Fixed
+
+- Fixed meeting detection staying broken after Google forced a re-login
+  or the page was otherwise navigated outside MeetCat: the recovery
+  backoff built up by earlier failed reloads no longer blocks the fresh
+  page, and a homepage that stays unparseable gets one rescue reload.
+  (Tauri)
+- Fixed a reload that comes back with an unparseable homepage being
+  treated as "no meetings today". The page is now recognized as broken
+  and recovered with bounded silent retries, an instant retry once the
+  page becomes visible, and a rescue reload right before the remembered
+  meeting starts. (Tauri and extension)
+- Fixed the homepage not being re-checked when it becomes visible or
+  focused while showing no meetings; it now re-parses immediately instead
+  of waiting for the next daemon tick. (Tauri)
+- Fixed a failure while capturing a diagnostic snapshot silently aborting
+  the whole meeting check. (Tauri)
+
 ## [0.4.1] - 2026-08-24
 
 Restores detection of meetings that reuse a meeting code created for
