@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import type { Meeting } from "@meetcat/core";
 import {
+  expireJoinGuards,
+  recordMeetingClosed,
   selectNextJoinTrigger,
+  JOIN_GUARD_RETENTION_MS,
   type JoinTriggerGuards,
   type JoinTriggerSettings,
+  type MutableJoinGuards,
 } from "../../src/service-worker/join-scheduler.js";
 
 const NOW = Date.UTC(2026, 7, 14, 2, 0, 0);
@@ -24,7 +28,7 @@ function meeting(callId: string, startsInMinutes: number, title = "Meeting"): Me
 
 function guards(overrides: Partial<JoinTriggerGuards> = {}): JoinTriggerGuards {
   return {
-    joinedMeetings: new Set(),
+    joinedMeetings: new Map(),
     suppressedMeetings: new Map(),
     triggeredMeetings: new Map(),
     ...overrides,
@@ -64,13 +68,13 @@ describe("selectNextJoinTrigger", () => {
   it("does not re-select a triggered instance before the meeting starts", () => {
     const m = meeting("abc", 5);
     const fired = guards({
-      joinedMeetings: new Set(["abc"]),
+      joinedMeetings: new Map([["abc", NOW]]),
       triggeredMeetings: new Map([["abc", m.beginTime.getTime()]]),
     });
 
     // Sanity: joined alone does NOT exclude the meeting before start
     expect(
-      selectNextJoinTrigger([m], guards({ joinedMeetings: new Set(["abc"]) }), settings, NOW)
+      selectNextJoinTrigger([m], guards({ joinedMeetings: new Map([["abc", NOW]]) }), settings, NOW)
     ).not.toBeNull();
 
     expect(selectNextJoinTrigger([m], fired, settings, NOW)).toBeNull();
@@ -89,14 +93,14 @@ describe("selectNextJoinTrigger", () => {
     const manualJoinSettings = { ...settings, joinBeforeMinutes: 5 };
 
     // State right after a manual join before start: joined, never triggered
-    const afterManualJoin = guards({ joinedMeetings: new Set(["abc"]) });
+    const afterManualJoin = guards({ joinedMeetings: new Map([["abc", NOW]]) });
     const selected = selectNextJoinTrigger([m], afterManualJoin, manualJoinSettings, NOW);
     expect(selected).not.toBeNull();
     expect(selected!.triggerTime).toBe(NOW); // zero delay — would spin
 
     // The joined branch marks the instance as triggered before rescheduling
     const afterConsume = guards({
-      joinedMeetings: new Set(["abc"]),
+      joinedMeetings: new Map([["abc", NOW]]),
       triggeredMeetings: new Map([["abc", m.beginTime.getTime()]]),
     });
     expect(selectNextJoinTrigger([m], afterConsume, manualJoinSettings, NOW)).toBeNull();
@@ -129,7 +133,7 @@ describe("selectNextJoinTrigger", () => {
   it("skips joined meetings after they start", () => {
     const result = selectNextJoinTrigger(
       [meeting("abc", -2)],
-      guards({ joinedMeetings: new Set(["abc"]) }),
+      guards({ joinedMeetings: new Map([["abc", NOW]]) }),
       settings,
       NOW
     );
@@ -160,5 +164,121 @@ describe("selectNextJoinTrigger", () => {
     );
 
     expect(result!.meeting.callId).toBe("sooner");
+  });
+});
+
+describe("expireJoinGuards", () => {
+  function mutableGuards(atMs: number): MutableJoinGuards {
+    return {
+      joinedMeetings: new Map([["abc", atMs]]),
+      suppressedMeetings: new Map([["abc", atMs]]),
+      triggeredMeetings: new Map([["abc", atMs]]),
+    };
+  }
+
+  /**
+   * Regression: a homepage parse can transiently come back with zero cards
+   * (Meet renders its schedule asynchronously, and the parse right after
+   * navigating back from a meeting page regularly lands on a card-less DOM).
+   * While the guards were pruned against that list, the next non-empty parse
+   * re-fired the trigger for the meeting the user had just cancelled,
+   * reopening the prep page for as long as the user kept cancelling.
+   */
+  it("keeps guards for a meeting missing from the current parse", () => {
+    const g = mutableGuards(NOW);
+
+    expireJoinGuards(g, NOW);
+
+    expect(g.joinedMeetings.has("abc")).toBe(true);
+    expect(g.suppressedMeetings.has("abc")).toBe(true);
+    expect(g.triggeredMeetings.has("abc")).toBe(true);
+
+    // The cancelled instance stays out of the schedule once the cards return
+    const m = meeting("abc", 5);
+    const result = selectNextJoinTrigger(
+      [m],
+      { ...g, triggeredMeetings: new Map([["abc", m.beginTime.getTime()]]) },
+      settings,
+      NOW
+    );
+    expect(result).toBeNull();
+  });
+
+  /**
+   * Counterpart: guards must still expire, otherwise a call id reused by a
+   * recurring meeting would stay joined/suppressed at its next occurrence.
+   */
+  it("drops guards older than the retention window", () => {
+    const g = mutableGuards(NOW - JOIN_GUARD_RETENTION_MS - 1);
+
+    expireJoinGuards(g, NOW);
+
+    expect(g.joinedMeetings.size).toBe(0);
+    expect(g.suppressedMeetings.size).toBe(0);
+    expect(g.triggeredMeetings.size).toBe(0);
+  });
+});
+
+describe("recordMeetingClosed", () => {
+  function emptyGuards(): MutableJoinGuards {
+    return {
+      joinedMeetings: new Map(),
+      suppressedMeetings: new Map(),
+      triggeredMeetings: new Map(),
+    };
+  }
+
+  /**
+   * Regression: a close was recorded only while the meeting was still in the
+   * parsed list. The list can lag behind the report — the homepage parse right
+   * after navigating away from a meeting page can transiently come back empty —
+   * and a close landing in that window was dropped entirely, leaving the
+   * cancelled meeting eligible for auto-join.
+   */
+  it("suppresses a fired trigger whose meeting is missing from the parse", () => {
+    const m = meeting("abc", 1);
+    const g = emptyGuards();
+    g.triggeredMeetings.set("abc", m.beginTime.getTime());
+
+    // The homepage re-parsed empty before the close report arrived
+    recordMeetingClosed(g, [], "abc", NOW, settings.joinBeforeMinutes);
+
+    expect(g.suppressedMeetings.get("abc")).toBe(NOW);
+    expect(
+      selectNextJoinTrigger([m], { ...g, triggeredMeetings: new Map() }, settings, NOW)
+    ).toBeNull();
+  });
+
+  /**
+   * The stand-in above must not fire for a meeting whose trigger never went
+   * off: an unknown call id carries no evidence that the close landed after a
+   * trigger, so it must leave the meeting eligible.
+   */
+  it("ignores an untriggered meeting missing from the parse", () => {
+    const g = emptyGuards();
+
+    recordMeetingClosed(g, [], "abc", NOW, 1);
+
+    expect(g.suppressedMeetings.size).toBe(0);
+  });
+
+  it("leaves a meeting closed before its trigger time eligible", () => {
+    const m = meeting("abc", 10);
+    const g = emptyGuards();
+
+    recordMeetingClosed(g, [m], "abc", NOW, 1);
+
+    expect(g.suppressedMeetings.size).toBe(0);
+    expect(selectNextJoinTrigger([m], g, settings, NOW)).not.toBeNull();
+  });
+
+  it("suppresses a meeting closed at or after its trigger time", () => {
+    const m = meeting("abc", 1);
+    const g = emptyGuards();
+
+    recordMeetingClosed(g, [m], "abc", NOW, 2);
+
+    expect(g.suppressedMeetings.get("abc")).toBe(NOW);
+    expect(selectNextJoinTrigger([m], g, settings, NOW)).toBeNull();
   });
 });

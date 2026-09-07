@@ -7,7 +7,8 @@ import type { Meeting } from "@meetcat/core";
  */
 
 export interface JoinTriggerGuards {
-  joinedMeetings: ReadonlySet<string>;
+  /** Meetings reported joined, keyed by call id with the time of the report */
+  joinedMeetings: ReadonlyMap<string, number>;
   suppressedMeetings: ReadonlyMap<string, number>;
   /**
    * Fired triggers, keyed by call id with the instance's begin time.
@@ -88,4 +89,84 @@ export function selectNextJoinTrigger(
   }
 
   return nextTrigger;
+}
+
+/**
+ * How long a join guard (joined / suppressed / triggered) is kept.
+ *
+ * Guards used to be pruned against the latest parsed meeting list, but a
+ * homepage parse can transiently come back empty — Meet renders its schedule
+ * asynchronously, so the parse right after navigating back from a meeting page
+ * regularly lands on a card-less DOM. Discarding the guards on such a parse
+ * made the next non-empty parse re-fire the trigger for the meeting the user
+ * had just cancelled, reopening the prep page for as long as the user kept
+ * cancelling. Guards are therefore expired on their own timestamps: long
+ * enough to outlive any meeting instance, short enough that a call id reused
+ * by a recurring meeting is joinable again at its next occurrence.
+ */
+export const JOIN_GUARD_RETENTION_MS = 12 * 60 * 60 * 1000;
+
+export interface MutableJoinGuards {
+  joinedMeetings: Map<string, number>;
+  suppressedMeetings: Map<string, number>;
+  /** Keyed by call id with the instance's begin time, which may be ahead of now */
+  triggeredMeetings: Map<string, number>;
+}
+
+/**
+ * Record a closed meeting, suppressing its join trigger when the close landed
+ * at or after that trigger's time. Closing a meeting earlier than that is the
+ * user dismissing a card we never acted on, and must leave the meeting
+ * eligible.
+ *
+ * The trigger time is derived from the parsed meeting list, which can lag
+ * behind this report: Meet renders its schedule asynchronously, so the parse
+ * right after navigating away from a meeting page can transiently come back
+ * empty. A trigger already fired for this call id proves on its own that the
+ * close landed at or after the trigger time, so it stands in for the missing
+ * meeting rather than dropping the report.
+ */
+export function recordMeetingClosed(
+  guards: MutableJoinGuards,
+  meetings: Meeting[],
+  callId: string,
+  closedAtMs: number,
+  joinBeforeMinutes: number
+): void {
+  const meeting = meetings.find((m) => m.callId === callId);
+
+  if (meeting) {
+    const triggerAtMs = meeting.beginTime.getTime() - joinBeforeMinutes * 60 * 1000;
+    if (closedAtMs >= triggerAtMs) {
+      guards.suppressedMeetings.set(callId, closedAtMs);
+    }
+    return;
+  }
+
+  if (guards.triggeredMeetings.has(callId)) {
+    guards.suppressedMeetings.set(callId, closedAtMs);
+  }
+}
+
+/**
+ * Drop join guards whose instance is far enough in the past to be irrelevant.
+ * Deliberately independent of the parsed meeting list — see
+ * `JOIN_GUARD_RETENTION_MS`.
+ */
+export function expireJoinGuards(
+  guards: MutableJoinGuards,
+  now: number = Date.now()
+): void {
+  const cutoff = now - JOIN_GUARD_RETENTION_MS;
+  const maps = [
+    guards.joinedMeetings,
+    guards.suppressedMeetings,
+    guards.triggeredMeetings,
+  ];
+
+  for (const map of maps) {
+    for (const [callId, atMs] of map) {
+      if (atMs < cutoff) map.delete(callId);
+    }
+  }
 }

@@ -17,7 +17,11 @@ import {
 import { DEFAULT_SETTINGS, type Settings } from "@meetcat/settings";
 import type { ExtensionMessage, ExtensionStatus } from "../types.js";
 import { HomepageRecoveryController } from "./homepage-recovery.js";
-import { selectNextJoinTrigger } from "./join-scheduler.js";
+import {
+  expireJoinGuards,
+  recordMeetingClosed,
+  selectNextJoinTrigger,
+} from "./join-scheduler.js";
 
 const STORAGE_KEY = "meetcat_settings";
 const ALARM_NAME = "meetcat_check";
@@ -29,7 +33,8 @@ const PARSE_FAILURE_THRESHOLD = 3;
 interface ServiceWorkerState {
   settings: Settings;
   meetings: Meeting[];
-  joinedMeetings: Set<string>;
+  /** Meetings reported joined, keyed by call id with the time of the report */
+  joinedMeetings: Map<string, number>;
   suppressedMeetings: Map<string, number>;
   /** Fired join triggers, keyed by call id with the instance's begin time */
   triggeredMeetings: Map<string, number>;
@@ -61,7 +66,7 @@ function deserializeMeetings(meetings: unknown[]): Meeting[] {
 const state: ServiceWorkerState = {
   settings: DEFAULT_SETTINGS,
   meetings: [],
-  joinedMeetings: new Set(),
+  joinedMeetings: new Map(),
   suppressedMeetings: new Map(),
   triggeredMeetings: new Map(),
   lastCheck: null,
@@ -141,7 +146,7 @@ async function openMeeting(meeting: Meeting): Promise<void> {
     }
   }
 
-  state.joinedMeetings.add(meeting.callId);
+  state.joinedMeetings.set(meeting.callId, Date.now());
 }
 
 /**
@@ -457,45 +462,16 @@ async function scheduleJoinTrigger(): Promise<void> {
   }
 }
 
-function pruneMeetingState(): void {
-  const now = Date.now();
-  const activeCallIds = new Set(
-    state.meetings
-      .filter((meeting) => meeting.endTime.getTime() > now)
-      .map((meeting) => meeting.callId)
+async function handleMeetingClosed(callId: string, closedAtMs: number): Promise<void> {
+  recordMeetingClosed(
+    state,
+    state.meetings,
+    callId,
+    closedAtMs,
+    state.settings.joinBeforeMinutes
   );
 
-  for (const callId of state.joinedMeetings) {
-    if (!activeCallIds.has(callId)) {
-      state.joinedMeetings.delete(callId);
-    }
-  }
-
-  for (const callId of state.suppressedMeetings.keys()) {
-    if (!activeCallIds.has(callId)) {
-      state.suppressedMeetings.delete(callId);
-    }
-  }
-
-  for (const callId of state.triggeredMeetings.keys()) {
-    if (!activeCallIds.has(callId)) {
-      state.triggeredMeetings.delete(callId);
-    }
-  }
-}
-
-async function handleMeetingClosed(callId: string, closedAtMs: number): Promise<void> {
-  const meeting = state.meetings.find((m) => m.callId === callId);
-  if (!meeting) return;
-
-  const triggerAtMs =
-    meeting.beginTime.getTime() - state.settings.joinBeforeMinutes * 60 * 1000;
-
-  if (closedAtMs >= triggerAtMs) {
-    state.suppressedMeetings.set(callId, closedAtMs);
-  }
-
-  pruneMeetingState();
+  expireJoinGuards(state);
   await scheduleJoinTrigger();
 }
 
@@ -546,7 +522,7 @@ async function handleJoinTrigger(): Promise<void> {
 function getStatus(): ExtensionStatus {
   const event = state.scheduler.check(
     state.meetings,
-    state.joinedMeetings,
+    new Set(state.joinedMeetings.keys()),
     state.suppressedMeetings,
     Date.now()
   );
@@ -554,7 +530,7 @@ function getStatus(): ExtensionStatus {
     enabled: true,
     nextMeeting: event.meeting,
     lastCheck: state.lastCheck,
-    joinedCallIds: Array.from(state.joinedMeetings),
+    joinedCallIds: Array.from(state.joinedMeetings.keys()),
     suppressedCallIds: Array.from(state.suppressedMeetings.keys()),
   };
 }
@@ -571,7 +547,7 @@ chrome.runtime.onMessage.addListener(
         clearParseRequestTimeout();
         state.pendingParseRequest = false;
         resetParseFailures();
-        pruneMeetingState();
+        expireJoinGuards(state);
         // Schedule trigger asynchronously
         checkMeetings()
           .then(async () => {
@@ -587,7 +563,7 @@ chrome.runtime.onMessage.addListener(
         return true; // Keep channel open for async response
 
       case "MEETING_JOINED":
-        state.joinedMeetings.add(message.callId);
+        state.joinedMeetings.set(message.callId, Date.now());
         scheduleJoinTrigger();
         sendResponse({ success: true });
         return true;
