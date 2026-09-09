@@ -349,7 +349,7 @@ fn schedule_join_trigger(app: &AppHandle, state: &State<AppState>) {
             if let Some(state) = app_handle.try_state::<AppState>() {
                 let mut daemon = state.daemon.lock().unwrap();
                 already_joined = daemon.is_joined(&call_id);
-                daemon.mark_joined(&call_id);
+                daemon.mark_joined(&call_id, now_ms() as i64);
                 daemon.mark_triggered(&call_id, meeting.begin_time.timestamp_millis());
                 println!("[MeetCat] Marked meeting as triggered: {}", call_id);
                 log_app_event(
@@ -636,7 +636,7 @@ fn restore_main_window_after_meeting(app: &AppHandle, state: &State<AppState>, c
 fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
     {
         let mut daemon = state.daemon.lock().unwrap();
-        daemon.mark_joined(&call_id);
+        daemon.mark_joined(&call_id, now_ms() as i64);
     }
 
     log_app_event(
@@ -662,20 +662,10 @@ fn meeting_joined(app: AppHandle, state: State<AppState>, call_id: String) {
 #[tauri::command]
 fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, closed_at_ms: i64) {
     let settings = state.settings.lock().unwrap().clone();
-    let mut matched = false;
-    let mut trigger_at_ms: Option<i64> = None;
-    {
+    let report = {
         let mut daemon = state.daemon.lock().unwrap();
-        if let Some(meeting) = daemon.get_meetings().iter().find(|m| m.call_id == call_id) {
-            matched = true;
-            let computed_trigger_at_ms = meeting.begin_time.timestamp_millis()
-                - (settings.join_before_minutes as i64) * 60 * 1000;
-            trigger_at_ms = Some(computed_trigger_at_ms);
-            if closed_at_ms >= computed_trigger_at_ms {
-                daemon.mark_suppressed(&call_id, closed_at_ms);
-            }
-        }
-    }
+        daemon.report_closed(&call_id, closed_at_ms, &settings)
+    };
 
     log_app_event(
         &app,
@@ -686,8 +676,9 @@ fn meeting_closed(app: AppHandle, state: State<AppState>, call_id: String, close
         Some(json!({
             "callId": call_id,
             "closedAtMs": closed_at_ms,
-            "matched": matched,
-            "triggerAtMs": trigger_at_ms,
+            "matched": report.matched,
+            "triggerAtMs": report.trigger_at_ms,
+            "suppressed": report.suppressed,
             "joinBeforeMinutes": settings.join_before_minutes,
         })),
     );
