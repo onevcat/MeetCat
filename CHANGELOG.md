@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-09
+
+Fixes the auto-join prep page reopening in a loop after it is cancelled.
+
+### Fixed
+
+- Fixed cancelling the auto-join countdown and going back to the Meet
+  homepage reopening the prep page immediately, looping for as long as it
+  kept being cancelled. A cancelled meeting is now remembered even when
+  the homepage momentarily parses as empty right after the navigation.
+  (Tauri and extension)
+- Fixed a cancelled meeting occasionally not being remembered at all, when
+  the homepage happened to be re-parsing at the moment the meeting was
+  closed. (Tauri and extension)
+
 ## [0.4.2] - 2026-08-29
 
 Makes meeting detection on the Google Meet homepage recover on its own
