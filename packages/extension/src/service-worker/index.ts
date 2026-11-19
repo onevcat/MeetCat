@@ -123,7 +123,7 @@ async function openMeeting(meeting: Meeting): Promise<void> {
   const openInNewTab = state.settings.extension?.openInNewTab ?? true;
   const meetingUrl = appendAutoJoinParam(meeting.url);
 
-  let tab: chrome.tabs.Tab;
+  let tab: chrome.tabs.Tab | undefined;
 
   if (openInNewTab) {
     tab = await chrome.tabs.create({ url: meetingUrl, active: true });
@@ -138,7 +138,7 @@ async function openMeeting(meeting: Meeting): Promise<void> {
   }
 
   // Try to bring the browser window to foreground
-  if (tab.windowId) {
+  if (tab?.windowId) {
     try {
       await chrome.windows.update(tab.windowId, { focused: true });
     } catch (e) {

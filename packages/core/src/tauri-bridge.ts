@@ -5,6 +5,7 @@
  * JavaScript code running in the WebView and the Rust backend.
  */
 
+import type { LanguageSetting } from "@meetcat/i18n";
 import type { Meeting } from "./types.js";
 
 /**
@@ -21,6 +22,7 @@ export interface TauriSettings {
   defaultMicState: "muted" | "unmuted";
   defaultCameraState: "muted" | "unmuted";
   showCountdownOverlay: boolean;
+  language: LanguageSetting;
   tauri?: {
     startAtLogin: boolean;
     showTrayIcon: boolean;

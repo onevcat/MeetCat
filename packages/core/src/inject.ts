@@ -70,7 +70,7 @@ import {
   type UpdatePromptPreference,
 } from "./tauri-bridge.js";
 import type { Meeting, ParseResult } from "./types.js";
-import { initI18n, changeLanguage, type LanguageSetting } from "@meetcat/i18n";
+import { initI18n, changeLanguage } from "@meetcat/i18n";
 import { INJECT_FALLBACK_SETTINGS } from "./inject-defaults.js";
 import {
   createHomepageReloadWatchdog,
@@ -569,7 +569,7 @@ async function init(): Promise<void> {
       });
       // Update i18n language from settings
       if (settings?.language) {
-        await initI18n(settings.language as LanguageSetting);
+        await initI18n(settings.language);
       }
     } else {
       settings = DEFAULT_SETTINGS;
@@ -637,7 +637,7 @@ async function setupEventListeners(): Promise<void> {
       updateOverlayVisibility();
       // Sync i18n language if changed
       if (newSettings?.language) {
-        void changeLanguage(newSettings.language as LanguageSetting);
+        void changeLanguage(newSettings.language);
       }
       logToDisk("info", "settings", "settings.changed", "Settings updated", {
         logCollectionEnabled: settings?.tauri?.logCollectionEnabled ?? false,

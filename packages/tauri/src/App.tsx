@@ -1,7 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   enable as enableAutostart,
   disable as disableAutostart,
@@ -138,8 +138,8 @@ function isSuppressedByPreference(
   return false;
 }
 
-function renderInlineMarkdown(text: string): Array<string | JSX.Element> {
-  const parts: Array<string | JSX.Element> = [];
+function renderInlineMarkdown(text: string): Array<string | ReactElement> {
+  const parts: Array<string | ReactElement> = [];
   const pattern = /(`[^`]+`)|(\[[^\]]+\]\((https?:\/\/[^\s)]+)\))/g;
   let cursor = 0;
   let match: RegExpExecArray | null = null;
@@ -179,9 +179,9 @@ function renderInlineMarkdown(text: string): Array<string | JSX.Element> {
   return parts;
 }
 
-function renderMarkdown(notes: string): JSX.Element {
+function renderMarkdown(notes: string): ReactElement {
   const lines = notes.replace(/\r\n/g, "\n").split("\n");
-  const blocks: JSX.Element[] = [];
+  const blocks: ReactElement[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i].trim();
@@ -203,7 +203,7 @@ function renderMarkdown(notes: string): JSX.Element {
 
     const bullet = line.match(/^- (.+)$/);
     if (bullet) {
-      const items: JSX.Element[] = [];
+      const items: ReactElement[] = [];
       while (i < lines.length) {
         const candidate = lines[i].trim().match(/^- (.+)$/);
         if (!candidate) break;
@@ -218,7 +218,7 @@ function renderMarkdown(notes: string): JSX.Element {
 
     const ordered = line.match(/^\d+\.\s+(.+)$/);
     if (ordered) {
-      const items: JSX.Element[] = [];
+      const items: ReactElement[] = [];
       while (i < lines.length) {
         const candidate = lines[i].trim().match(/^\d+\.\s+(.+)$/);
         if (!candidate) break;

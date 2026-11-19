@@ -13,4 +13,5 @@ export const INJECT_FALLBACK_SETTINGS: TauriSettings = {
   defaultMicState: "muted",
   defaultCameraState: "muted",
   showCountdownOverlay: true,
+  language: "auto",
 };

@@ -17,6 +17,7 @@ describe("inject fallback defaults", () => {
       defaultMicState: DEFAULT_SETTINGS.defaultMicState,
       defaultCameraState: DEFAULT_SETTINGS.defaultCameraState,
       showCountdownOverlay: DEFAULT_SETTINGS.showCountdownOverlay,
+      language: DEFAULT_SETTINGS.language,
     });
   });
 

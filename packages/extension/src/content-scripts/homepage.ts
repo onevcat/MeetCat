@@ -21,7 +21,7 @@ import {
 } from "@meetcat/core";
 import { initI18n } from "@meetcat/i18n";
 import { DEFAULT_SETTINGS } from "@meetcat/settings";
-import type { MeetingsUpdatedMessage, ExtensionMessage } from "../types.js";
+import type { MeetingsUpdatedMessage, ExtensionMessage, ExtensionStatus } from "../types.js";
 
 const STORAGE_KEY = "meetcat_settings";
 const ICON_URL = chrome?.runtime?.getURL
@@ -74,13 +74,15 @@ async function loadSettings(): Promise<void> {
  */
 async function refreshJoinedMeetings(): Promise<void> {
   try {
-    const status = await safeRuntimeSendMessage({ type: "GET_STATUS" });
+    const status = await safeRuntimeSendMessage<Partial<ExtensionStatus>>({
+      type: "GET_STATUS",
+    });
     if (!status) return;
-    if (status?.joinedCallIds && Array.isArray(status.joinedCallIds)) {
-      state.joinedCallIds = new Set(status.joinedCallIds as string[]);
+    if (Array.isArray(status.joinedCallIds)) {
+      state.joinedCallIds = new Set(status.joinedCallIds);
     }
-    if (status?.suppressedCallIds && Array.isArray(status.suppressedCallIds)) {
-      state.suppressedCallIds = new Set(status.suppressedCallIds as string[]);
+    if (Array.isArray(status.suppressedCallIds)) {
+      state.suppressedCallIds = new Set(status.suppressedCallIds);
     }
   } catch {
     // Service worker might not be ready
