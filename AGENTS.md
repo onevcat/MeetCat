@@ -16,7 +16,8 @@
 - `pnpm run dev:extension`: Build and watch the extension.
 - `pnpm run build`: Build the Tauri app (runs `build:tauri`).
 - `pnpm run build:extension`: Build the extension into `packages/extension/dist`.
-- `pnpm run test`: Run all JS/TS and Rust tests.
+- `pnpm run typecheck`: Build shared packages, then run `tsc --noEmit` in every package.
+- `pnpm run test`: Run typecheck, all JS/TS tests, and Rust tests. CI (`.github/workflows/ci.yml`) runs the same checks on every PR.
 - `pnpm run test:cov`: Run all JS/TS tests with coverage (and Rust tests).
 - `pnpm run clean` / `pnpm run clean:all`: Remove build artifacts (the latter also clears `node_modules`).
 

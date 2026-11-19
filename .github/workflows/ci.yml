@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js:
+    name: Typecheck and JS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check:tauri-version
+      - run: pnpm run build:shared
+      - run: pnpm -r typecheck
+      - run: pnpm -r test
+
+  rust:
+    name: Rust tests
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The Rust crate embeds core/dist/meetcat-inject.global.js and the
+      # frontend dist at compile time.
+      - run: pnpm run build:shared
+      - run: pnpm --filter @meetcat/tauri build
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/tauri/src-tauri
+      - run: pnpm --filter @meetcat/tauri test:rust

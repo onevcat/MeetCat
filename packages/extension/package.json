@@ -10,6 +10,7 @@
     "build:rename": "cd dist && mv content-homepage.global.js content-homepage.js && mv content-meeting.global.js content-meeting.js && mv service-worker.global.js service-worker.js",
     "build:content": "tsup",
     "build:popup": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"

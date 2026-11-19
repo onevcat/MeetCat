@@ -21,6 +21,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch --no-clean",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "rm -rf dist"
   },
   "dependencies": {
