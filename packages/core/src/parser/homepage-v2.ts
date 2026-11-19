@@ -10,9 +10,11 @@ import { getHiddenReason, formatDisplayTime } from "./card-support.js";
  * the DOM. Each scheduled meeting renders as a clickable card whose element
  * id is a Google Calendar event instance id (`<eventId>_<YYYYMMDD>T<HHMMSS>Z`);
  * the UTC begin time embedded in that suffix is the only machine-readable
- * timestamp. Events that reuse another event's meeting code render with a
- * bare event id instead — see `BARE_EVENT_ID_PATTERN` for how their begin
- * time is recovered. Joining works by clicking the card and letting Meet
+ * timestamp. That suffix is the ORIGINAL start of a recurring instance, so a
+ * rescheduled instance keeps its old time there and only its label shows the
+ * new one — see `resolveInstanceBeginTime`. Events that reuse another event's
+ * meeting code render with a bare event id instead — see
+ * `BARE_EVENT_ID_PATTERN` for how their begin time is recovered. Joining works by clicking the card and letting Meet
  * resolve the meeting code itself — see `buildCardJoinUrl` for how that flows
  * through the scheduler round-trip.
  */
@@ -241,10 +243,55 @@ function extractTitle(card: HTMLElement, labelledTexts: string[]): string {
 export interface ParseCardOptions {
   /**
    * A timestamp on the calendar day the homepage is rendering, used to date
-   * bare-event-id cards (their label only carries wall-clock times). Taken
-   * from a sibling instance-id card; falls back to `now`.
+   * cards whose begin time comes from the label (it only carries wall-clock
+   * times). Taken from a sibling instance-id card; bare-id cards fall back to
+   * `now`, instance-id cards to their own instance date.
    */
   anchorDateMs?: number;
+}
+
+function localClockMinutes(ms: number): number {
+  const date = new Date(ms);
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function localTimeOnDayOf(anchorMs: number, clockMinutes: number): number {
+  const anchor = new Date(anchorMs);
+  return new Date(
+    anchor.getFullYear(),
+    anchor.getMonth(),
+    anchor.getDate(),
+    0,
+    clockMinutes
+  ).getTime();
+}
+
+/**
+ * Whether the displayed start agrees with the instance id. Compared modulo
+ * 12h so that a 12h label without a meridiem still counts as agreeing.
+ */
+function labelMatchesInstance(labelClockMinutes: number | null, beginTimeMs: number): boolean {
+  if (labelClockMinutes === null) return true;
+  const halfDay = 12 * 60;
+  return labelClockMinutes % halfDay === localClockMinutes(beginTimeMs) % halfDay;
+}
+
+/**
+ * Begin time of an instance-id card. A Calendar instance id keeps the
+ * ORIGINAL start of a recurring instance even after that single instance is
+ * rescheduled; only the label shows the new time. When the two disagree the
+ * label wins, dated to the rendered day.
+ */
+function resolveInstanceBeginTime(
+  parts: InstanceIdParts,
+  labelledTexts: string[],
+  anchorDateMs: number | undefined
+): number {
+  const labelClockMinutes = extractBeginClockMinutes(labelledTexts);
+  if (labelMatchesInstance(labelClockMinutes, parts.beginTimeMs)) {
+    return parts.beginTimeMs;
+  }
+  return localTimeOnDayOf(anchorDateMs ?? parts.beginTimeMs, labelClockMinutes!);
 }
 
 /**
@@ -261,19 +308,12 @@ export function parseCalendarCard(
   let eventId: string;
   const parts = parseInstanceId(card.id);
   if (parts) {
-    beginTimeMs = parts.beginTimeMs;
+    beginTimeMs = resolveInstanceBeginTime(parts, labelledTexts, options.anchorDateMs);
     eventId = parts.eventId;
   } else if (BARE_EVENT_ID_PATTERN.test(card.id)) {
     const clockMinutes = extractBeginClockMinutes(labelledTexts);
     if (clockMinutes === null) return null;
-    const anchor = new Date(options.anchorDateMs ?? now);
-    beginTimeMs = new Date(
-      anchor.getFullYear(),
-      anchor.getMonth(),
-      anchor.getDate(),
-      0,
-      clockMinutes
-    ).getTime();
+    beginTimeMs = localTimeOnDayOf(options.anchorDateMs ?? now, clockMinutes);
     eventId = card.id;
   } else {
     return null;
@@ -313,17 +353,22 @@ export function parseHomepageV2(
     hiddenReason: getHiddenReason(cardVisibilityRoot(card)),
   }));
 
-  // The homepage renders one day at a time, so any VISIBLE instance-id card
-  // fixes the calendar date for bare-event-id siblings. Hidden cards may be
-  // stale leftovers from another day and must never anchor.
+  // The homepage renders one day at a time, so a VISIBLE instance-id card
+  // fixes the calendar date for cards timed by their label. Prefer a card
+  // whose label agrees with its id: a rescheduled instance may carry the
+  // date of another day. Hidden cards may be stale leftovers from another
+  // day and must never anchor.
   let anchorDateMs: number | undefined;
   for (const { card, hiddenReason } of cards) {
     if (hiddenReason) continue;
     const parts = parseInstanceId(card.id);
-    if (parts) {
+    if (!parts) continue;
+    const labelClockMinutes = extractBeginClockMinutes(resolveLabelledTexts(card));
+    if (labelMatchesInstance(labelClockMinutes, parts.beginTimeMs)) {
       anchorDateMs = parts.beginTimeMs;
       break;
     }
+    anchorDateMs ??= parts.beginTimeMs;
   }
 
   const meetings: Meeting[] = [];

@@ -1,5 +1,9 @@
 import { defineConfig } from "vitest/config";
 
+// Homepage fixtures carry labels captured on a JST machine; parsers compare
+// them with UTC instance ids, so tests must run in the same timezone.
+process.env.TZ = "Asia/Tokyo";
+
 export default defineConfig({
   test: {
     environment: "jsdom",
