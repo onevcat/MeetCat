@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-11-19
+
+Fixes auto-join missing meetings that were moved to a new time.
+
+### Fixed
+
+- Fixed a rescheduled occurrence of a recurring meeting still counting
+  down to, and auto-joining at, its original time. The countdown overlay
+  and auto-join now follow the time shown on the Meet homepage, so a
+  meeting moved earlier is no longer missed. (Tauri and extension)
+
+### Changed
+
+- Changed the minimum window size from 1100×720 to 800×550, so the app
+  fits better on portrait displays and in tiled window layouts. (Tauri)
+
 ## [0.4.4] - 2026-10-29
 
 Fixes meetings breaking after Google Meet moved meetings to
