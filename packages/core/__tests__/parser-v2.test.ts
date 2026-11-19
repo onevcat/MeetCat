@@ -183,6 +183,66 @@ describe("Homepage v2 parser", () => {
     });
   });
 
+  /**
+   * A recurring event instance moved in Calendar keeps its ORIGINAL start in
+   * the instance id suffix; only the label shows the new time (captured
+   * 2026-11-19: id `..._20261119T073500Z` = 16:35 JST, label 14:30 – 14:55).
+   */
+  describe("rescheduled recurring instances", () => {
+    const MOVED_ID = "kd8f2hq0v1m3s5u7w9y0a2c4e6_20261119T073500Z";
+    const PAST_ID = "p0r2t4v6x8z0b2d4f6h8j0l2n4_20261119T010000Z";
+
+    it("uses the label time when it differs from the instance id time", () => {
+      render(
+        scheduleMarkup(
+          cardMarkup({ instanceId: PAST_ID, title: "Daily", timeText: "10:00 – 10:30", suffix: "p" }) +
+            cardMarkup({ instanceId: MOVED_ID, title: "1on1", timeText: "14:30 – 14:55", suffix: "m" })
+        )
+      );
+      const now = Date.UTC(2026, 10, 19, 3, 51, 0); // 12:51 JST
+
+      const result = parseHomepageV2(document, now);
+      const next = getNextJoinableMeeting(result.meetings, { now });
+
+      expect(next?.callId).toBe(MOVED_ID);
+      expect(next?.beginTime.getTime()).toBe(Date.UTC(2026, 10, 19, 5, 30, 0));
+      expect(next?.endTime.getTime()).toBe(Date.UTC(2026, 10, 19, 5, 55, 0));
+      expect(next?.startsInMinutes).toBe(99);
+    });
+
+    it("dates a lone moved card by its own instance id", () => {
+      render(scheduleMarkup(cardMarkup({ instanceId: MOVED_ID, title: "1on1", timeText: "14:30 – 14:55" })));
+
+      const result = parseHomepageV2(document, Date.UTC(2026, 10, 19, 3, 51, 0));
+
+      expect(result.meetings[0].beginTime.getTime()).toBe(Date.UTC(2026, 10, 19, 5, 30, 0));
+    });
+
+    it("dates a card moved from another day by its unmoved siblings", () => {
+      const movedFromYesterday = "kd8f2hq0v1m3s5u7w9y0a2c4e6_20261118T073500Z";
+      render(
+        scheduleMarkup(
+          cardMarkup({ instanceId: movedFromYesterday, title: "1on1", timeText: "14:30 – 14:55", suffix: "m" }) +
+            cardMarkup({ instanceId: PAST_ID, title: "Daily", timeText: "10:00 – 10:30", suffix: "p" })
+        )
+      );
+
+      const result = parseHomepageV2(document, Date.UTC(2026, 10, 19, 3, 51, 0));
+
+      const moved = result.meetings.find((m) => m.callId === movedFromYesterday)!;
+      expect(moved.beginTime.getTime()).toBe(Date.UTC(2026, 10, 19, 5, 30, 0));
+    });
+
+    it("keeps the instance id time for a 12h label without meridiem", () => {
+      const id = "eeeeffffgggghhhh_20261119T060000Z"; // 15:00 JST
+      render(scheduleMarkup(cardMarkup({ instanceId: id, title: "Sync", timeText: "3:00 – 4:00" })));
+
+      const result = parseHomepageV2(document, Date.UTC(2026, 10, 19, 3, 0, 0));
+
+      expect(result.meetings[0].beginTime.getTime()).toBe(Date.UTC(2026, 10, 19, 6, 0, 0));
+    });
+  });
+
   describe("parseMeetingCards generation compatibility", () => {
     // Google decides which frontend each user gets, so every generation must
     // keep working, and stale/hidden markup left over from one generation
