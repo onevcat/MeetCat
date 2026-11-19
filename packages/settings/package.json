@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch --no-clean",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
