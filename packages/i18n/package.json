@@ -25,7 +25,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "i18next": "^24.2.3",
+    "i18next": "^26.3.4",
     "react-i18next": "^15.7.4"
   },
   "peerDependencies": {
